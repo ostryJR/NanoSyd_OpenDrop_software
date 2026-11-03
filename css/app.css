@@ -229,6 +229,37 @@ kbd {
   flex: 1;
 }
 
+.timing-controls,
+.chart-controls {
+  display: contents; /* their items wrap with the rest of the bar */
+}
+
+.panel-toggle {
+  min-width: 26px;
+  padding: 0 8px;
+  font-weight: 600;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+/* Minimised: one line with the total; the board gets the room. */
+#timing.minimised .timing-controls,
+#timing.minimised .chart-controls,
+#timing.minimised #chart {
+  display: none;
+}
+
+#timing.minimised {
+  padding-bottom: 6px;
+}
+
+#time-total {
+  color: var(--ink-secondary);
+}
+
 #chart-legend {
   color: var(--ink-secondary);
 }
@@ -427,7 +458,9 @@ kbd {
 
 #templates {
   flex: 0 0 264px;
+  min-width: 0;
   padding: 10px 12px;
+  overflow-x: hidden; /* everything inside wraps or shrinks to the panel's width */
   overflow-y: auto;
   border-left: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.55);
@@ -438,6 +471,34 @@ kbd {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.panel-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+/* Minimised: a thin tab down the right-hand side that brings the panel back. */
+#templates .side-tab {
+  display: none;
+}
+
+#templates.minimised {
+  flex-basis: 34px;
+  padding: 8px 4px;
+}
+
+#templates.minimised #library,
+#templates.minimised #maker {
+  display: none;
+}
+
+#templates.minimised .side-tab {
+  display: block;
+  width: 100%;
+  padding: 10px 0;
+  writing-mode: vertical-rl;
+  font-weight: 600;
 }
 
 #templates h2 {

@@ -27,6 +27,7 @@ and downloads the file instead of showing a save dialog.
 | Set frame times | The timing strip under the board: a default frame time, and the frame on screen's own time (empty = the default) |
 | Drop a template | Drag it from the Templates panel onto the electrode the droplet is on; **R** turns it, **Esc** cancels |
 | Make a template | **+ New** in the Templates panel, or ✎ on a template to change it (or a copy of a built-in one) |
+| Make room for the board | **▾ Timing** folds the timing strip to one line; **›** shrinks the Templates panel to a tab |
 | Copy the previous frame, clear the frame, clear everything | Buttons on the right |
 | Dispense a droplet from a reservoir | The four buttons beside the reservoirs (writes 6 frames) |
 | Save / load a sequence | **save** / **load**, top right |

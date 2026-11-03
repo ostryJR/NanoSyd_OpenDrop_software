@@ -25,15 +25,17 @@
     }
   }
 
-  // Layout, number overlay, drag tool and chart view are remembered between visits.
+  // Layout, number overlay, drag tool, minimised panels and chart view are remembered between
+  // visits.
   const PREFS_KEY = 'opendrop-generator.prefs';
   const stored = readStored(PREFS_KEY, {});
-  const prefs = { chart: 'step', ...(stored && typeof stored === 'object' ? stored : {}) };
+  const prefs = { timingMin: false, templatesMin: false, chart: 'step', ...(stored && typeof stored === 'object' ? stored : {}) };
   const savePrefs = () => {
     try {
+      const { timingMin, templatesMin, chart: view } = prefs;
       localStorage.setItem(
         PREFS_KEY,
-        JSON.stringify({ layout: current.id, numbers: showNumbers, tool: ed.tool, chart: prefs.chart })
+        JSON.stringify({ layout: current.id, numbers: showNumbers, tool: ed.tool, timingMin, templatesMin, chart: view })
       );
     } catch {
       // storage unavailable: preferences just aren't kept
@@ -352,6 +354,7 @@
     frameReset.disabled = !ownTime;
     const last = seq.lastFrame();
     totalText.textContent = `Total ${formatTime(seq.elapsed(last))} over ${plural(last, 'frame')}`;
+    if (prefs.timingMin) return; // the chart is folded away
     const times = [];
     const own = [];
     for (let f = 1; f <= Math.max(last, ed.frame); f++) {
@@ -601,6 +604,7 @@
     library.hidden = true;
     maker.hidden = false;
     board.setCutoutTitle('Making a template');
+    applyPanels();
     setStatus('Making a template: draw it on the array, then press Save template');
     redraw();
   }
@@ -611,6 +615,7 @@
     library.hidden = false;
     maker.hidden = true;
     board.setCutoutTitle('Path Generator');
+    applyPanels();
     redraw();
   }
 
@@ -708,12 +713,50 @@
     numbersBox.blur();
   });
 
+  // --- minimising the panels -------------------------------------------------------------
+  // The timing strip folds down to one line with the total; the templates panel to a thin tab.
+  // Either gives the board more room. The templates panel opens while a template is being made:
+  // its Save and Cancel are there.
+
+  const timingSection = $('timing');
+  const timingToggle = $('timing-toggle');
+  const templatesPanel = $('templates');
+  const templatesMin = $('templates-min');
+  const templatesTab = $('templates-tab');
+
+  function applyPanels() {
+    const templatesSmall = prefs.templatesMin && !ed.makingTemplate;
+    timingSection.classList.toggle('minimised', prefs.timingMin);
+    timingToggle.querySelector('.arrow').textContent = prefs.timingMin ? '▸' : '▾';
+    timingToggle.title = prefs.timingMin ? 'Show the timing panel' : 'Minimise the timing panel';
+    timingToggle.setAttribute('aria-expanded', String(!prefs.timingMin));
+    templatesPanel.classList.toggle('minimised', templatesSmall);
+    templatesTab.setAttribute('aria-expanded', String(!templatesSmall));
+  }
+
+  function setMinimised(panel, minimised) {
+    prefs[panel] = minimised;
+    applyPanels();
+    savePrefs();
+    redraw();
+  }
+  timingToggle.addEventListener('click', () => {
+    setMinimised('timingMin', !prefs.timingMin);
+    timingToggle.blur();
+  });
+  templatesMin.addEventListener('click', () => setMinimised('templatesMin', true));
+  templatesTab.addEventListener('click', () => {
+    setMinimised('templatesMin', false);
+    templatesTab.blur();
+  });
+
   // Shortcut hints: Cmd on a Mac, Ctrl elsewhere.
   if (!/Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)) {
     for (const k of document.querySelectorAll('kbd[data-pc]')) k.textContent = k.dataset.pc;
   }
 
   renderTemplates();
+  applyPanels();
   setChartView(prefs.chart);
   root.OD.app = { editor: ed, board, chart, save, templates: () => myTemplates }; // for the console
   paint(); // the first picture straight away, not at the next animation frame
