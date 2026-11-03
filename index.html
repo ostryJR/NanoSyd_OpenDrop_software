@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenDrop Generator</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="stage">
+    <svg id="board" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"
+         role="img" aria-label="OpenDrop electrode array"></svg>
+  </div>
+
+  <footer id="bar">
+    <label>Layout <select id="layout"></select></label>
+    <label><input type="checkbox" id="numbers"> Electrode numbers <kbd>N</kbd></label>
+    <span id="status" role="status" aria-live="polite"></span>
+    <span id="help">
+      Click: toggle · Drag: paint · <kbd>Shift</kbd>+click: next frame + on ·
+      <kbd>←</kbd><kbd>→</kbd> or wheel: frame · <kbd>Space</kbd>: play/stop (wheel: speed)
+    </span>
+  </footer>
+
+  <input type="file" id="file-input" accept=".json,application/json" hidden>
+
+  <!-- Plain scripts (not modules) so the page also works when opened straight from disk. -->
+  <script src="js/layouts-data.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/model.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/jsonio.js"></script>
+  <script src="js/view.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

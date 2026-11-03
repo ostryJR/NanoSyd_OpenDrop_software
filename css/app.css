@@ -1,0 +1,99 @@
+:root {
+  --background: rgb(255, 250, 240); /* the original's background(255, 250, 240) */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  color: #333;
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+#stage {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+#board {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* dragging on a touch screen edits instead of scrolling */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#board rect,
+#board circle,
+#board polygon {
+  stroke: #fff;
+  stroke-width: 6;
+}
+
+#board text {
+  fill: #fff;
+  stroke: none;
+  font: 500 32px "Ubuntu", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  pointer-events: none;
+}
+
+#board .numbers text {
+  fill: rgb(123, 123, 123);
+  font-size: 20px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+#bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 20px;
+  padding: 6px 14px;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+#bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#status {
+  flex: 1;
+  min-width: 14em;
+}
+
+#status.warn {
+  color: #8a5a00;
+}
+
+#status.error {
+  color: #b00020;
+}
+
+#help {
+  color: #6b6b6b;
+  font-size: 12px;
+}
+
+kbd {
+  padding: 0 4px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  background: #fff;
+  font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
+}
