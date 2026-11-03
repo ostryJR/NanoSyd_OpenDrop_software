@@ -51,6 +51,9 @@
         return t;
       };
       label('OpenDrop Generator', -43, -18);
+      // In the notch in the frame's top edge (y 80-135 px of the image), centred, level with the
+      // title on the left.
+      label('Path Generator', 0, -18.8).setAttribute('class', 'cutout-title');
       label('save', 32, -18.5);
       label('load', 38, -18.5);
       label('play', 37, -7.5);

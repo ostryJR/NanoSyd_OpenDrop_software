@@ -57,6 +57,11 @@ body {
   dominant-baseline: central;
 }
 
+#board text.cutout-title {
+  fill: rgb(140, 140, 140);
+  text-anchor: middle;
+}
+
 /* Left-hand controls: the whole box + label area is clickable and shows a hover tip. */
 #board .hit {
   fill: transparent;
