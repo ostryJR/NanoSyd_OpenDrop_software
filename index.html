@@ -34,6 +34,39 @@
       </section>
     </div>
 
+    <aside id="templates" aria-label="Templates">
+      <div id="library">
+        <div class="panel-head">
+          <h2>Templates</h2>
+          <button type="button" id="template-new">+ New</button>
+        </div>
+        <p class="hint">Drag one onto the electrode the droplet is on. It starts in the frame on
+          screen. <kbd>R</kbd> turns it while you drag, <kbd>Esc</kbd> cancels.</p>
+        <h3>Yours</h3>
+        <ul id="my-templates" class="template-list"></ul>
+        <p id="no-templates" class="empty">None yet. Press <b>+ New</b>, draw the operation and save
+          it, or press ✎ on a built-in one to start from a copy.</p>
+        <h3>Built in</h3>
+        <ul id="builtin-templates" class="template-list"></ul>
+        <div class="panel-foot">
+          <button type="button" id="template-export">Export…</button>
+          <button type="button" id="template-import">Import…</button>
+        </div>
+      </div>
+
+      <div id="maker" hidden>
+        <div class="panel-head"><h2 id="maker-title">New template</h2></div>
+        <p class="hint">Draw the operation on the array with any of the tools, starting in frame 1.
+          Frame times you set are kept too. The template is dropped by the leftmost electrode of
+          its first frame (the top one if there are several).</p>
+        <label class="field">Name <input type="text" id="template-name" maxlength="60" autocomplete="off"></label>
+        <p id="maker-info" class="info"></p>
+        <div class="maker-buttons">
+          <button type="button" id="template-save" class="primary">Save template</button>
+          <button type="button" id="template-cancel">Cancel</button>
+        </div>
+      </div>
+    </aside>
   </div>
 
   <footer id="bar">
@@ -49,12 +82,15 @@
   </footer>
 
   <input type="file" id="file-input" accept=".json,application/json" hidden>
+  <input type="file" id="template-file" accept=".json,application/json" hidden>
+  <div id="drag-ghost" hidden></div>
 
   <!-- Plain scripts (not modules) so the page also works when opened straight from disk. -->
   <script src="js/layouts-data.js"></script>
   <script src="js/layout.js"></script>
   <script src="js/model.js"></script>
   <script src="js/paths.js"></script>
+  <script src="js/templates.js"></script>
   <script src="js/editor.js"></script>
   <script src="js/jsonio.js"></script>
   <script src="js/view.js"></script>

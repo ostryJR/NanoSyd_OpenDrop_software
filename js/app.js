@@ -1,9 +1,9 @@
 /* Connects the page to the editor and the views: the board (mouse, touch, wheel, keys), file
- * dialogs, the timing strip and its chart, and the bottom bar. */
+ * dialogs, the timing strip and its chart, the templates panel, and the bottom bar. */
 (function (root) {
   'use strict';
 
-  const { layout, jsonio } = root.OD;
+  const { layout, jsonio, templates } = root.OD;
   const { Editor } = root.OD.editor;
   const { BoardView } = root.OD.view;
   const { TimingChart, formatTime } = root.OD.chart;
@@ -16,15 +16,19 @@
   const statusText = $('status');
   const fileInput = $('file-input');
 
+  function readStored(key, fallback) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key));
+      return value === null ? fallback : value;
+    } catch {
+      return fallback;
+    }
+  }
+
   // Layout, number overlay, drag tool and chart view are remembered between visits.
   const PREFS_KEY = 'opendrop-generator.prefs';
-  const prefs = (() => {
-    try {
-      return JSON.parse(localStorage.getItem(PREFS_KEY)) || {};
-    } catch {
-      return {};
-    }
-  })();
+  const stored = readStored(PREFS_KEY, {});
+  const prefs = { chart: 'step', ...(stored && typeof stored === 'object' ? stored : {}) };
   const savePrefs = () => {
     try {
       localStorage.setItem(
@@ -86,6 +90,7 @@
     board.render(ed, showNumbers);
     if (ed.draft && ed.draft.moved) showDraft(ed.draft);
     showTiming();
+    if (ed.makingTemplate) showMakerInfo();
   }
 
   function setTool(tool) {
@@ -102,7 +107,7 @@
     redraw();
   }
 
-  // --- mouse / touch ---------------------------------------------------------------------
+  // --- board: mouse / touch --------------------------------------------------------------
 
   function toGrid(evt) {
     const p = new DOMPoint(evt.clientX, evt.clientY).matrixTransform(svg.getScreenCTM().inverse());
@@ -187,6 +192,18 @@
   window.addEventListener('keydown', (evt) => {
     if (evt.target instanceof HTMLInputElement || evt.target instanceof HTMLSelectElement) return;
     const key = evt.key.length === 1 ? evt.key.toLowerCase() : evt.key;
+    if (carried) {
+      // Dragging a template: R turns it, Esc drops it back; nothing else while it's in hand.
+      if (key === 'r' && !evt.repeat) ed.rotatePlacement();
+      if (key === 'Escape') {
+        ed.cancel();
+        endTemplateDrag();
+        setStatus('Cancelled');
+      }
+      evt.preventDefault();
+      redraw();
+      return;
+    }
     if ((evt.metaKey || evt.ctrlKey) && !evt.altKey) {
       // Cmd+Z / Ctrl+Z undo; with Shift, or Ctrl+Y, redo.
       if (key === 'z') undoRedo(evt.shiftKey ? 'redo' : 'undo');
@@ -236,21 +253,19 @@
 
   const withJson = (name) => (/\.json$/i.test(name) ? name : `${name}.json`);
 
-  async function save() {
-    const text = jsonio.encode(ed.seq);
-    const count = ed.seq.lastFrame();
-    const suggested = withJson(fileName || 'opendrop-sequence');
-
+  // Saves text with the browser's save dialog, or (Safari, Firefox) asks for a name and
+  // downloads it. Returns the file name, or null if cancelled or failed (the status says why).
+  async function saveText(text, suggested, description) {
     if (typeof root.showSaveFilePicker === 'function') {
       let handle;
       try {
         handle = await root.showSaveFilePicker({
           suggestedName: suggested,
-          types: [{ description: 'OpenDrop sequence', accept: { 'application/json': ['.json'] } }],
+          types: [{ description, accept: { 'application/json': ['.json'] } }],
         });
       } catch (err) {
         if (err.name !== 'AbortError') setStatus(`Could not save: ${err.message}`, 'error');
-        return;
+        return null;
       }
       try {
         const out = await handle.createWritable();
@@ -258,24 +273,36 @@
         await out.close();
       } catch (err) {
         setStatus(`Could not save ${handle.name}: ${err.message}`, 'error');
-        return;
+        return null;
       }
-      fileName = handle.name;
-    } else {
-      // Browsers without a save dialog (Safari, Firefox): ask for a name, then download.
-      const name = root.prompt('Save as', suggested);
-      if (!name || !name.trim()) return;
-      fileName = withJson(name.trim());
-      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return handle.name;
     }
-    setStatus(`Saved ${fileName} (${plural(count, 'frame')})`);
+    const name = root.prompt('Save as', suggested);
+    if (!name || !name.trim()) return null;
+    const file = withJson(name.trim());
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return file;
+  }
+
+  // The board's save and load work on whatever is on the board: while a template is being
+  // made, that is the template, which can be saved as (or loaded from) a sequence file.
+  async function save() {
+    const text = jsonio.encode(ed.seq);
+    const count = ed.seq.lastFrame();
+    const suggested = ed.makingTemplate
+      ? withJson(nameInput.value.trim() || 'template')
+      : withJson(fileName || 'opendrop-sequence');
+    const name = await saveText(text, suggested, 'OpenDrop sequence');
+    if (!name) return;
+    if (!ed.makingTemplate) fileName = name;
+    setStatus(`Saved ${name} (${plural(count, 'frame')})`);
   }
 
   fileInput.addEventListener('change', async () => {
@@ -290,7 +317,7 @@
       return;
     }
     ed.replaceSequence(result.seq, { timed: result.timed });
-    fileName = file.name;
+    if (!ed.makingTemplate) fileName = file.name;
     const loaded = `Loaded ${file.name} (${plural(result.frames, 'frame')})`;
     if (result.warnings.length) setStatus(`${loaded}. ${result.warnings.join('; ')}.`, 'warn');
     else setStatus(loaded);
@@ -309,7 +336,7 @@
 
   const chart = new TimingChart($('chart'), {
     onPick(step) {
-      if (ed.dragging) return;
+      if (ed.dragging || ed.placement) return;
       ed.frame = step;
       redraw();
     },
@@ -396,6 +423,266 @@
     });
   }
 
+  // --- templates panel -------------------------------------------------------------------
+
+  const TEMPLATES_KEY = 'opendrop-generator.templates';
+  const NS = 'http://www.w3.org/2000/svg';
+  let serial = 0;
+  const mine = (t) => ({ ...t, id: `mine-${++serial}` });
+  let myTemplates = (() => {
+    const list = readStored(TEMPLATES_KEY, []);
+    return Array.isArray(list) ? list.map(templates.clean).filter(Boolean).map(mine) : [];
+  })();
+
+  function storeTemplates() {
+    try {
+      const list = myTemplates.map(({ name, frames, times }) => (times ? { name, frames, times } : { name, frames }));
+      localStorage.setItem(TEMPLATES_KEY, JSON.stringify(list));
+    } catch {
+      setStatus('This browser would not keep the templates: use Export… to save them to a file', 'error');
+    }
+  }
+
+  // A small picture of every electrode the template uses, its drop point in blue.
+  function miniPreview(t) {
+    const cells = new Map();
+    for (const frame of t.frames) for (const [c, r] of frame) cells.set(`${c},${r}`, [c, r]);
+    const list = [...cells.values()];
+    const cs = list.map((p) => p[0]);
+    const rs = list.map((p) => p[1]);
+    const minC = Math.min(...cs);
+    const minR = Math.min(...rs);
+    const span = Math.max(Math.max(...cs) - minC, Math.max(...rs) - minR) + 1;
+    const pitch = Math.min(12, Math.floor(46 / span));
+    const w = (Math.max(...cs) - minC + 1) * pitch;
+    const h = (Math.max(...rs) - minR + 1) * pitch;
+    const node = document.createElementNS(NS, 'svg');
+    node.setAttribute('class', 'mini');
+    node.setAttribute('width', 46);
+    node.setAttribute('height', 46);
+    node.setAttribute('viewBox', `${(w - 46) / 2} ${(h - 46) / 2} 46 46`);
+    for (const [c, r] of list) {
+      const rect = document.createElementNS(NS, 'rect');
+      const attrs = { x: (c - minC) * pitch, y: (r - minR) * pitch, width: pitch - 2, height: pitch - 2, rx: 1.5 };
+      for (const k of Object.keys(attrs)) rect.setAttribute(k, attrs[k]);
+      rect.setAttribute('fill', c === 0 && r === 0 ? 'rgb(0,90,255)' : 'rgb(140,190,255)');
+      node.appendChild(rect);
+    }
+    return node;
+  }
+
+  function iconButton(text, title, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.addEventListener('click', (evt) => {
+      evt.currentTarget.blur();
+      onClick();
+    });
+    return b;
+  }
+
+  function templateCard(t) {
+    const li = document.createElement('li');
+    li.className = 'template';
+    li.title = `${t.name}: drag it onto the array`;
+    const text = document.createElement('div');
+    text.className = 'text';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = t.name; // names come from storage or imported files: text only
+    const steps = document.createElement('div');
+    steps.className = 'steps';
+    steps.textContent = plural(templates.stepsOf(t), 'step') + (t.times ? ' · own frame times' : '');
+    text.append(name, steps);
+    li.append(miniPreview(t), text);
+    li.append(iconButton('✎', t.builtIn ? 'Copy it to change' : 'Change it', () => openMaker(t)));
+    if (!t.builtIn) li.append(iconButton('×', 'Delete it', () => deleteTemplate(t)));
+    li.addEventListener('pointerdown', (evt) => startTemplateDrag(evt, t, li));
+    return li;
+  }
+
+  function renderTemplates() {
+    $('my-templates').replaceChildren(...myTemplates.map(templateCard));
+    $('builtin-templates').replaceChildren(...templates.BUILT_IN.map(templateCard));
+    $('no-templates').hidden = myTemplates.length > 0;
+  }
+
+  function deleteTemplate(t) {
+    if (!root.confirm(`Delete the template “${t.name}”?`)) return;
+    myTemplates = myTemplates.filter((x) => x !== t);
+    storeTemplates();
+    renderTemplates();
+    setStatus(`Deleted “${t.name}”`);
+  }
+
+  // Dragging a template from the panel onto the array. The card keeps the pointer, so the
+  // board shows where the template would land and nothing changes until it is dropped.
+  const ghost = $('drag-ghost');
+  let carried = null;
+
+  function startTemplateDrag(evt, t, li) {
+    if (evt.button !== 0 || !evt.isPrimary || evt.target.closest('button') || ed.makingTemplate) return;
+    evt.preventDefault();
+    li.setPointerCapture(evt.pointerId);
+    carried = { template: t };
+    ed.startPlacement(t);
+    document.body.classList.add('dragging-template');
+    ghost.textContent = `${t.name} · ${plural(templates.stepsOf(t), 'step')}`;
+    moveGhost(evt);
+    redraw();
+  }
+
+  function moveGhost(evt) {
+    ghost.hidden = Boolean(ed.placement && ed.placement.spot); // over the array, the board shows it
+    ghost.style.left = `${evt.clientX + 14}px`;
+    ghost.style.top = `${evt.clientY + 12}px`;
+  }
+
+  function endTemplateDrag() {
+    carried = null;
+    ghost.hidden = true;
+    document.body.classList.remove('dragging-template');
+  }
+
+  document.addEventListener('pointermove', (evt) => {
+    if (!carried || !evt.isPrimary) return;
+    const { mx, my } = toGrid(evt);
+    ed.hoverPlacement(mx, my);
+    moveGhost(evt);
+    redraw();
+  });
+
+  document.addEventListener('pointerup', (evt) => {
+    if (!carried || !evt.isPrimary) return;
+    const t = carried.template;
+    const spot = ed.placement && ed.placement.spot;
+    const added = ed.dropPlacement();
+    endTemplateDrag();
+    if (added) {
+      setStatus(`Added “${t.name}”: ${plural(added.steps, 'step')}, frames ${added.from} to ${added.to}`);
+    } else if (spot) {
+      setStatus(
+        spot.fits
+          ? `“${t.name}” would run past frame 200 if it started in frame ${spot.frame}`
+          : `“${t.name}” doesn't fit there: part of it would be off the array`,
+        'warn'
+      );
+    } else {
+      setStatus('Drag a template onto the electrode the droplet is on');
+    }
+    redraw();
+  });
+
+  document.addEventListener('pointercancel', (evt) => {
+    if (!carried || !evt.isPrimary) return;
+    ed.cancel(); // e.g. a touch that turned into scrolling the list
+    endTemplateDrag();
+    redraw();
+  });
+
+  // Making a template: a blank board (the sequence is set aside), drawn with the usual tools.
+  const library = $('library');
+  const maker = $('maker');
+  const makerTitle = $('maker-title');
+  const nameInput = $('template-name');
+  const makerInfo = $('maker-info');
+  const saveTemplateButton = $('template-save');
+  let editing = null; // the template of yours being changed, or null for a new one or a copy
+
+  function openMaker(t) {
+    if (ed.makingTemplate) return;
+    ed.startTemplate(t ? templates.toSequence(t) : undefined);
+    editing = t && !t.builtIn ? t : null;
+    nameInput.value = t ? (t.builtIn ? `${t.name} (copy)` : t.name) : `Template ${myTemplates.length + 1}`;
+    makerTitle.textContent = editing ? 'Change the template' : t ? 'Copy of a built-in template' : 'New template';
+    library.hidden = true;
+    maker.hidden = false;
+    board.setCutoutTitle('Making a template');
+    setStatus('Making a template: draw it on the array, then press Save template');
+    redraw();
+  }
+
+  function closeMaker() {
+    ed.endTemplate();
+    editing = null;
+    library.hidden = false;
+    maker.hidden = true;
+    board.setCutoutTitle('Path Generator');
+    redraw();
+  }
+
+  function showMakerInfo() {
+    const made = templates.fromSequence(ed.seq);
+    makerInfo.textContent = made ? `${plural(made.frames.length - 1, 'step')} so far` : 'Nothing drawn yet';
+    saveTemplateButton.disabled = !made;
+  }
+
+  function saveTemplate() {
+    const made = templates.fromSequence(ed.seq);
+    if (!made) {
+      setStatus('The template is empty: draw something first', 'warn');
+      return;
+    }
+    const t = templates.clean({ name: nameInput.value, ...made });
+    if (editing) Object.assign(editing, { name: t.name, frames: t.frames, times: t.times });
+    else myTemplates.push(mine(t));
+    storeTemplates();
+    renderTemplates();
+    closeMaker();
+    setStatus(`Saved the template “${t.name}”: ${plural(templates.stepsOf(t), 'step')}`);
+  }
+
+  $('template-new').addEventListener('click', (evt) => {
+    evt.currentTarget.blur();
+    openMaker(null);
+  });
+  saveTemplateButton.addEventListener('click', saveTemplate);
+  nameInput.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Enter') saveTemplate();
+  });
+  $('template-cancel').addEventListener('click', () => {
+    if (ed.canUndo && !root.confirm('Leave without saving this template?')) return;
+    closeMaker();
+    setStatus('');
+  });
+
+  $('template-export').addEventListener('click', async (evt) => {
+    evt.currentTarget.blur();
+    if (!myTemplates.length) {
+      setStatus('There are no templates of your own to export yet', 'warn');
+      return;
+    }
+    const name = await saveText(templates.exportText(myTemplates), 'opendrop-templates.json', 'OpenDrop templates');
+    if (name) setStatus(`Exported ${plural(myTemplates.length, 'template')} to ${name}`);
+  });
+
+  const templateFile = $('template-file');
+  $('template-import').addEventListener('click', (evt) => {
+    evt.currentTarget.blur();
+    templateFile.click();
+  });
+  templateFile.addEventListener('change', async () => {
+    const file = templateFile.files[0];
+    templateFile.value = '';
+    if (!file) return;
+    let list;
+    try {
+      list = templates.importText(await file.text());
+    } catch (err) {
+      setStatus(`Could not import ${file.name}: ${err.message}`, 'error');
+      return;
+    }
+    const fresh = list.filter((t) => !myTemplates.some((m) => templates.sameTemplate(m, t)));
+    myTemplates.push(...fresh.map(mine));
+    storeTemplates();
+    renderTemplates();
+    const skipped = list.length - fresh.length;
+    setStatus(`Imported ${plural(fresh.length, 'template')} from ${file.name}${skipped ? ` (${skipped} already here)` : ''}`);
+  });
+
   // --- bottom bar ------------------------------------------------------------------------
 
   for (const l of layout.LAYOUTS) layoutSelect.add(new Option(l.label, l.id));
@@ -426,8 +713,8 @@
     for (const k of document.querySelectorAll('kbd[data-pc]')) k.textContent = k.dataset.pc;
   }
 
+  renderTemplates();
   setChartView(prefs.chart);
-  root.OD.app = { editor: ed, board, chart, save }; // for the console
+  root.OD.app = { editor: ed, board, chart, save, templates: () => myTemplates }; // for the console
   paint(); // the first picture straight away, not at the next animation frame
 })(globalThis);
-

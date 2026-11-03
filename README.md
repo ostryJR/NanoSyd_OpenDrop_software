@@ -2,8 +2,8 @@
 
 A browser app for drawing electrode sequences for the OpenDrop V4 digital-microfluidics platform
 and saving them as the `.json` frame files used by GaudiLabs' **OpenDropController4_25**. It is a
-port of that controller's editor, plus drag-to-draw droplet paths, frame times with a timing
-chart, and undo. It does not talk to the device.
+port of that controller's editor, plus drag-to-draw droplet paths, templates for operations such
+as mixing or splitting, frame times with a timing chart, and undo. It does not talk to the device.
 
 ## Run
 
@@ -25,6 +25,8 @@ and downloads the file instead of showing a save dialog.
 | Play / stop | Space or the **play** button; loops up to the last frame with anything on |
 | Change playback speed | Mouse wheel while playing (5–600 frames/min); this sets the default frame time |
 | Set frame times | The timing strip under the board: a default frame time, and the frame on screen's own time (empty = the default) |
+| Drop a template | Drag it from the Templates panel onto the electrode the droplet is on; **R** turns it, **Esc** cancels |
+| Make a template | **+ New** in the Templates panel, or ✎ on a template to change it (or a copy of a built-in one) |
 | Copy the previous frame, clear the frame, clear everything | Buttons on the right |
 | Dispense a droplet from a reservoir | The four buttons beside the reservoirs (writes 6 frames) |
 | Save / load a sequence | **save** / **load**, top right |
@@ -51,6 +53,19 @@ and downloads the file instead of showing a save dialog.
 - The chart under the board shows each step's time (gray = default, blue = its own) or the total
   time so far, against the step number. Hover for the numbers, click or drag to go to a step, or
   switch to **Table** for the list.
+
+## Templates
+
+- Built in: circle mixing on 2 × 2 and 3 × 3 squares, back-and-forth mixing, split, merge, and
+  split & merge. Each shows its number of steps.
+- A template is dropped by its first frame's leftmost electrode (the top one if there are several),
+  starting in the frame on screen. Like a path, it is added on top of what those frames hold, then
+  the view moves to its last frame. Where it doesn't fit (off the array, or past frame 200) it
+  shows red and nothing is added.
+- **+ New** sets the sequence aside and gives you a blank board: draw the operation from frame 1
+  with any tool (own frame times are kept), name it and save it. The sequence comes back as it was.
+- Your templates are kept in the browser. **Export…** writes them to a file and **Import…** reads
+  one back, to move them to another browser or computer or to share them.
 
 ## File format
 
@@ -83,7 +98,7 @@ The same layout as OpenDropController4_25, with each frame's time added:
 
 - Dragging draws droplet paths (freehand or straight) that are added when you let go; the original
   drag is the **paint** tool. A click still toggles an electrode, but when the button is released.
-- Undo and redo, and frame times with a chart.
+- Undo and redo, templates, and frame times with a chart.
 - Works without a device. The live-control parts (connect, life, feedback, temperatures) are left out.
 - Loading replaces the current sequence; the original merged the file into whatever was on screen.
 - Save doesn't add a second `.json` to the name.
@@ -96,12 +111,11 @@ The same layout as OpenDropController4_25, with each frame's time added:
 - `js/layouts-data.js` is generated from the original layout files:
   `node tools/convert-layouts.js <path to OpenDrop/OpenDropController4_25>`.
 - `js/editor.js` holds the editing behaviour and undo, `js/paths.js` the droplet routes and the
-  path being drawn, `js/model.js` the frames and their times, `js/jsonio.js` the file format,
-  `js/view.js` the board, `js/chart.js` the timing chart and `js/app.js` the page wiring. The
-  first five run without a browser.
+  path being drawn, `js/templates.js` the templates, `js/model.js` the frames and their times,
+  `js/jsonio.js` the file format, `js/view.js` the board, `js/chart.js` the timing chart and
+  `js/app.js` the page wiring. The first six run without a browser.
 
 ## License
 
 GPL-3.0, see `LICENSE`. Based on [OpenDrop](https://github.com/GaudiLabs/OpenDrop) by GaudiLabs:
 the frame image, the electrode layouts and the editor behaviour come from OpenDropController4_25.
-

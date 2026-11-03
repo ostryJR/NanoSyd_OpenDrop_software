@@ -1,5 +1,5 @@
 /* SVG drawing of the original controller screen (drawPlane and Electrode.drawElectrode), plus the
- * drag tool switch, undo/redo and the path being drawn. */
+ * drag tool switch, undo/redo and the path or template being placed. */
 (function (root) {
   'use strict';
 
@@ -55,7 +55,8 @@
       label('OpenDrop Generator', -43, -18);
       // In the notch in the frame's top edge (y 80-135 px of the image), centred, level with the
       // title on the left.
-      label('Path Generator', 0, -18.8).setAttribute('class', 'cutout-title');
+      this.cutoutTitle = label('Path Generator', 0, -18.8);
+      this.cutoutTitle.setAttribute('class', 'cutout-title');
       label('save', 32, -18.5);
       label('load', 38, -18.5);
       label('play', 37, -7.5);
@@ -119,7 +120,11 @@
 
       this.rects = [];
       this.centres = new Map();
-      this.draftKey = '';
+      this.overlayKey = '';
+    }
+
+    setCutoutTitle(text) {
+      this.cutoutTitle.textContent = text;
     }
 
     setLayout(lay) {
@@ -132,7 +137,7 @@
         return { node, e: r.e, fill: null, cls: '' };
       });
       this.centres = electrodeGraph(lay.rects).centres;
-      this.draftKey = '';
+      this.overlayKey = '';
       this.pathLayer.style.display = 'none';
       this.reservoirButtons.style.display = lay.hasReservoirs ? '' : 'none';
     }
@@ -155,58 +160,92 @@
       for (const { tool, node } of this.toolBoxes) node.setAttribute('fill', ed.tool === tool ? COLOR.active : COLOR.button);
       this.historyButtons.undo.classList.toggle('unavailable', !ed.canUndo);
       this.historyButtons.redo.classList.toggle('unavailable', !ed.canRedo);
-      this.renderDraft(ed.draft);
+      this.renderOverlay(ed);
     }
 
-    // Path electrodes turn light blue and the end electrode blue, until the path is added.
-    renderDraft(draft) {
-      const show = Boolean(draft && draft.moved);
-      const key = show ? `${draft.cells.join(',')}|${draft.limited}` : '';
-      if (key === this.draftKey) return;
-      this.draftKey = key;
+    // The path or template being placed, until it is added: its electrodes light blue (light red
+    // where a template doesn't fit), the path's end or the template's anchor blue (red), and the
+    // step count beside it.
+    renderOverlay(ed) {
+      const draft = ed.draft && ed.draft.moved ? ed.draft : null;
+      const spot = !draft && ed.placement ? ed.placement.spot : null;
+      const key = draft
+        ? `path|${draft.cells.join(',')}|${draft.limited}`
+        : spot
+          ? `template|${spot.anchor}|${spot.frame}|${spot.valid}|${spot.frames.map((c) => c.join(',')).join(';')}`
+          : '';
+      if (key === this.overlayKey) return;
+      this.overlayKey = key;
 
-      const cells = show ? draft.cells : [];
+      let cells = [];
+      let end = null;
+      const bad = Boolean(spot && !spot.valid);
+      if (draft) {
+        cells = draft.cells;
+        if (draft.steps > 0) end = draft.end;
+      } else if (spot) {
+        cells = spot.frames.flat();
+        end = spot.anchor;
+      }
       const inPath = new Set(cells);
-      const end = show && draft.steps > 0 ? draft.end : null;
       for (const r of this.rects) {
-        const cls = r.e === end ? 'path-end' : inPath.has(r.e) ? 'path' : '';
+        const cls = r.e === end ? (bad ? 'bad-end' : 'path-end') : inPath.has(r.e) ? (bad ? 'bad' : 'path') : '';
         if (cls !== r.cls) {
           r.node.setAttribute('class', cls);
           r.cls = cls;
         }
       }
-      this.pathLayer.style.display = show ? '' : 'none';
-      if (!show) return;
+      this.pathLayer.style.display = draft || spot ? '' : 'none';
+      if (!draft && !spot) return;
 
       const at = (e) => {
         const c = this.centres.get(e);
         return [px(c.x), py(c.y)];
       };
-      this.pathLine.setAttribute('points', cells.map((e) => at(e).join(',')).join(' '));
-      const [sx, sy] = at(draft.start);
-      this.pathStart.setAttribute('cx', sx);
-      this.pathStart.setAttribute('cy', sy);
-
-      this.badge.style.display = draft.steps > 0 ? '' : 'none';
-      if (draft.steps > 0) {
-        this.badgeText.textContent = plural(draft.steps, 'step') + (draft.limited ? ' · frame 200 limit' : '');
-        const width = this.badgeText.getComputedTextLength() + 28;
-        // The badge goes beside the end electrode after a step up or down, and above it after a
-        // step sideways, so it never hides the last step of the path.
-        const last = this.centres.get(draft.end);
-        const before = this.centres.get(draft.cells[draft.cells.length - 2]);
-        let [x, y] = at(draft.end);
-        if (Math.abs(last.y - before.y) > Math.abs(last.x - before.x)) {
-          x += (last.x > 14 ? -1 : 1) * (1.4 * G.UNIT + width / 2); // right of it, or left near the edge
-        } else {
-          y -= 2.1 * G.UNIT;
-        }
-        this.badgeText.setAttribute('x', x);
-        this.badgeText.setAttribute('y', y);
-        this.badgeBox.setAttribute('x', x - width / 2);
-        this.badgeBox.setAttribute('y', y - 20);
-        this.badgeBox.setAttribute('width', width);
+      // A path also gets a line through its electrodes and a dot where it starts.
+      this.pathLine.style.display = draft ? '' : 'none';
+      this.pathStart.style.display = draft ? '' : 'none';
+      if (draft) {
+        this.pathLine.setAttribute('points', cells.map((e) => at(e).join(',')).join(' '));
+        const [sx, sy] = at(draft.start);
+        this.pathStart.setAttribute('cx', sx);
+        this.pathStart.setAttribute('cy', sy);
       }
+
+      let text = null;
+      let beside = false;
+      if (draft && draft.steps > 0) {
+        text = plural(draft.steps, 'step') + (draft.limited ? ' · frame 200 limit' : '');
+        // After a step up or down the badge goes beside the end, after a step sideways above
+        // it, so it never hides the path's last step.
+        const a = this.centres.get(draft.end);
+        const b = this.centres.get(draft.cells[draft.cells.length - 2]);
+        beside = Math.abs(a.y - b.y) > Math.abs(a.x - b.x);
+      } else if (spot) {
+        text = spot.valid ? plural(spot.steps, 'step') : spot.fits ? 'runs past frame 200' : "doesn't fit here";
+      }
+      this.badge.style.display = text ? '' : 'none';
+      this.badge.classList.toggle('bad', bad);
+      if (!text) return;
+      this.badgeText.textContent = text;
+      const width = this.badgeText.getComputedTextLength() + 28;
+      const centre = this.centres.get(end);
+      let [x, y] = at(end);
+      if (spot) {
+        // Above the whole template, so it covers none of its electrodes.
+        const points = [...inPath, end].map(at);
+        x = (Math.min(...points.map((p) => p[0])) + Math.max(...points.map((p) => p[0]))) / 2;
+        y = Math.min(...points.map((p) => p[1])) - 2.1 * G.UNIT;
+      } else if (beside) {
+        x += (centre.x > 14 ? -1 : 1) * (1.4 * G.UNIT + width / 2); // right, or left near the edge
+      } else {
+        y -= 2.1 * G.UNIT;
+      }
+      this.badgeText.setAttribute('x', x);
+      this.badgeText.setAttribute('y', y);
+      this.badgeBox.setAttribute('x', x - width / 2);
+      this.badgeBox.setAttribute('y', y - 20);
+      this.badgeBox.setAttribute('width', width);
     }
   }
 

@@ -32,7 +32,7 @@ body {
   font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
-/* Board with the timing strip under it, bar along the bottom. */
+/* Board and timing strip on the left, templates panel on the right, bar along the bottom. */
 #main {
   display: flex;
   flex: 1 1 0;
@@ -109,6 +109,19 @@ button {
 
 #board .electrodes rect.path-end {
   fill: rgb(0, 90, 255);
+}
+
+/* A template that doesn't fit where it is being dragged. */
+#board .electrodes rect.bad {
+  fill: rgb(255, 165, 165);
+}
+
+#board .electrodes rect.bad-end {
+  fill: rgb(215, 30, 30);
+}
+
+#board .path-badge.bad rect {
+  fill: rgb(170, 20, 20);
 }
 
 #board .path-layer {
@@ -404,4 +417,165 @@ kbd {
 .chart-table tr.current td {
   background: rgba(42, 120, 214, 0.1);
   font-weight: 600;
+}
+
+/* ---- Templates panel --------------------------------------------------------------------- */
+
+#templates {
+  flex: 0 0 264px;
+  padding: 10px 12px;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#templates h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+#templates h3 {
+  margin: 14px 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+#templates .hint,
+#templates .empty,
+#templates .info {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#templates .info {
+  color: #333;
+  font-weight: 600;
+}
+
+#templates button {
+  padding: 3px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+#templates button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+#templates button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.template-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* long names get an ellipsis instead of widening cards */
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.template {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 8px;
+  background: #fff;
+  cursor: grab;
+  touch-action: pan-y; /* a sideways drag on a touch screen picks it up; up/down scrolls */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.template:hover {
+  border-color: var(--accent);
+}
+
+.template .mini {
+  flex: none;
+}
+
+.template .text {
+  flex: 1;
+  min-width: 0;
+}
+
+.template .name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.template .steps {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#templates .template button {
+  padding: 1px 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+#templates .template button:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: #000;
+}
+
+.panel-foot,
+.maker-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+#maker .field {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+#maker .field input {
+  padding: 4px 6px;
+  font: inherit;
+}
+
+#drag-ghost {
+  position: fixed;
+  z-index: 10;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgb(0, 45, 170);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+body.dragging-template,
+body.dragging-template * {
+  cursor: grabbing !important;
 }

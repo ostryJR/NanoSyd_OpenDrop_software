@@ -443,7 +443,78 @@ test('the switch on the left picks the drag tool, with undo and redo buttons bel
   assert.deepEqual(onIn(ed, 1), [9]);
 });
 
-// --- timing ----------------------------------------------------------------------------------------
+// --- templates and timing ----------------------------------------------------------------------
+
+const { BUILT_IN } = require('../js/templates.js');
+const builtIn = (id) => BUILT_IN.find((t) => t.id === id);
+
+test('dragging a template shows where it lands; dropping adds it and moves to its end', () => {
+  const ed = standard();
+  ed.seq.set(60, 3, true); // something already in the frames it covers
+  ed.frame = 2;
+  ed.startPlacement(builtIn('circle-2x2'));
+  ed.hoverPlacement(...at(17)); // column 2, row 1
+  assert.ok(ed.placement.spot.valid);
+  assert.equal(ed.seq.lastFrame(), 3, 'nothing added yet');
+  assert.deepEqual(ed.dropPlacement(), { from: 2, to: 14, steps: 12 });
+  assert.deepEqual(framesFrom(ed, 2, 5), [[17], [25, 60], [26], [18], [17]], 'added on top of what was there');
+  assert.equal(ed.frame, 14);
+  assert.equal(ed.placement, null);
+  ed.undo();
+  assert.equal(ed.seq.lastFrame(), 3);
+  assert.equal(ed.frame, 2);
+});
+
+test('a template can be turned, does nothing where it does not fit, and Esc drops it', () => {
+  const ed = standard();
+  ed.startPlacement(builtIn('split'));
+  ed.hoverPlacement(...at(44)); // column 5, row 4
+  ed.rotatePlacement();
+  assert.deepEqual(ed.placement.spot.frames[2], [43, 45]);
+  ed.hoverPlacement(...at(119)); // bottom-right corner: a split can't go there
+  assert.equal(ed.placement.spot.valid, false);
+  assert.equal(ed.dropPlacement(), null);
+  assert.equal(ed.seq.lastFrame(), 1);
+  assert.ok(!ed.canUndo);
+
+  ed.startPlacement(builtIn('merge'));
+  ed.hoverPlacement(0, 14); // off the array
+  assert.equal(ed.placement.spot, null);
+  assert.equal(ed.cancel(), true);
+  assert.equal(ed.placement, null);
+});
+
+test('templates with frame times bring them along', () => {
+  const ed = standard();
+  ed.startPlacement({ name: 'hold', frames: [[[0, 0]], [[1, 0]]], times: [0, 4000] });
+  ed.hoverPlacement(...at(9));
+  ed.dropPlacement();
+  assert.equal(ed.seq.timeOf(1), 500);
+  assert.equal(ed.seq.timeOf(2), 4000);
+});
+
+test('making a template sets the sequence aside, with its frame and undo history', () => {
+  const ed = standard();
+  click(ed, 9);
+  ed.frame = 4;
+  ed.startTemplate();
+  assert.ok(ed.makingTemplate);
+  assert.equal(ed.frame, 1);
+  assert.equal(ed.seq.lastFrame(), 1);
+  assert.ok(!ed.canUndo, 'a fresh history for the template');
+  drag(ed, 40, 56);
+  ed.pointerUp();
+  ed.setDefaultTime(300);
+  assert.deepEqual(onIn(ed, 3), [56]);
+  ed.endTemplate();
+  assert.ok(!ed.makingTemplate);
+  assert.equal(ed.frame, 4);
+  assert.deepEqual(onIn(ed, 1), [9]);
+  assert.equal(ed.seq.lastFrame(), 1);
+  assert.equal(ed.seq.frameTime, 300, 'the default frame time is a setting and stays');
+  assert.ok(ed.undo());
+  assert.deepEqual(onIn(ed, 1), [], 'the sequence keeps its own undo history');
+});
 
 test('playback holds each frame for its own time', () => {
   const ed = standard();

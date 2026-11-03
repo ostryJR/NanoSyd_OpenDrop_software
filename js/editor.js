@@ -3,16 +3,17 @@
  * passes in grid coordinates. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./model.js'), require('./layout.js'), require('./paths.js'));
+    module.exports = factory(require('./model.js'), require('./layout.js'), require('./paths.js'), require('./templates.js'));
   } else {
-    (root.OD = root.OD || {}).editor = factory(root.OD.model, root.OD.layout, root.OD.paths);
+    (root.OD = root.OD || {}).editor = factory(root.OD.model, root.OD.layout, root.OD.paths, root.OD.templates);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, layout, paths) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, layout, paths, templates) {
   'use strict';
 
   const { MAX_FRAMES, Sequence, sameSnapshot, clampTime } = model;
   const { hitTest, inArray, inRect } = layout;
   const { PathDraft, electrodeAt } = paths;
+  const { place } = templates;
 
   // Click areas in grid units, copied from the original's inRect() checks. The device-only
   // controls (life, feedback, reconnect, temperatures) are left out.
@@ -69,6 +70,8 @@
       this.lastPoint = null;
       this.draft = null; // the path being drawn, shown but not yet in the sequence
       this.dragStart = null; // undo checkpoint from the start of a paint drag
+      this.placement = null; // a template being dragged over the array
+      this.saved = null; // the main sequence, set aside while a template is being made
       this.undoStack = [];
       this.redoStack = [];
     }
@@ -173,8 +176,12 @@
       return { from: draft.frame, to: draft.endFrame, steps: draft.steps };
     }
 
-    // Esc: drops the path being drawn, or takes back the paint drag in progress.
+    // Esc: drops the path or template being drawn, or takes back the paint drag in progress.
     cancel() {
+      if (this.placement) {
+        this.placement = null;
+        return true;
+      }
       if (!this.dragging) return false;
       this.dragging = false;
       this.lastPoint = null;
@@ -185,6 +192,77 @@
         this.dragStart = null;
       }
       return true;
+    }
+
+    // --- templates -------------------------------------------------------------------------------
+    // A template being dragged lands with its anchor on the electrode under the pointer, starting
+    // in the frame on screen. Nothing changes until it is dropped.
+
+    startPlacement(template) {
+      this.cancel();
+      this.playing = false;
+      this.placement = { template, turns: 0, spot: null };
+    }
+
+    hoverPlacement(mx, my) {
+      const p = this.placement;
+      if (!p) return;
+      const anchor = electrodeAt(this.layout.rects, mx, my);
+      p.spot = anchor === null ? null : place(p.template, p.turns, anchor, this.frame, this.layout.rects);
+    }
+
+    // A quarter turn clockwise.
+    rotatePlacement() {
+      const p = this.placement;
+      if (!p) return;
+      p.turns = (p.turns + 1) % 4;
+      if (p.spot) p.spot = place(p.template, p.turns, p.spot.anchor, p.spot.frame, this.layout.rects);
+    }
+
+    // Adds the template where it is (on top of what the frames hold, its frame times replacing
+    // theirs) and moves to its last frame. Returns { from, to, steps }, or null if it doesn't fit.
+    dropPlacement() {
+      const spot = this.placement && this.placement.spot;
+      this.placement = null;
+      if (!spot || !spot.valid) return null;
+      this.change(() => {
+        spot.frames.forEach((cells, i) => {
+          for (const e of cells) this.seq.set(e, spot.frame + i, true);
+          if (spot.times && spot.times[i]) this.seq.setTime(spot.frame + i, spot.times[i]);
+        });
+        this.frame = spot.endFrame;
+      });
+      return { from: spot.frame, to: spot.endFrame, steps: spot.steps };
+    }
+
+    // --- making a template -----------------------------------------------------------------------
+    // The main sequence is set aside with its undo history, and the template is drawn in a blank
+    // one with all the usual tools.
+
+    get makingTemplate() {
+      return this.saved !== null;
+    }
+
+    startTemplate(seq = new Sequence()) {
+      this.cancel();
+      if (!this.saved) {
+        this.saved = { seq: this.seq, frame: this.frame, undoStack: this.undoStack, redoStack: this.redoStack };
+      }
+      seq.frameTime = this.seq.frameTime;
+      this.seq = seq;
+      this.frame = 1;
+      this.undoStack = [];
+      this.redoStack = [];
+      this.playing = false;
+    }
+
+    endTemplate() {
+      if (!this.saved) return;
+      this.cancel();
+      this.saved.seq.frameTime = this.seq.frameTime; // the default frame time is a setting
+      ({ seq: this.seq, frame: this.frame, undoStack: this.undoStack, redoStack: this.redoStack } = this.saved);
+      this.saved = null;
+      this.playing = false;
     }
 
     // --- undo ----------------------------------------------------------------------------------
