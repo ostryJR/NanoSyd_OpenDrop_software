@@ -442,3 +442,28 @@ test('the switch on the left picks the drag tool, with undo and redo buttons bel
   assert.equal(ed.pointerDown(-42, 8), 'redo');
   assert.deepEqual(onIn(ed, 1), [9]);
 });
+
+// --- timing ----------------------------------------------------------------------------------------
+
+test('playback holds each frame for its own time', () => {
+  const ed = standard();
+  ed.seq.set(9, 3, true);
+  ed.seq.setTime(2, 2000);
+  ed.togglePlay(0);
+  assert.equal(ed.tick(501), true);
+  assert.equal(ed.frame, 2);
+  assert.equal(ed.tick(2000), false, 'frame 2 lasts 2 s');
+  assert.equal(ed.tick(2502), true);
+  assert.equal(ed.frame, 3);
+});
+
+test("a frame's own time is undoable; the default frame time is a setting", () => {
+  const ed = standard();
+  ed.setFrameTime(3, 1500);
+  assert.equal(ed.seq.timeOf(3), 1500);
+  ed.setDefaultTime(250);
+  assert.ok(ed.undo());
+  assert.equal(ed.seq.timeOf(3), 250, 'back to the default, which stays at 250');
+  assert.ok(!ed.canUndo);
+  assert.equal(ed.speed, 240, 'shown as 240 frames/min');
+});

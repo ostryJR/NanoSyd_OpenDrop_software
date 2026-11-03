@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { encode, decode } = require('../js/jsonio.js');
-const { Sequence, MAX_FRAMES, CELLS } = require('../js/model.js');
+const { Sequence, MAX_FRAMES, CELLS, DEFAULT_FRAME_TIME, MAX_TIME, MIN_TIME } = require('../js/model.js');
 
 const Z = '0'.repeat(18);
 
@@ -60,6 +60,9 @@ function originalLoad(values) {
   return seq;
 }
 
+// The original's output has no "time"; compare everything else.
+const withoutTime = (values) => values.map(({ time, ...rest }) => rest);
+
 const assertSameFrames = (a, b) => {
   for (let f = 1; f <= MAX_FRAMES; f++) assert.deepEqual(a.frames[f], b.frames[f], `frame ${f}`);
 };
@@ -78,7 +81,7 @@ test('each electrode is the character at its column in the row of its row number
   assert.equal(frame.frame, 1);
 });
 
-test('a single frame is written exactly like Processing writes it', () => {
+test('a single frame is laid out like Processing writes it, with the frame time last', () => {
   const seq = new Sequence();
   seq.set(9, 1, true);
   assert.equal(
@@ -92,15 +95,18 @@ test('a single frame is written exactly like Processing writes it', () => {
   "y5": "${Z}",
   "y6": "${Z}",
   "y7": "${Z}",
-  "frame": 1
+  "frame": 1,
+  "time": ${DEFAULT_FRAME_TIME}
 }]`
   );
 });
 
-test('several frames are written exactly like Processing writes them', () => {
+test('several frames are laid out like Processing writes them, each with its time', () => {
   const seq = new Sequence();
   seq.set(8, 1, true);
   seq.set(143, 2, true);
+  seq.frameTime = 300;
+  seq.setTime(2, 2000);
   assert.equal(
     encode(seq),
     `[
@@ -113,7 +119,8 @@ test('several frames are written exactly like Processing writes them', () => {
     "y5": "${Z}",
     "y6": "${Z}",
     "y7": "${Z}",
-    "frame": 1
+    "frame": 1,
+    "time": 300
   },
   {
     "y0": "${Z}",
@@ -124,7 +131,8 @@ test('several frames are written exactly like Processing writes them', () => {
     "y5": "${Z}",
     "y6": "${Z}",
     "y7": "000000000000000001",
-    "frame": 2
+    "frame": 2,
+    "time": 2000
   }
 ]`
   );
@@ -141,16 +149,44 @@ test('key order is the iteration order of the Java HashMap Processing uses', () 
     const h = javaHash(key);
     buckets[(h ^ (h >>> 16)) & 15].push(key);
   }
-  assert.deepEqual(Object.keys(JSON.parse(encode(new Sequence()))[0]), buckets.flat());
+  assert.deepEqual(Object.keys(JSON.parse(encode(new Sequence()))[0]), [...buckets.flat(), 'time']);
 });
 
-test('encode matches the original fileSaved() on random sequences', () => {
+test('encode matches the original fileSaved() on random sequences, apart from the times', () => {
   const rand = random(42);
   for (const last of [1, 2, 3, 17, 64, 199, MAX_FRAMES]) {
     const seq = randomSequence(rand, last);
-    assert.deepEqual(JSON.parse(encode(seq)), originalSave(seq), `last frame ${last}`);
+    assert.deepEqual(withoutTime(JSON.parse(encode(seq))), originalSave(seq), `last frame ${last}`);
   }
-  assert.deepEqual(JSON.parse(encode(new Sequence())), originalSave(new Sequence()), 'empty sequence');
+  assert.deepEqual(withoutTime(JSON.parse(encode(new Sequence()))), originalSave(new Sequence()), 'empty sequence');
+});
+
+test('frame times round-trip: the default and each frame of its own', () => {
+  const seq = new Sequence();
+  for (let f = 1; f <= 6; f++) seq.set(8 + f, f, true);
+  seq.frameTime = 250;
+  seq.setTime(2, 2000);
+  seq.setTime(5, 40);
+  const values = JSON.parse(encode(seq));
+  assert.deepEqual(values.map((v) => v.time), [250, 2000, 250, 250, 40, 250]);
+  const { seq: back, timed } = decode(encode(seq));
+  assert.ok(timed);
+  assert.equal(back.frameTime, 250);
+  assert.deepEqual([...back.times.slice(1, 7)], [0, 2000, 0, 0, 40, 0]);
+  assert.equal(back.elapsed(6), 250 * 4 + 2000 + 40);
+});
+
+test('loading times: the most common is the default, odd values are clamped or ignored', () => {
+  const frame = (f, time) => `{"y0": "1", "frame": ${f}${time === undefined ? '' : `, "time": ${JSON.stringify(time)}`}}`;
+  const text = `[${[frame(1, 1000), frame(2, 700), frame(3, 700), frame(4, 5), frame(5, 1e12), frame(6, -3), frame(7, '9'), frame(8)].join(',')}]`;
+  const { seq, timed } = decode(text);
+  assert.ok(timed);
+  assert.equal(seq.frameTime, 700);
+  assert.deepEqual([...seq.times.slice(1, 9)], [1000, 0, 0, MIN_TIME, MAX_TIME, 0, 0, 0]);
+
+  const untimed = decode('[{"y0": "1", "frame": 1}]');
+  assert.equal(untimed.timed, false);
+  assert.equal(untimed.seq.frameTime, DEFAULT_FRAME_TIME);
 });
 
 test('decode reads saved files like the original fileLoad(), and round-trips', () => {

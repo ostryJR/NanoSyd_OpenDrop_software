@@ -1,20 +1,22 @@
-/* Connects the page (mouse, wheel, keys, file dialogs, status, bottom bar) to the editor and the
- * view. */
+/* Connects the page to the editor and the views: the board (mouse, touch, wheel, keys), file
+ * dialogs, the timing strip and its chart, and the bottom bar. */
 (function (root) {
   'use strict';
 
   const { layout, jsonio } = root.OD;
   const { Editor } = root.OD.editor;
   const { BoardView } = root.OD.view;
+  const { TimingChart, formatTime } = root.OD.chart;
   const G = layout.GEOMETRY;
+  const $ = (id) => document.getElementById(id);
 
-  const svg = document.getElementById('board');
-  const layoutSelect = document.getElementById('layout');
-  const numbersBox = document.getElementById('numbers');
-  const statusText = document.getElementById('status');
-  const fileInput = document.getElementById('file-input');
+  const svg = $('board');
+  const layoutSelect = $('layout');
+  const numbersBox = $('numbers');
+  const statusText = $('status');
+  const fileInput = $('file-input');
 
-  // Layout, number overlay and drag tool are remembered between visits.
+  // Layout, number overlay, drag tool and chart view are remembered between visits.
   const PREFS_KEY = 'opendrop-generator.prefs';
   const prefs = (() => {
     try {
@@ -25,7 +27,10 @@
   })();
   const savePrefs = () => {
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ layout: current.id, numbers: showNumbers, tool: ed.tool }));
+      localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ layout: current.id, numbers: showNumbers, tool: ed.tool, chart: prefs.chart })
+      );
     } catch {
       // storage unavailable: preferences just aren't kept
     }
@@ -72,10 +77,15 @@
     requestAnimationFrame((now) => {
       frameRequested = false;
       ed.tick(now);
-      board.render(ed, showNumbers);
-      if (ed.draft && ed.draft.moved) showDraft(ed.draft);
+      paint();
       if (ed.playing) redraw();
     });
+  }
+
+  function paint() {
+    board.render(ed, showNumbers);
+    if (ed.draft && ed.draft.moved) showDraft(ed.draft);
+    showTiming();
   }
 
   function setTool(tool) {
@@ -279,13 +289,112 @@
       setStatus(`Could not load ${file.name}: ${err.message}`, 'error');
       return;
     }
-    ed.replaceSequence(result.seq);
+    ed.replaceSequence(result.seq, { timed: result.timed });
     fileName = file.name;
     const loaded = `Loaded ${file.name} (${plural(result.frames, 'frame')})`;
     if (result.warnings.length) setStatus(`${loaded}. ${result.warnings.join('; ')}.`, 'warn');
     else setStatus(loaded);
     redraw();
   });
+
+  // --- timing strip ----------------------------------------------------------------------
+
+  const defaultInput = $('time-default');
+  const frameInput = $('time-frame');
+  const frameNo = $('time-frame-no');
+  const frameReset = $('time-frame-reset');
+  const totalText = $('time-total');
+  const legend = $('chart-legend');
+  const seconds = (ms) => String(+(ms / 1000).toFixed(3));
+
+  const chart = new TimingChart($('chart'), {
+    onPick(step) {
+      if (ed.dragging) return;
+      ed.frame = step;
+      redraw();
+    },
+  });
+
+  function showTiming() {
+    const { seq } = ed;
+    if (document.activeElement !== defaultInput) defaultInput.value = seconds(seq.frameTime);
+    frameNo.textContent = ed.frame;
+    const ownTime = seq.times[ed.frame];
+    if (document.activeElement !== frameInput) frameInput.value = ownTime ? seconds(ownTime) : '';
+    frameInput.placeholder = seconds(seq.frameTime);
+    frameReset.disabled = !ownTime;
+    const last = seq.lastFrame();
+    totalText.textContent = `Total ${formatTime(seq.elapsed(last))} over ${plural(last, 'frame')}`;
+    const times = [];
+    const own = [];
+    for (let f = 1; f <= Math.max(last, ed.frame); f++) {
+      times.push(seq.timeOf(f));
+      own.push(seq.times[f] > 0);
+    }
+    chart.update({ times, own, current: ed.frame });
+  }
+
+  const readSeconds = (input) => {
+    const s = parseFloat(input.value);
+    return Number.isFinite(s) && s > 0 ? s * 1000 : null;
+  };
+
+  defaultInput.addEventListener('change', () => {
+    const ms = readSeconds(defaultInput);
+    if (ms) {
+      ed.setDefaultTime(ms);
+      setStatus(`Default frame time: ${formatTime(ed.seq.frameTime)}`);
+    } else {
+      setStatus('Frame times are in seconds, more than 0', 'warn');
+    }
+    defaultInput.value = seconds(ed.seq.frameTime); // shows a clamped value, or undoes a bad one
+    redraw();
+  });
+
+  // A frame's own time; empty means the default. Undoable, like drawing.
+  frameInput.addEventListener('change', () => {
+    const f = ed.frame;
+    const ms = frameInput.value.trim() === '' ? 0 : readSeconds(frameInput);
+    if (ms === null) {
+      setStatus('Frame times are in seconds, more than 0', 'warn');
+    } else {
+      ed.setFrameTime(f, ms);
+      setStatus(ms ? `Frame ${f} lasts ${formatTime(ed.seq.timeOf(f))}` : `Frame ${f} uses the default time`);
+    }
+    frameInput.value = ed.seq.times[f] ? seconds(ed.seq.times[f]) : '';
+    redraw();
+  });
+
+  frameReset.addEventListener('click', () => {
+    ed.setFrameTime(ed.frame, 0);
+    setStatus(`Frame ${ed.frame} uses the default time`);
+    frameReset.blur();
+    redraw();
+  });
+
+  // Enter keeps the value and gives the keys back to the board; Esc puts the old value back.
+  for (const input of [defaultInput, frameInput]) {
+    input.addEventListener('focus', () => (input.dataset.before = input.value));
+    input.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape') input.value = input.dataset.before || '';
+      if (evt.key === 'Enter' || evt.key === 'Escape') input.blur();
+    });
+  }
+
+  const viewButtons = [...document.querySelectorAll('#timing .segmented button')];
+  function setChartView(view) {
+    prefs.chart = ['step', 'total', 'table'].includes(view) ? view : 'step';
+    for (const b of viewButtons) b.setAttribute('aria-pressed', String(b.dataset.view === prefs.chart));
+    legend.style.visibility = prefs.chart === 'step' ? '' : 'hidden';
+    chart.setMode(prefs.chart);
+    savePrefs();
+  }
+  for (const b of viewButtons) {
+    b.addEventListener('click', () => {
+      setChartView(b.dataset.view);
+      b.blur();
+    });
+  }
 
   // --- bottom bar ------------------------------------------------------------------------
 
@@ -317,7 +426,8 @@
     for (const k of document.querySelectorAll('kbd[data-pc]')) k.textContent = k.dataset.pc;
   }
 
-  root.OD.app = { editor: ed, board, save }; // handy from the browser console
-  board.render(ed, showNumbers); // the first picture straight away, not at the next animation frame
+  setChartView(prefs.chart);
+  root.OD.app = { editor: ed, board, chart, save }; // for the console
+  paint(); // the first picture straight away, not at the next animation frame
 })(globalThis);
 

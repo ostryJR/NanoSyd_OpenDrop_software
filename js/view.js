@@ -38,6 +38,8 @@
   }
 
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  // Frames per minute, as a whole number when it is one.
+  const perMinute = (speed) => (Math.abs(speed - Math.round(speed)) < 0.05 ? String(Math.round(speed)) : speed.toFixed(1));
 
   class BoardView {
     constructor(svg, imageHref) {
@@ -145,7 +147,7 @@
         }
       }
       this.frameLabel.textContent = frame;
-      this.speedLabel.textContent = ed.speed;
+      this.speedLabel.textContent = perMinute(ed.speed);
       this.playBox.setAttribute('fill', ed.playing ? COLOR.active : COLOR.button);
       this.dots.forEach((dot, i) => dot.setAttribute('fill', i + 1 === frame ? COLOR.button : COLOR.idle));
       this.nextArrow.setAttribute('fill', frame >= 18 ? COLOR.button : COLOR.idle);

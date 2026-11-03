@@ -2,8 +2,8 @@
 
 A browser app for drawing electrode sequences for the OpenDrop V4 digital-microfluidics platform
 and saving them as the `.json` frame files used by GaudiLabs' **OpenDropController4_25**. It is a
-port of that controller's editor, plus drag-to-draw droplet paths and undo. It does not talk to
-the device.
+port of that controller's editor, plus drag-to-draw droplet paths, frame times with a timing
+chart, and undo. It does not talk to the device.
 
 ## Run
 
@@ -23,7 +23,8 @@ and downloads the file instead of showing a save dialog.
 | Go to the next frame and switch an electrode on | Shift+click |
 | Change frame | ← / →, the mouse wheel (up = next), or the arrows under the array |
 | Play / stop | Space or the **play** button; loops up to the last frame with anything on |
-| Change playback speed | Mouse wheel while playing (5–600 frames/min) |
+| Change playback speed | Mouse wheel while playing (5–600 frames/min); this sets the default frame time |
+| Set frame times | The timing strip under the board: a default frame time, and the frame on screen's own time (empty = the default) |
 | Copy the previous frame, clear the frame, clear everything | Buttons on the right |
 | Dispense a droplet from a reservoir | The four buttons beside the reservoirs (writes 6 frames) |
 | Save / load a sequence | **save** / **load**, top right |
@@ -42,9 +43,18 @@ and downloads the file instead of showing a save dialog.
   The reservoirs join the grid where their dispense sequences do.
 - Paths stop at frame 200.
 
+## Frame times and the chart
+
+- Each frame lasts the **default frame time** (0.5 s, the original's 120 frames/min) unless it has
+  **its own time**. Own times are undoable like drawing; the default is a setting. Playback holds
+  every frame for its time.
+- The chart under the board shows each step's time (gray = default, blue = its own) or the total
+  time so far, against the step number. Hover for the numbers, click or drag to go to a step, or
+  switch to **Table** for the list.
+
 ## File format
 
-The same as OpenDropController4_25, byte for byte, so files open in either app:
+The same layout as OpenDropController4_25, with each frame's time added:
 
 ```json
 [
@@ -53,7 +63,8 @@ The same as OpenDropController4_25, byte for byte, so files open in either app:
     "y1": "000000000000000000",
     …
     "y7": "000000000000000000",
-    "frame": 1
+    "frame": 1,
+    "time": 500
   },
   …
 ]
@@ -63,12 +74,16 @@ The same as OpenDropController4_25, byte for byte, so files open in either app:
 - `"yR"` is row R (0 = top). Character k of it is column k, `1` = on. Electrode ID = column × 8 + row.
 - Columns 0 and 15 are the left and right reservoirs, 1–14 the 14 × 8 grid, and 16–17 control
   lines (16 drives the magnets in the magnet layout).
+- `"time"` is how long the frame lasts, in milliseconds. The original controller and the device
+  firmware don't read it yet: the original ignores it, so files still open there. When loading, the
+  most common time becomes the default frame time and the others the frames' own times; files
+  without times keep the current default.
 
 ## Differences from the original
 
 - Dragging draws droplet paths (freehand or straight) that are added when you let go; the original
   drag is the **paint** tool. A click still toggles an electrode, but when the button is released.
-- Undo and redo.
+- Undo and redo, and frame times with a chart.
 - Works without a device. The live-control parts (connect, life, feedback, temperatures) are left out.
 - Loading replaces the current sequence; the original merged the file into whatever was on screen.
 - Save doesn't add a second `.json` to the name.
@@ -81,8 +96,9 @@ The same as OpenDropController4_25, byte for byte, so files open in either app:
 - `js/layouts-data.js` is generated from the original layout files:
   `node tools/convert-layouts.js <path to OpenDrop/OpenDropController4_25>`.
 - `js/editor.js` holds the editing behaviour and undo, `js/paths.js` the droplet routes and the
-  path being drawn, `js/jsonio.js` the file format, `js/view.js` the drawing and `js/app.js` the
-  page wiring. All but the last two run without a browser.
+  path being drawn, `js/model.js` the frames and their times, `js/jsonio.js` the file format,
+  `js/view.js` the board, `js/chart.js` the timing chart and `js/app.js` the page wiring. The
+  first five run without a browser.
 
 ## License
 

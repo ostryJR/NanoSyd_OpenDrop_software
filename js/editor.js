@@ -10,7 +10,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (model, layout, paths) {
   'use strict';
 
-  const { MAX_FRAMES, Sequence } = model;
+  const { MAX_FRAMES, Sequence, sameSnapshot, clampTime } = model;
   const { hitTest, inArray, inRect } = layout;
   const { PathDraft, electrodeAt } = paths;
 
@@ -42,11 +42,6 @@
   const TOOLS = ['freehand', 'straight', 'paint'];
   const UNDO_LIMIT = 100;
 
-  const sameBytes = (a, b) => {
-    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-    return true;
-  };
-
   // The reservoir buttons' droplet-dispensing sequences: the electrodes switched on in each of
   // six consecutive frames, starting at the current one. Nothing is switched off.
   const RESERVOIR_STEPS = {
@@ -65,7 +60,6 @@
       this.layout = lay;
       this.seq = new Sequence();
       this.frame = 1;
-      this.speed = 120; // the original's "interval", in frames per minute
       this.playing = false;
       this.playStart = 0;
       this.playLast = 1; // last frame of the play loop, fixed when play starts
@@ -202,7 +196,7 @@
 
     // Keeps `before` for undo if the sequence has changed since it was taken.
     record(before) {
-      if (!before || sameBytes(before.snap, this.seq.snapshot())) return false;
+      if (!before || sameSnapshot(before.snap, this.seq.snapshot())) return false;
       this.undoStack.push(before);
       if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
       this.redoStack.length = 0;
@@ -242,11 +236,18 @@
       return true;
     }
 
+    // The original's "interval": the default frame time as frames per minute.
+    get speed() {
+      return 60000 / this.seq.frameTime;
+    }
+
     // One wheel step: +1 = towards you (down), -1 = away (up). While playing it changes the
-    // speed; otherwise up goes to the next frame and down to the previous one.
+    // speed by 5 frames/min, as in the original; otherwise up goes to the next frame and down
+    // to the previous one.
     wheel(count) {
       if (this.playing) {
-        this.speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, this.speed - count * 5));
+        const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(this.speed) - count * 5));
+        this.seq.frameTime = Math.round(60000 / speed);
       } else if (count < 0) {
         this.nextFrame();
       } else if (count > 0) {
@@ -272,11 +273,22 @@
       this.playLast = this.seq.lastFrame();
     }
 
+    // How long the frame on screen lasts.
     get frameMs() {
-      return Math.floor(60000 / this.speed);
+      return this.seq.timeOf(this.frame);
     }
 
-    // Advances playback; returns true when the frame changed. Loops back to frame 1.
+    // The default frame time is a setting: it isn't undone. A frame's own time is undoable.
+    setDefaultTime(ms) {
+      this.seq.frameTime = clampTime(ms);
+    }
+
+    setFrameTime(f, ms) {
+      return this.change(() => this.seq.setTime(f, ms));
+    }
+
+    // Advances playback, each frame staying for its own time; returns true when the frame
+    // changed. Loops back to frame 1.
     tick(now) {
       if (!this.playing || now - this.playStart <= this.frameMs) return false;
       this.playStart = now;
@@ -330,13 +342,15 @@
       });
     }
 
-    // Loading a file: undoable like any other change.
-    replaceSequence(seq) {
+    // Loading a file: undoable like any other change. A file with frame times also brings its
+    // default frame time; one without keeps the current default.
+    replaceSequence(seq, { timed = false } = {}) {
       this.cancel();
       this.change(() => {
         this.seq.restore(seq.snapshot());
         this.frame = 1;
       });
+      if (timed) this.seq.frameTime = seq.frameTime;
       if (this.playing) this.playLast = this.seq.lastFrame();
     }
   }

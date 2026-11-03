@@ -10,11 +10,37 @@
   const CELLS = COLS * ROWS; // electrode ID e = column * 8 + row
   const MAX_FRAMES = 200;
 
+  // How long each frame lasts, in milliseconds. The default is the original's 120 frames/min.
+  const DEFAULT_FRAME_TIME = 500;
+  const MIN_TIME = 10;
+  const MAX_TIME = 3600000; // an hour
+  const clampTime = (ms) => Math.min(MAX_TIME, Math.max(MIN_TIME, Math.round(ms)));
+
   class Sequence {
     constructor() {
       // Frames are numbered 1..200. Index 0 is never written: it is the empty
       // "previous frame" of frame 1, as in the original.
       this.frames = Array.from({ length: MAX_FRAMES + 1 }, () => new Uint8Array(CELLS));
+      // A frame's own time in ms, or 0 for the default. The default is a setting, not part of
+      // what undo restores.
+      this.times = new Uint32Array(MAX_FRAMES + 1);
+      this.frameTime = DEFAULT_FRAME_TIME;
+    }
+
+    timeOf(f) {
+      return this.times[f] || this.frameTime;
+    }
+
+    // ms = 0 (or null) goes back to the default.
+    setTime(f, ms) {
+      this.times[f] = ms ? clampTime(ms) : 0;
+    }
+
+    // Time from the start of frame 1 to the end of frame f, in ms.
+    elapsed(f) {
+      let total = 0;
+      for (let i = 1; i <= f; i++) total += this.timeOf(i);
+      return total;
     }
 
     get(e, f) {
@@ -31,6 +57,7 @@
 
     clearAll() {
       for (const frame of this.frames) frame.fill(0);
+      this.times.fill(0);
     }
 
     copyFrame(from, to) {
@@ -47,17 +74,26 @@
       return 1;
     }
 
-    // The whole table as one byte array (29 KB), for undo.
+    // Electrodes (29 KB) and frame times, for undo.
     snapshot() {
-      const out = new Uint8Array(this.frames.length * CELLS);
-      this.frames.forEach((frame, f) => out.set(frame, f * CELLS));
-      return out;
+      const cells = new Uint8Array(this.frames.length * CELLS);
+      this.frames.forEach((frame, f) => cells.set(frame, f * CELLS));
+      return { cells, times: this.times.slice() };
     }
 
     restore(snapshot) {
-      this.frames.forEach((frame, f) => frame.set(snapshot.subarray(f * CELLS, (f + 1) * CELLS)));
+      this.frames.forEach((frame, f) => frame.set(snapshot.cells.subarray(f * CELLS, (f + 1) * CELLS)));
+      this.times.set(snapshot.times);
     }
   }
 
-  return { ROWS, COLS, CELLS, MAX_FRAMES, Sequence };
+  const sameSnapshot = (a, b) => {
+    for (let i = 0; i < a.cells.length; i++) if (a.cells[i] !== b.cells[i]) return false;
+    for (let i = 0; i < a.times.length; i++) if (a.times[i] !== b.times[i]) return false;
+    return true;
+  };
+
+  return {
+    ROWS, COLS, CELLS, MAX_FRAMES, DEFAULT_FRAME_TIME, MIN_TIME, MAX_TIME, clampTime, sameSnapshot, Sequence,
+  };
 });

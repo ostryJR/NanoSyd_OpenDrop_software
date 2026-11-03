@@ -7,9 +7,33 @@
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-  <div id="stage">
-    <svg id="board" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"
-         role="img" aria-label="OpenDrop electrode array"></svg>
+  <div id="main">
+    <div id="work">
+      <div id="stage">
+        <svg id="board" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"
+             role="img" aria-label="OpenDrop electrode array"></svg>
+      </div>
+
+      <section id="timing" aria-label="Frame timing">
+        <div class="timing-bar">
+          <label>Default frame time
+            <input type="number" id="time-default" min="0.01" max="3600" step="any" inputmode="decimal"> s</label>
+          <label>Frame <span id="time-frame-no">1</span>
+            <input type="number" id="time-frame" min="0.01" max="3600" step="any" inputmode="decimal"> s</label>
+          <button type="button" id="time-frame-reset">Use default</button>
+          <span id="time-total"></span>
+          <span class="spacer"></span>
+          <span id="chart-legend"><i class="swatch plain"></i>default time<i class="swatch own"></i>own time</span>
+          <span class="segmented" role="group" aria-label="Chart">
+            <button type="button" data-view="step" aria-pressed="true">Step time</button>
+            <button type="button" data-view="total" aria-pressed="false">Total time</button>
+            <button type="button" data-view="table" aria-pressed="false">Table</button>
+          </span>
+        </div>
+        <div id="chart"></div>
+      </section>
+    </div>
+
   </div>
 
   <footer id="bar">
@@ -34,6 +58,7 @@
   <script src="js/editor.js"></script>
   <script src="js/jsonio.js"></script>
   <script src="js/view.js"></script>
+  <script src="js/chart.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
