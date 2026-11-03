@@ -2,7 +2,8 @@
 
 A browser app for drawing electrode sequences for the OpenDrop V4 digital-microfluidics platform
 and saving them as the `.json` frame files used by GaudiLabs' **OpenDropController4_25**. It is a
-port of that controller's editor; it does not talk to the device.
+port of that controller's editor, plus drag-to-draw droplet paths and undo. It does not talk to
+the device.
 
 ## Run
 
@@ -14,8 +15,11 @@ and downloads the file instead of showing a save dialog.
 
 | To | Do |
 |---|---|
+| Draw a droplet path | Drag from the droplet's electrode. Every electrode you pass is the next frame. The path shows in blue with its step count until you let go, and is added then. **Esc** cancels; going back along the path takes steps back |
+| Draw a path in straight lines | Choose **straight** on the left (or press **S**). The path runs along the row or column you start dragging in, then turns once to the blue end electrode |
 | Switch an electrode on or off | Click it |
-| Switch several on (or off) | Drag across them; the first electrode decides on or off |
+| Switch several on (or off) in one frame | Choose **paint** (**P**) and drag across them, as in the original; the first electrode decides on or off. **freehand** (**F**) goes back to drawing paths |
+| Undo / redo | ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y on Windows and Linux), or **undo** / **redo** on the left |
 | Go to the next frame and switch an electrode on | Shift+click |
 | Change frame | ← / →, the mouse wheel (up = next), or the arrows under the array |
 | Play / stop | Space or the **play** button; loops up to the last frame with anything on |
@@ -25,6 +29,18 @@ and downloads the file instead of showing a save dialog.
 | Save / load a sequence | **save** / **load**, top right |
 | Show electrode numbers | `N` or the checkbox in the bottom bar |
 | Use another cartridge layout | The Layout menu (all layouts from the original repository) |
+
+## Paths
+
+- A path starts in the frame on screen, on the electrode you press, and moves one electrode per
+  frame: a path of n steps fills that frame and the n after it.
+- Paths are added on top of what those frames already hold, so several droplets can move at once:
+  go back to the start frame and draw the next droplet's path.
+- When a path is added, the view moves to its last frame, so the next drag carries on from there.
+- Droplets only step between electrodes that share an edge. Diagonal or fast drags are filled in
+  with the shortest route, and electrodes a droplet can't reach (such as the magnets) are skipped.
+  The reservoirs join the grid where their dispense sequences do.
+- Paths stop at frame 200.
 
 ## File format
 
@@ -50,21 +66,26 @@ The same as OpenDropController4_25, byte for byte, so files open in either app:
 
 ## Differences from the original
 
+- Dragging draws droplet paths (freehand or straight) that are added when you let go; the original
+  drag is the **paint** tool. A click still toggles an electrode, but when the button is released.
+- Undo and redo.
 - Works without a device. The live-control parts (connect, life, feedback, temperatures) are left out.
 - Loading replaces the current sequence; the original merged the file into whatever was on screen.
 - Save doesn't add a second `.json` to the name.
 - Loading skips frames after 200 instead of crashing, and also reads files from controller 3.2.
-- A fast drag paints every electrode along the way.
+- A fast paint drag paints every electrode along the way.
 
 ## Development
 
 - Tests: `node --test` (Node 20 or later).
 - `js/layouts-data.js` is generated from the original layout files:
   `node tools/convert-layouts.js <path to OpenDrop/OpenDropController4_25>`.
-- `js/editor.js` holds the editing behaviour, `js/jsonio.js` the file format, `js/view.js` the
-  drawing and `js/app.js` the page wiring. The first three have no browser dependencies.
+- `js/editor.js` holds the editing behaviour and undo, `js/paths.js` the droplet routes and the
+  path being drawn, `js/jsonio.js` the file format, `js/view.js` the drawing and `js/app.js` the
+  page wiring. All but the last two run without a browser.
 
 ## License
 
 GPL-3.0, see `LICENSE`. Based on [OpenDrop](https://github.com/GaudiLabs/OpenDrop) by GaudiLabs:
 the frame image, the electrode layouts and the editor behaviour come from OpenDropController4_25.
+

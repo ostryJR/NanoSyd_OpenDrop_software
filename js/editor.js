@@ -1,16 +1,18 @@
 /* Editing and playback behaviour, ported from mousePressed, mouseDragged, mouseWheel, keyPressed
- * and animate in OpenDropController4_25.pde. No DOM here: app.js passes in grid coordinates. */
+ * and animate in OpenDropController4_25.pde, plus path drawing and undo. No DOM here: app.js
+ * passes in grid coordinates. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./model.js'), require('./layout.js'));
+    module.exports = factory(require('./model.js'), require('./layout.js'), require('./paths.js'));
   } else {
-    (root.OD = root.OD || {}).editor = factory(root.OD.model, root.OD.layout);
+    (root.OD = root.OD || {}).editor = factory(root.OD.model, root.OD.layout, root.OD.paths);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, layout) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, layout, paths) {
   'use strict';
 
   const { MAX_FRAMES, Sequence } = model;
   const { hitTest, inArray, inRect } = layout;
+  const { PathDraft, electrodeAt } = paths;
 
   // Click areas in grid units, copied from the original's inRect() checks. The device-only
   // controls (life, feedback, reconnect, temperatures) are left out.
@@ -27,7 +29,23 @@
     { action: 'reservoirRightBottom', x: 28, y: 4, w: 2, h: 2, reservoir: true },
     { action: 'reservoirLeftTop', x: -30, y: -6, w: 2, h: 2, reservoir: true },
     { action: 'reservoirLeftBottom', x: -30, y: 4, w: 2, h: 2, reservoir: true },
+    // New on the left: what a drag does, and undo/redo. Box at (x, y); the label is clickable too.
+    { action: 'toolFreehand', x: -43, y: -9, w: 9, h: 2, label: 'freehand', tool: 'freehand' },
+    { action: 'toolStraight', x: -43, y: -6, w: 9, h: 2, label: 'straight', tool: 'straight' },
+    { action: 'toolPaint', x: -43, y: -3, w: 9, h: 2, label: 'paint', tool: 'paint' },
+    { action: 'undo', x: -43, y: 4, w: 9, h: 2, label: 'undo' },
+    { action: 'redo', x: -43, y: 7, w: 9, h: 2, label: 'redo' },
   ];
+
+  // What a drag on the array does: draw a droplet path that follows the pointer, draw one along
+  // rows and columns, or switch electrodes in the current frame (the original's drag).
+  const TOOLS = ['freehand', 'straight', 'paint'];
+  const UNDO_LIMIT = 100;
+
+  const sameBytes = (a, b) => {
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  };
 
   // The reservoir buttons' droplet-dispensing sequences: the electrodes switched on in each of
   // six consecutive frames, starting at the current one. Nothing is switched off.
@@ -51,13 +69,23 @@
       this.playing = false;
       this.playStart = 0;
       this.playLast = 1; // last frame of the play loop, fixed when play starts
+      this.tool = 'freehand';
       this.paintOn = false; // the original's dragg_mode
-      this.dragging = false;
+      this.dragging = false; // a paint or path drag is in progress
       this.lastPoint = null;
+      this.draft = null; // the path being drawn, shown but not yet in the sequence
+      this.dragStart = null; // undo checkpoint from the start of a paint drag
+      this.undoStack = [];
+      this.redoStack = [];
     }
 
     setLayout(lay) {
+      this.cancel();
       this.layout = lay;
+    }
+
+    setTool(tool) {
+      if (TOOLS.includes(tool) && !this.dragging) this.tool = tool;
     }
 
     controlAt(mx, my) {
@@ -70,15 +98,29 @@
     // Button pressed at (mx, my). Returns the control that was hit, if any; 'save' and 'load'
     // need a file dialog, which the caller opens.
     pointerDown(mx, my, { shift = false, now = 0 } = {}) {
-      this.dragging = false;
+      if (this.dragging) this.pointerUp();
       const action = this.controlAt(mx, my);
       if (action) {
         this.run(action, now);
         return action;
       }
+
+      // The path tools start a path on the electrode under the pointer. Nothing changes until
+      // the button is released, and a click without a drag still toggles, as in the original.
+      if (this.tool !== 'paint' && !shift) {
+        const start = electrodeAt(this.layout.rects, mx, my);
+        if (start === null) return null;
+        this.draft = new PathDraft(this.layout.rects, this.tool, start, this.frame, { mx, my });
+        this.dragging = true;
+        return null;
+      }
+
+      // Paint tool, and Shift+click with any tool: the original's behaviour.
+      const before = this.checkpoint();
       if (shift) this.nextFrame(); // Shift+click: go to the next frame, then switch on
       if (!inArray(mx, my)) return null;
 
+      this.dragStart = before;
       this.dragging = true;
       this.lastPoint = { mx, my };
       for (const e of hitTest(this.layout.rects, mx, my)) {
@@ -89,9 +131,15 @@
       return null;
     }
 
-    // Moved with the button held: every electrode passed over gets the state set by the press.
+    // Moved with the button held. Paint: every electrode passed over gets the state set by the
+    // press. Path tools: the path follows the pointer.
     pointerMove(mx, my) {
       if (!this.dragging) return false;
+      if (this.draft) {
+        this.draft.moveTo(mx, my);
+        if (this.draft.moved) this.playing = false; // drawing over a moving picture would confuse
+        return true;
+      }
       const { mx: x0, my: y0 } = this.lastPoint;
       const samples = Math.max(1, Math.ceil(Math.hypot(mx - x0, my - y0) / DRAG_STEP));
       for (let i = 1; i <= samples; i++) {
@@ -104,9 +152,94 @@
       return true;
     }
 
+    // Button released. A path is added to the sequence now: the start electrode in the frame
+    // where the drag began, then one electrode per frame, added to whatever those frames already
+    // hold. The view moves to the path's last frame, so the next drag carries on from there.
+    // Returns { from, to, steps } for an added path, otherwise null.
     pointerUp() {
+      if (!this.dragging) return null;
       this.dragging = false;
       this.lastPoint = null;
+      const draft = this.draft;
+      this.draft = null;
+      if (!draft) {
+        this.record(this.dragStart);
+        this.dragStart = null;
+        return null;
+      }
+      if (!draft.moved) {
+        this.change(() => this.seq.set(draft.start, draft.frame, !this.seq.get(draft.start, draft.frame)));
+        return null;
+      }
+      if (draft.steps === 0) return null; // dragged back to the start
+      this.change(() => {
+        draft.cells.forEach((e, i) => this.seq.set(e, draft.frame + i, true));
+        this.frame = draft.endFrame;
+      });
+      return { from: draft.frame, to: draft.endFrame, steps: draft.steps };
+    }
+
+    // Esc: drops the path being drawn, or takes back the paint drag in progress.
+    cancel() {
+      if (!this.dragging) return false;
+      this.dragging = false;
+      this.lastPoint = null;
+      this.draft = null;
+      if (this.dragStart) {
+        this.seq.restore(this.dragStart.snap);
+        this.frame = this.dragStart.frame;
+        this.dragStart = null;
+      }
+      return true;
+    }
+
+    // --- undo ----------------------------------------------------------------------------------
+    // Each change keeps a copy of the whole sequence from before it, and the frame it was made in.
+
+    checkpoint() {
+      return { snap: this.seq.snapshot(), frame: this.frame };
+    }
+
+    // Keeps `before` for undo if the sequence has changed since it was taken.
+    record(before) {
+      if (!before || sameBytes(before.snap, this.seq.snapshot())) return false;
+      this.undoStack.push(before);
+      if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
+      this.redoStack.length = 0;
+      return true;
+    }
+
+    change(fn) {
+      const before = this.checkpoint();
+      fn();
+      return this.record(before);
+    }
+
+    get canUndo() {
+      return this.undoStack.length > 0;
+    }
+
+    get canRedo() {
+      return this.redoStack.length > 0;
+    }
+
+    // During a drag, undo just cancels the drag.
+    undo() {
+      return this.cancel() || this.travel(this.undoStack, this.redoStack);
+    }
+
+    redo() {
+      return !this.cancel() && this.travel(this.redoStack, this.undoStack);
+    }
+
+    travel(from, to) {
+      const target = from.pop();
+      if (!target) return false;
+      to.push(this.checkpoint());
+      this.seq.restore(target.snap);
+      this.frame = target.frame;
+      if (this.playing) this.playLast = this.seq.lastFrame();
+      return true;
     }
 
     // One wheel step: +1 = towards you (down), -1 = away (up). While playing it changes the
@@ -163,18 +296,29 @@
         case 'prev':
           this.prevFrame();
           break;
+        case 'undo':
+          this.undo();
+          break;
+        case 'redo':
+          this.redo();
+          break;
         case 'copy':
-          if (f > 1) this.seq.copyFrame(f - 1, f);
+          if (f > 1) this.change(() => this.seq.copyFrame(f - 1, f));
           break;
         case 'clearFrame':
-          this.seq.clearFrame(f);
+          this.change(() => this.seq.clearFrame(f));
           break;
         case 'clearAll':
-          this.seq.clearAll();
-          this.frame = 1;
+          this.change(() => {
+            this.seq.clearAll();
+            this.frame = 1;
+          });
           break;
-        default:
-          if (RESERVOIR_STEPS[action]) this.applySteps(RESERVOIR_STEPS[action]);
+        default: {
+          const control = CONTROLS.find((c) => c.action === action);
+          if (control && control.tool) this.setTool(control.tool);
+          else if (RESERVOIR_STEPS[action]) this.change(() => this.applySteps(RESERVOIR_STEPS[action]));
+        }
       }
     }
 
@@ -186,12 +330,16 @@
       });
     }
 
+    // Loading a file: undoable like any other change.
     replaceSequence(seq) {
-      this.seq = seq;
-      this.frame = 1;
-      if (this.playing) this.playLast = seq.lastFrame();
+      this.cancel();
+      this.change(() => {
+        this.seq.restore(seq.snapshot());
+        this.frame = 1;
+      });
+      if (this.playing) this.playLast = this.seq.lastFrame();
     }
   }
 
-  return { Editor, CONTROLS, RESERVOIR_STEPS, MIN_SPEED, MAX_SPEED };
+  return { Editor, CONTROLS, RESERVOIR_STEPS, TOOLS, UNDO_LIMIT, MIN_SPEED, MAX_SPEED };
 });

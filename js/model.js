@@ -46,6 +46,17 @@
       for (let f = MAX_FRAMES; f > 1; f--) if (!this.isEmpty(f)) return f;
       return 1;
     }
+
+    // The whole table as one byte array (29 KB), for undo.
+    snapshot() {
+      const out = new Uint8Array(this.frames.length * CELLS);
+      this.frames.forEach((frame, f) => out.set(frame, f * CELLS));
+      return out;
+    }
+
+    restore(snapshot) {
+      this.frames.forEach((frame, f) => frame.set(snapshot.subarray(f * CELLS, (f + 1) * CELLS)));
+    }
   }
 
   return { ROWS, COLS, CELLS, MAX_FRAMES, Sequence };

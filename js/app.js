@@ -1,4 +1,5 @@
-/* Connects the page (mouse, wheel, keys, file dialogs, bottom bar) to the editor and the view. */
+/* Connects the page (mouse, wheel, keys, file dialogs, status, bottom bar) to the editor and the
+ * view. */
 (function (root) {
   'use strict';
 
@@ -13,7 +14,7 @@
   const statusText = document.getElementById('status');
   const fileInput = document.getElementById('file-input');
 
-  // Layout choice and the number overlay are remembered between visits.
+  // Layout, number overlay and drag tool are remembered between visits.
   const PREFS_KEY = 'opendrop-generator.prefs';
   const prefs = (() => {
     try {
@@ -24,7 +25,7 @@
   })();
   const savePrefs = () => {
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ layout: current.id, numbers: showNumbers }));
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ layout: current.id, numbers: showNumbers, tool: ed.tool }));
     } catch {
       // storage unavailable: preferences just aren't kept
     }
@@ -35,8 +36,33 @@
   let fileName = null;
 
   const ed = new Editor(current);
+  ed.setTool(prefs.tool);
   const board = new BoardView(svg, 'assets/OpenDropFrame.png');
   board.setLayout(current);
+
+  function setStatus(text, kind = 'info') {
+    statusText.textContent = text;
+    statusText.className = kind;
+  }
+
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  // While a path is being drawn, the status line counts its steps.
+  let draftInStatus = false;
+  function showDraft(draft) {
+    const limit = draft.limited ? ' (stopped at frame 200)' : '';
+    setStatus(
+      draft.steps === 0
+        ? 'Back on the start electrode: letting go adds nothing'
+        : `${plural(draft.steps, 'step')}, frames ${draft.frame} to ${draft.endFrame}${limit}. Let go to add it, Esc to cancel.`
+    );
+    draftInStatus = true;
+  }
+  // Replaces the step count with `text`; with no text, just removes the step count, if shown.
+  function clearDraftStatus(text) {
+    if (text !== undefined || draftInStatus) setStatus(text || '');
+    draftInStatus = false;
+  }
 
   // Drawing happens once per animation frame; playback keeps requesting frames while it runs.
   let frameRequested = false;
@@ -47,16 +73,24 @@
       frameRequested = false;
       ed.tick(now);
       board.render(ed, showNumbers);
+      if (ed.draft && ed.draft.moved) showDraft(ed.draft);
       if (ed.playing) redraw();
     });
   }
 
-  function setStatus(text, kind = 'info') {
-    statusText.textContent = text;
-    statusText.className = kind;
+  function setTool(tool) {
+    ed.setTool(tool);
+    savePrefs();
+    redraw();
   }
 
-  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  function undoRedo(kind) {
+    const drawing = ed.dragging; // during a drag, undo and redo just cancel it
+    if (kind === 'undo') ed.undo();
+    else ed.redo();
+    clearDraftStatus(drawing ? 'Cancelled' : ''); // whatever the status said may no longer be true
+    redraw();
+  }
 
   // --- mouse / touch ---------------------------------------------------------------------
 
@@ -69,7 +103,7 @@
   let pendingDialog = null;
 
   svg.addEventListener('pointerdown', (evt) => {
-    if (evt.button !== 0) return;
+    if (evt.button !== 0 || !evt.isPrimary) return;
     evt.preventDefault();
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const { mx, my } = toGrid(evt);
@@ -79,20 +113,40 @@
       // a touch only once the finger lifts.
       if (evt.pointerType === 'mouse') openDialog(action);
       else pendingDialog = action;
+    } else if (action === 'undo' || action === 'redo') {
+      clearDraftStatus('');
+    } else if (action && action.startsWith('tool')) {
+      savePrefs();
     }
     if (ed.dragging) svg.setPointerCapture(evt.pointerId);
     redraw();
   });
 
-  svg.addEventListener('pointerup', () => {
+  // Letting go adds the path being drawn.
+  function finishDrag() {
+    const added = ed.pointerUp();
+    if (added) clearDraftStatus(`Added a path: ${plural(added.steps, 'step')}, frames ${added.from} to ${added.to}`);
+    else clearDraftStatus();
+    redraw();
+  }
+
+  svg.addEventListener('pointerup', (evt) => {
+    if (!evt.isPrimary) return;
     if (pendingDialog) openDialog(pendingDialog);
     pendingDialog = null;
+    finishDrag();
   });
-  svg.addEventListener('pointercancel', () => {
+  svg.addEventListener('pointercancel', (evt) => {
+    if (!evt.isPrimary) return;
     pendingDialog = null;
+    ed.cancel(); // the browser took the touch over: drop the drag rather than add half of it
+    clearDraftStatus();
+    redraw();
   });
+  svg.addEventListener('lostpointercapture', finishDrag); // normally after pointerup: nothing left
 
   svg.addEventListener('pointermove', (evt) => {
+    if (!evt.isPrimary) return;
     const { mx, my } = toGrid(evt);
     if (ed.dragging) {
       ed.pointerMove(mx, my);
@@ -102,16 +156,13 @@
     }
   });
 
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    svg.addEventListener(type, () => ed.pointerUp());
-  }
-
   // Wheel and trackpad: one step per notch-sized amount of scrolling.
   let wheelTotal = 0;
   svg.addEventListener(
     'wheel',
     (evt) => {
       evt.preventDefault();
+      if (ed.draft) return; // the path being drawn starts in the frame on screen: keep it there
       wheelTotal += evt.deltaY * (evt.deltaMode === 1 ? 40 : evt.deltaMode === 2 ? 800 : 1);
       if (Math.abs(wheelTotal) < 40) return;
       ed.wheel(Math.sign(wheelTotal));
@@ -124,9 +175,22 @@
   // --- keyboard --------------------------------------------------------------------------
 
   window.addEventListener('keydown', (evt) => {
-    if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
     if (evt.target instanceof HTMLInputElement || evt.target instanceof HTMLSelectElement) return;
-    switch (evt.key) {
+    const key = evt.key.length === 1 ? evt.key.toLowerCase() : evt.key;
+    if ((evt.metaKey || evt.ctrlKey) && !evt.altKey) {
+      // Cmd+Z / Ctrl+Z undo; with Shift, or Ctrl+Y, redo.
+      if (key === 'z') undoRedo(evt.shiftKey ? 'redo' : 'undo');
+      else if (key === 'y' && evt.ctrlKey) undoRedo('redo');
+      else return;
+      evt.preventDefault();
+      return;
+    }
+    if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
+    if (ed.draft && (key === 'ArrowLeft' || key === 'ArrowRight' || key === ' ')) {
+      evt.preventDefault(); // keep the frame on screen while a path is being drawn from it
+      return;
+    }
+    switch (key) {
       case 'ArrowRight':
         ed.nextFrame();
         break;
@@ -137,8 +201,19 @@
         if (!evt.repeat) ed.togglePlay(performance.now());
         break;
       case 'n':
-      case 'N':
         setNumbers(!showNumbers);
+        break;
+      case 'f':
+        setTool('freehand');
+        break;
+      case 's':
+        setTool('straight');
+        break;
+      case 'p':
+        setTool('paint');
+        break;
+      case 'Escape':
+        if (ed.cancel()) clearDraftStatus('Cancelled');
         break;
       default:
         return;
@@ -237,6 +312,12 @@
     numbersBox.blur();
   });
 
+  // Shortcut hints: Cmd on a Mac, Ctrl elsewhere.
+  if (!/Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)) {
+    for (const k of document.querySelectorAll('kbd[data-pc]')) k.textContent = k.dataset.pc;
+  }
+
   root.OD.app = { editor: ed, board, save }; // handy from the browser console
-  redraw();
+  board.render(ed, showNumbers); // the first picture straight away, not at the next animation frame
 })(globalThis);
+

@@ -37,3 +37,16 @@ test('copy, clear frame and clear all', () => {
   assert.equal(seq.lastFrame(), 1);
   assert.ok(seq.isEmpty(1));
 });
+
+test('snapshot and restore copy the whole sequence', () => {
+  const seq = new Sequence();
+  seq.set(5, 7, true);
+  const snap = seq.snapshot();
+  seq.set(6, 8, true);
+  seq.set(5, 7, false);
+  seq.restore(snap);
+  assert.ok(seq.get(5, 7));
+  assert.ok(!seq.get(6, 8));
+  snap[7 * CELLS + 5] = 0;
+  assert.ok(seq.get(5, 7), 'the snapshot is a copy');
+});
