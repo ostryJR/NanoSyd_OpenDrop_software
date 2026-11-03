@@ -401,6 +401,7 @@
           this.change(() => this.seq.clearFrame(f));
           break;
         case 'clearAll':
+          this.playing = false; // nothing is left to play
           this.change(() => {
             this.seq.clearAll();
             this.frame = 1;

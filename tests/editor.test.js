@@ -96,6 +96,19 @@ test('copy last frame, clear frame and clear all buttons', () => {
   assert.deepEqual(onIn(ed, 1), []);
 });
 
+test('clear all also stops playback', () => {
+  const ed = standard();
+  click(ed, 9);
+  ed.seq.set(10, 4, true);
+  ed.togglePlay(0);
+  ed.tick(501);
+  assert.equal(ed.pointerDown(35, 11), 'clearAll');
+  assert.ok(!ed.playing, 'playback stopped');
+  assert.equal(ed.frame, 1);
+  assert.equal(ed.seq.lastFrame(), 1);
+  assert.equal(ed.tick(5000), false, 'and stays stopped');
+});
+
 test('reservoir buttons write the six-frame dispense sequences of the original', () => {
   // Transcribed from mousePressed() in OpenDropController4_25.pde (fluxels[column * ysize + row]).
   const R = (column, row) => column * 8 + row;
