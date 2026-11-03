@@ -65,7 +65,7 @@
       label('clear all', 37, 11.5);
       label('frame_no:', -20, 16);
       label('frames/min:', 10, 16);
-      label('drag:', -43, -10.5);
+      label('drag:', -34, -10.5).setAttribute('class', 'end'); // right-aligned over the boxes
       this.frameLabel = label('', -12, 16);
       this.speedLabel = label('', 18, 16);
 
@@ -93,13 +93,14 @@
       this.reservoirButtons = el('g', {}, controls);
       for (const [u, v] of [[28, -6], [28, 4], [-30, -6], [-30, 4]]) box(u, v, this.reservoirButtons);
 
-      // On the left: the drag tool switch (the chosen tool's box is white) and undo/redo.
+      // On the left: the drag tool switch (the chosen tool's box is white) and undo/redo, each
+      // label right-aligned against its box.
       this.toolBoxes = [];
       this.historyButtons = {};
       for (const c of CONTROLS.filter((control) => control.label)) {
         const group = el('g', {}, controls);
-        const node = box(c.x, c.y, group);
-        label(c.label, c.x + 3, c.y + 1.5, group);
+        const node = box(c.box, c.y, group);
+        label(c.label, c.box - 1, c.y + 1.5, group).setAttribute('class', 'end');
         const hit = el('rect', { class: 'hit', x: px(c.x), y: py(c.y), width: G.UNIT * c.w, height: G.UNIT * c.h }, group);
         el('title', {}, hit).textContent = TIPS[c.action] || '';
         if (c.tool) this.toolBoxes.push({ tool: c.tool, node });

@@ -30,12 +30,14 @@
     { action: 'reservoirRightBottom', x: 28, y: 4, w: 2, h: 2, reservoir: true },
     { action: 'reservoirLeftTop', x: -30, y: -6, w: 2, h: 2, reservoir: true },
     { action: 'reservoirLeftBottom', x: -30, y: 4, w: 2, h: 2, reservoir: true },
-    // New on the left: what a drag does, and undo/redo. Box at (x, y); the label is clickable too.
-    { action: 'toolFreehand', x: -43, y: -9, w: 9, h: 2, label: 'freehand', tool: 'freehand' },
-    { action: 'toolStraight', x: -43, y: -6, w: 9, h: 2, label: 'straight', tool: 'straight' },
-    { action: 'toolPaint', x: -43, y: -3, w: 9, h: 2, label: 'paint', tool: 'paint' },
-    { action: 'undo', x: -43, y: 4, w: 9, h: 2, label: 'undo' },
-    { action: 'redo', x: -43, y: 7, w: 9, h: 2, label: 'redo' },
+    // New on the left: what a drag does, and undo/redo. The label comes first and the box (at
+    // box, y) sits on the side facing the array, mirroring the right-hand buttons. The label is
+    // clickable too.
+    { action: 'toolFreehand', x: -45, y: -9, w: 11, h: 2, box: -36, label: 'freehand', tool: 'freehand' },
+    { action: 'toolStraight', x: -45, y: -6, w: 11, h: 2, box: -36, label: 'straight', tool: 'straight' },
+    { action: 'toolPaint', x: -45, y: -3, w: 11, h: 2, box: -36, label: 'paint', tool: 'paint' },
+    { action: 'undo', x: -45, y: 4, w: 11, h: 2, box: -36, label: 'undo' },
+    { action: 'redo', x: -45, y: 7, w: 11, h: 2, box: -36, label: 'redo' },
   ];
 
   // What a drag on the array does: draw a droplet path that follows the pointer, draw one along

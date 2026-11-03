@@ -87,6 +87,10 @@ button {
   dominant-baseline: central;
 }
 
+#board text.end {
+  text-anchor: end;
+}
+
 #board text.cutout-title {
   fill: rgb(140, 140, 140);
   text-anchor: middle;
