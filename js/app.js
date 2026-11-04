@@ -110,6 +110,7 @@
     showTiming();
     showProperties();
     if (ed.makingTemplate) showMakerInfo();
+    noteWork();
   }
 
   function setTool(tool) {
@@ -1276,12 +1277,17 @@
     editing = t && !t.builtIn ? t : null;
     nameInput.value = t ? (t.builtIn ? `${t.name} (copy)` : t.name) : `Template ${myTemplates.length + 1}`;
     makerTitle.textContent = editing ? 'Change the template' : t ? 'Copy of a built-in template' : 'New template';
+    showMaker();
+    setStatus('Making a template: draw it on the array, then press Save template');
+    redraw();
+  }
+
+  // The maker panel in place of the side panel (the editor is already making a template).
+  function showMaker() {
     panel.hidden = true;
     maker.hidden = false;
     board.setCutoutTitle('Making a template');
     applyPanels();
-    setStatus('Making a template: draw it on the array, then press Save template');
-    redraw();
   }
 
   function closeMaker() {
@@ -1456,7 +1462,89 @@
     for (const k of document.querySelectorAll('kbd[data-pc]')) k.textContent = k.dataset.pc;
   }
 
+  // --- keeping the work between visits ---------------------------------------------------
+  // The project, with its undo history, the frame on screen, the selection and its file name,
+  // is kept in the browser half a second after each change and whenever the page is left or
+  // hidden, and comes back when the page is opened or reloaded. A template being made comes
+  // back too, with the project set aside behind it. If it is too big to keep with all its undo
+  // history, less history is kept.
+
+  const WORK_KEY = 'opendrop-generator.work';
+  const WORK_VERSION = 1;
+  let workKey = null;
+  let workTimer = null;
+  let workWarned = false;
+
+  // After each picture: if anything that is kept changed, keep it shortly (not during a drag or
+  // playback, which change it all the time).
+  function noteWork() {
+    const key = [ed.revision, ed.frame, ed.selection, ed.makingTemplate, baseName].join('|');
+    if (key === workKey) return;
+    workKey = key;
+    clearTimeout(workTimer);
+    workTimer = ed.dragging || ed.playing ? null : setTimeout(keepWork, 500);
+  }
+
+  function keepWork() {
+    clearTimeout(workTimer);
+    workTimer = null;
+    for (const history of [undefined, 20, 0]) {
+      try {
+        const data = { version: WORK_VERSION, baseName, ...ed.snapshot(history) };
+        if (ed.makingTemplate) {
+          const at = editing ? myTemplates.indexOf(editing) : -1;
+          data.maker = { name: nameInput.value, title: makerTitle.textContent, editing: at, editingName: editing ? editing.name : null };
+        }
+        localStorage.setItem(WORK_KEY, JSON.stringify(data));
+        return true;
+      } catch {
+        // too big for the browser's storage (or storage is off): try with less undo history
+      }
+    }
+    if (!workWarned) {
+      workWarned = true;
+      setStatus("This browser won't keep your work between visits (it is too big, or storage is off): use save", 'warn');
+    }
+    return false;
+  }
+
+  function restoreWork() {
+    const data = readStored(WORK_KEY, null);
+    if (!data || data.version !== WORK_VERSION || !data.project) return;
+    const lay = layout.LAYOUTS.find((l) => l.id === data.project.layout);
+    if (lay && lay.id !== current.id) switchLayout(lay);
+    let warnings;
+    try {
+      warnings = ed.resume(data);
+    } catch {
+      setStatus('The work kept from last time could not be read, so this is a new project', 'warn');
+      return;
+    }
+    baseName = typeof data.baseName === 'string' ? data.baseName : null;
+    if (ed.makingTemplate) {
+      const m = data.maker || {};
+      const mine = Number.isInteger(m.editing) ? myTemplates[m.editing] : null;
+      editing = mine && mine.name === m.editingName ? mine : null;
+      nameInput.value = typeof m.name === 'string' ? m.name : `Template ${myTemplates.length + 1}`;
+      makerTitle.textContent = typeof m.title === 'string' && m.title ? m.title : 'New template';
+      showMaker();
+    }
+    const main = ed.saved ? ed.saved.project : ed.project;
+    const n = main.actions.length;
+    if (!n && !ed.makingTemplate && !ed.canUndo) return;
+    const what = ed.makingTemplate ? 'the template you were making, and the project behind it,' : `your work from last time (${plural(n, 'action')})`;
+    const text = `Picked up ${what} where you left off`;
+    if (warnings.length) setStatus(`${text}. ${warnings.join('; ')}.`, 'warn');
+    else setStatus(text);
+  }
+
+  addEventListener('pagehide', () => keepWork());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') keepWork();
+  });
+
   renderTemplates();
+  restoreWork();
   applyPanels();
   setChartView(prefs.chart);
   setTab(prefs.tab);

@@ -95,6 +95,7 @@
     // --- the project and its frames -----------------------------------------------------------
 
     recompile() {
+      this.revision = (this.revision || 0) + 1; // goes up with every change, for keeping the work
       this.compiled = compile(this.project, this.layout.rects);
       if (this.playing) this.playLast = this.compiled.seq.lastFrame();
     }
@@ -1370,6 +1371,63 @@
       this.redoStack = [];
       this.playing = false;
       this.recompile();
+    }
+
+    // --- keeping the work between visits -----------------------------------------------------------
+    // What is kept when the page is left or reloaded: the project with its frame on screen,
+    // selection and last `history` undo and redo steps; while a template is being made, that
+    // too (`making`), the project being set aside. Plain data, for JSON.
+
+    snapshot(history = UNDO_LIMIT) {
+      const part = (s) => ({
+        project: s.project,
+        frame: s.frame,
+        selection: s.selection,
+        undo: history > 0 ? s.undoStack.slice(-history) : [],
+        redo: history > 0 ? s.redoStack.slice(-history) : [],
+      });
+      const out = part(this.saved || this);
+      if (this.saved) out.making = part(this);
+      return out;
+    }
+
+    // Takes up work kept with snapshot() (after a trip through JSON) in place of the current
+    // project. Anything malformed is cleaned up or left out; returns warnings about that. Throws
+    // if there is no project in it.
+    resume(data) {
+      if (!data || typeof data !== 'object') throw new Error('nothing kept');
+      const usable = (p) => {
+        if (!p || typeof p.state !== 'string' || !Number.isInteger(p.frame)) return false;
+        try {
+          const s = JSON.parse(p.state);
+          return Array.isArray(s.actions) && Boolean(s.templates) && typeof s.templates === 'object';
+        } catch {
+          return false;
+        }
+      };
+      const steps = (list) => (Array.isArray(list) ? list.filter(usable).slice(-UNDO_LIMIT) : []);
+      const take = (s) => {
+        const { project, warnings } = projects.parse(s.project);
+        project.layout = this.layout.id;
+        const frame = Number.isInteger(s.frame) ? Math.min(MAX_FRAMES, Math.max(1, s.frame)) : 1;
+        const selection = project.actions.some((a) => a.id === s.selection) ? s.selection : null;
+        return { project, frame, selection, undoStack: steps(s.undo), redoStack: steps(s.redo), warnings };
+      };
+      const main = take(data);
+      const making = data.making ? take(data.making) : null;
+      this.cancel();
+      this.playing = false;
+      const { warnings: w1, ...mainState } = main;
+      this.saved = null;
+      Object.assign(this, mainState);
+      if (making) {
+        const { warnings: w2, ...makingState } = making;
+        this.saved = mainState;
+        Object.assign(this, makingState);
+        w1.push(...w2);
+      }
+      this.recompile();
+      return w1;
     }
 
     endTemplate() {

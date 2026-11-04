@@ -164,6 +164,16 @@ touching droplets shows them as problems.
 - Your templates are kept in the browser. **Export…** writes them to a file and **Import…** reads
   one back, to move them to another browser or computer or to share them.
 
+## Kept between visits
+
+Your work is kept in the browser half a second after each change and whenever you leave or reload
+the page, and comes back when you open it again: the project with its undo history, the frame on
+screen, the selection and the file name it was saved under. A template you were making comes back
+in the maker, with the project behind it. If the project is too big to keep with all 100 undo
+steps, fewer are kept; if it can't be kept at all, the status line says so. To start afresh, use
+**clear all** (it can be undone). This is per browser: in two tabs, the one changed last wins.
+It is no replacement for **save**: clearing the browser's data removes it.
+
 ## Project files (`*.odproj.json`)
 
 What **save** writes and **load** opens. JSON, one field per line:
