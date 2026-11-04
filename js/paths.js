@@ -58,6 +58,30 @@
     return graph;
   }
 
+  // Electrodes so close that droplets on them would touch and merge: the same electrode, and those
+  // at most GAP apart on both axes, which includes diagonal neighbours. Cached per rectangle list.
+  const nears = new WeakMap();
+  function nearGraph(rects) {
+    let near = nears.get(rects);
+    if (near) return near;
+    near = new Map();
+    for (const r of rects) if (!near.has(r.e)) near.set(r.e, new Set([r.e]));
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const a = rects[i];
+        const b = rects[j];
+        if (a.e === b.e) continue;
+        const gapX = Math.max(a.x, b.x) - Math.min(a.x + a.h, b.x + b.h);
+        const gapY = Math.max(a.y, b.y) - Math.min(a.y + a.v, b.y + b.v);
+        if (gapX > GAP || gapY > GAP) continue;
+        near.get(a.e).add(b.e);
+        near.get(b.e).add(a.e);
+      }
+    }
+    nears.set(rects, near);
+    return near;
+  }
+
   // The electrode under a point, or null. Only inside the array box, as for clicks.
   function electrodeAt(rects, mx, my) {
     if (!inArray(mx, my)) return null;
@@ -220,5 +244,5 @@
     }
   }
 
-  return { electrodeGraph, electrodeAt, shortestRoute, rightAngleRoute, straightRoute, PathDraft, GAP };
+  return { electrodeGraph, nearGraph, electrodeAt, shortestRoute, rightAngleRoute, straightRoute, PathDraft, GAP };
 });

@@ -53,6 +53,12 @@
     a.name = typeof a.name === 'string' && a.name.trim() ? a.name.trim().slice(0, 80) : TYPE_NAMES[a.type] || a.type;
     a.droplet = typeof a.droplet === 'string' ? a.droplet.trim().slice(0, 60) : '';
 
+    if (Array.isArray(a.after)) {
+      const list = [...new Set(a.after.map((id) => (typeof id === 'number' ? String(id) : id)).filter((id) => typeof id === 'string' && id))];
+      if (list.length > 1) a.after = list;
+      else if (list.length === 1) a.after = list[0];
+      else delete a.after;
+    }
     if (a.after !== undefined && a.after !== null) {
       if (typeof a.after === 'number') a.after = String(a.after);
       delete a.start;

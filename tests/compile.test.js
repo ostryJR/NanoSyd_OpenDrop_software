@@ -188,3 +188,48 @@ test('an imported block keeps leading empty frames and their times', () => {
   assert.deepEqual(action.times, [2000, 0, 0]);
   assert.equal(action.start, 1);
 });
+
+test('“after” a list: a merge starts when the last droplet it waits for has arrived', () => {
+  const merge = T.BUILT_IN.find((t) => t.id === 'merge');
+  const r = compile(project([
+    path('a', { start: 1 }, [E(2, 0), E(2, 3)]),
+    path('b', { start: 1 }, [E(4, 7), E(4, 3)]),
+    { id: 'm', type: 'template', name: 'm', droplet: '', after: ['a', 'b'], template: 'merge', at: E(2, 3), turns: 0 },
+  ], { templates: { merge: { name: merge.name, frames: merge.frames } } }), rects);
+  assert.deepEqual(r.spans.get('a'), { from: 1, to: 4 });
+  assert.deepEqual(r.spans.get('b'), { from: 1, to: 5 });
+  assert.deepEqual(r.spans.get('m'), { from: 5, to: 7 }, 'after the later one');
+  assert.deepEqual(r.issues, [], 'no jump, and the droplets meeting in the merge is no touch');
+});
+
+test('droplets of different actions touch on the same or neighbouring electrodes, diagonals too', () => {
+  const touchesOf = (actions) => [...compile(project(actions), rects).touches];
+  assert.deepEqual(touchesOf([path('a', { start: 1 }, [E(1, 0), E(6, 0)]), path('b', { start: 1 }, [E(1, 2), E(6, 2)])]), []);
+  assert.deepEqual(touchesOf([path('a', { start: 1 }, [E(1, 0), E(6, 0)]), path('b', { start: 1 }, [E(1, 1), E(6, 1)])]), ['a|b']);
+  assert.deepEqual(touchesOf([path('a', { start: 1 }, [E(1, 0), E(2, 0)]), path('b', { start: 1 }, [E(3, 1), E(4, 1)])]), ['a|b'], 'diagonal');
+  // b moves next to where a was a frame before
+  assert.deepEqual(touchesOf([path('a', { start: 1 }, [E(5, 0), E(5, 3)]), path('b', { start: 2 }, [E(7, 0), E(6, 0), E(6, 7)])]), ['a|b']);
+  const r = compile(project([path('a', { start: 1 }, [E(1, 0), E(6, 0)]), path('b', { start: 1 }, [E(1, 1), E(6, 1)])]), rects);
+  assert.deepEqual(issues(r, 'touch').map((i) => [i.id, i.other, i.frame]), [['a', 'b', 1], ['b', 'a', 1]]);
+});
+
+test('no touch between an action and what carries on with its droplet; control lines don’t count', () => {
+  const touchesOf = (actions, rectsFor = rects) => [...compile(project(actions), rectsFor).touches];
+  assert.deepEqual(touchesOf([path('a', { start: 1 }, [E(1, 0), E(4, 0)]), path('b', { after: 'a', delay: 3 }, [E(4, 0), E(4, 4)])]), []);
+  assert.deepEqual(touchesOf([path('a', { start: 1 }, [E(1, 0), E(4, 0)]), path('b', { start: 9 }, [E(4, 0), E(4, 4)])]), [], 'picked up later');
+  const magnets = getLayout('electrodes_magnet').rects;
+  assert.deepEqual(touchesOf([pattern('m', { start: 1 }, [[128], [128]]), path('b', { start: 1 }, [E(13, 6), E(14, 6)])], magnets), []);
+});
+
+test('a droplet rests where its action left it until something carries on from there', () => {
+  const r = compile(project([
+    path('a', { start: 1 }, [E(1, 0), E(4, 0)]),
+    path('b', { start: 8 }, [E(4, 0), E(4, 4)]),
+    path('c', { start: 20 }, [E(1, 1), E(6, 1)]),
+  ]), rects);
+  assert.deepEqual(r.resting.filter((x) => x.id === 'a'), [{ id: 'a', cells: [E(4, 0)], from: 5, to: 7 }]);
+  assert.deepEqual(r.resting.filter((x) => x.id === 'b'), [{ id: 'b', cells: [E(4, 4)], from: 13, to: 25 }]);
+  assert.deepEqual([...r.touches], [], 'c passes (4,1) after a’s droplet was taken, and far from b’s');
+  const late = compile(project([path('a', { start: 1 }, [E(1, 0), E(4, 0)]), path('c', { start: 20 }, [E(1, 1), E(6, 1)])]), rects);
+  assert.deepEqual([...late.touches], ['a|c'], 'with nothing taking it, a’s droplet is still on (4,0)');
+});

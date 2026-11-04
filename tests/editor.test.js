@@ -81,9 +81,10 @@ test('paint-off only removes the pattern’s own electrodes, and says whose an e
   assert.match(ed.notice, /16 is part of “Path 1”/);
 });
 
-test('Shift+click goes to the next frame and switches the electrode on', () => {
+test('paint: Shift+click goes to the next frame and switches the electrode on', () => {
   const ed = standard();
-  paintClick(ed, 9);
+  ed.setTool('paint');
+  click(ed, 9);
   for (const e of [17, 25, 33]) click(ed, e, { shift: true });
   assert.equal(ed.frame, 4);
   assert.deepEqual([1, 2, 3, 4].map((f) => onIn(ed, f)), [[9], [17], [25], [33]]);
@@ -102,6 +103,7 @@ test('frames stay between 1 and 200', () => {
   ed.frame = MAX_FRAMES;
   ed.nextFrame();
   assert.equal(ed.frame, MAX_FRAMES);
+  ed.setTool('paint');
   click(ed, 9, { shift: true });
   assert.equal(ed.frame, MAX_FRAMES);
   assert.ok(ed.seq.get(9, MAX_FRAMES));
@@ -921,4 +923,287 @@ test('a long step makes the others wait, unless it lets them keep moving (split)
   assert.deepEqual([1, 2, 3, 4].map((f) => onIn(ed, f).includes(9)), [true, true, true, true]);
   ed.undo();
   assert.ok(ed.compiled.issues.some((i) => i.kind === 'waits'));
+});
+
+// --- droplets mustn't touch ----------------------------------------------------------------------
+
+test('a template that would touch another droplet shows red and is not dropped', () => {
+  const ed = standard();
+  drag(ed, E(1, 2), E(6, 2)); // Path 1 along row 2, frames 1-6
+  ed.pointerUp();
+  ed.frame = 1;
+  ed.startPlacement(builtIn('circle-2x2'));
+  ed.hoverPlacement(...at(E(3, 0))); // its square reaches row 1, next to the path
+  assert.equal(ed.placement.spot.valid, false);
+  assert.match(ed.placement.spot.reason, /would touch in frame/);
+  assert.equal(ed.dropPlacement(), null);
+  assert.equal(byType(ed, 'template').length, 0);
+  ed.startPlacement(builtIn('circle-2x2'));
+  ed.hoverPlacement(...at(E(3, 5))); // two rows below the path: clear
+  assert.ok(ed.placement.spot.valid);
+  assert.ok(ed.dropPlacement());
+});
+
+test('a path drawn next to another droplet is refused, and shows it while drawing', () => {
+  const ed = standard();
+  drag(ed, E(1, 2), E(6, 2));
+  ed.pointerUp();
+  ed.escape();
+  ed.frame = 1;
+  drag(ed, E(1, 4), E(6, 4)); // two rows apart: fine
+  assert.equal(ed.draft.check.valid, true);
+  ed.pointerUp();
+  ed.escape();
+  ed.frame = 1;
+  drag(ed, E(1, 3), E(6, 3)); // in between: touches both
+  assert.equal(ed.draft.check.valid, false);
+  assert.equal(ed.pointerUp(), null);
+  assert.match(ed.notice, /would touch/);
+  assert.equal(byType(ed, 'path').length, 2);
+});
+
+test('moves, time moves and paint are refused where droplets would touch; deleting never is', () => {
+  const ed = standard();
+  drag(ed, E(1, 1), E(6, 1));
+  ed.pointerUp();
+  ed.escape();
+  ed.frame = 1;
+  drag(ed, E(1, 4), E(6, 4));
+  ed.pointerUp();
+  const second = ed.selection;
+  assert.ok(ed.nudge(0, -1), 'up one row: still a row between them');
+  assert.equal(ed.nudge(0, -1), false, 'up another is next to the first path');
+  assert.match(ed.notice, /would touch/);
+  ed.select('a1');
+  ed.setTool('paint');
+  ed.frame = 2;
+  ed.escape();
+  click(ed, E(2, 2)); // right next to the first path's droplet in frame 2
+  assert.match(ed.notice, /would touch/);
+  assert.deepEqual(onIn(ed, 2), [E(2, 1), E(2, 3)], 'nothing painted between them');
+  ed.select(second);
+  assert.ok(ed.deleteSelected());
+});
+
+test('a droplet stays where its path left it, so a later path can’t pass next to it', () => {
+  const ed = standard();
+  drag(ed, E(1, 1), E(4, 1)); // ends on (4,1) in frame 4 and stays there
+  ed.pointerUp();
+  ed.escape();
+  ed.frame = 10;
+  drag(ed, E(1, 2), E(8, 2));
+  assert.equal(ed.draft.check.valid, false);
+  ed.cancel();
+  drag(ed, E(4, 1), E(4, 5)); // carrying on from that droplet is fine: it is the same droplet
+  ed.pointerUp();
+  const p2 = byType(ed, 'path')[1];
+  assert.equal(p2.after, 'a1');
+  assert.equal(p2.delay, 6, 'linked, waiting 6 frames');
+  assert.equal(p2.droplet, 'Droplet 1');
+});
+
+// --- editing without switching tools --------------------------------------------------------
+
+test('with freehand, the selected path’s pieces and corners can be dragged', () => {
+  const ed = standard();
+  drag(ed, E(1, 0), E(5, 0), E(5, 4));
+  ed.pointerUp();
+  assert.equal(ed.tool, 'freehand');
+  ed.pointerDown(...at(E(3, 0))); // a piece of the selected path
+  ed.pointerMove(...at(E(3, 2)));
+  ed.pointerUp();
+  assert.deepEqual(pointsOf(byType(ed, 'path')[0]), [E(1, 0), E(1, 2), E(5, 2), E(5, 4)]);
+  assert.equal(byType(ed, 'path').length, 1, 'no new path drawn');
+});
+
+test('with freehand, dragging the selected path’s end draws it on, or back', () => {
+  const ed = standard();
+  drag(ed, E(1, 0), E(5, 0));
+  ed.pointerUp();
+  ed.frame = 1; // the end can be grabbed in any frame
+  drag(ed, E(5, 0), E(5, 3));
+  ed.pointerUp();
+  assert.deepEqual(pointsOf(byType(ed, 'path')[0]), [E(1, 0), E(5, 0), E(5, 3)]);
+  drag(ed, E(5, 3), E(5, 1), E(5, 0), E(4, 0)); // back along the path
+  ed.pointerUp();
+  assert.deepEqual(pointsOf(byType(ed, 'path')[0]), [E(1, 0), E(4, 0)]);
+  assert.equal(byType(ed, 'path').length, 1);
+});
+
+test('Alt+drag moves a template with any tool; Shift+drag moves it with everything after it', () => {
+  const ed = chain();
+  const mixId = named(ed, 'Circle mix 2×2, 3 rounds').id;
+  ed.setTool('freehand');
+  ed.frame = 11;
+  ed.select(mixId);
+  ed.pointerDown(...at(E(4, 3)), { alt: true });
+  ed.pointerMove(...at(E(4, 5)));
+  ed.pointerUp();
+  const mix = named(ed, 'Circle mix 2×2, 3 rounds');
+  assert.equal(mix.at, E(3, 5));
+  assert.deepEqual(pointsOf(named(ed, 'Path 2')), [E(3, 5), E(3, 3), E(8, 3)], 'the next path stretches');
+
+  ed.undo();
+  ed.setTool('select');
+  ed.select(mixId);
+  ed.pointerDown(...at(E(4, 3)), { shift: true });
+  ed.pointerMove(...at(E(4, 5)));
+  ed.pointerUp();
+  assert.equal(named(ed, 'Circle mix 2×2, 3 rounds').at, E(3, 5));
+  assert.deepEqual(pointsOf(named(ed, 'Path 2')), [E(3, 5), E(8, 5)], 'the next path moves along');
+  assert.deepEqual(pointsOf(named(ed, 'Path 1')).slice(-2), [E(3, 1), E(3, 5)], 'the path coming in stretches');
+  assert.ok(!ed.compiled.issues.some((i) => i.kind === 'jump'));
+});
+
+test('Shift+click draws a path corner by corner, and carries on from the selected path', () => {
+  const ed = standard();
+  ed.frame = 3;
+  click(ed, E(1, 0), { shift: true }); // where it starts
+  assert.deepEqual(ed.pending, { e: E(1, 0), frame: 3 });
+  click(ed, E(4, 0), { shift: true });
+  const path = () => byType(ed, 'path')[0];
+  assert.deepEqual(pointsOf(path()), [E(1, 0), E(4, 0)]);
+  assert.equal(path().start, 3);
+  click(ed, E(6, 3), { shift: true }); // not in line: two pieces at a right angle
+  assert.deepEqual(pointsOf(path()), [E(1, 0), E(6, 0), E(6, 3)]);
+  assert.equal(ed.frame, 3 + 8);
+  ed.escape();
+  click(ed, E(10, 6), { shift: true });
+  assert.ok(ed.pending);
+  assert.equal(ed.escape(), 'cancelled');
+  assert.equal(ed.pending, null);
+});
+
+test('R turns the selected template around its drop point; the paths attached follow', () => {
+  const ed = chain();
+  const id = named(ed, 'Circle mix 2×2, 3 rounds').id;
+  ed.select(id);
+  assert.ok(ed.rotateSelected(1));
+  assert.equal(ed.action(id).turns, 1);
+  assert.deepEqual(framesFrom(ed, 11, 2).map((f) => f.filter((e) => e >= 8 && e < 120)), [[E(3, 4)], [E(2, 4)]]);
+  ed.select('a1');
+  assert.equal(ed.rotateSelected(1), false);
+  assert.match(ed.notice, /stays at its reservoir/);
+});
+
+test('R turns a path around its start (Shift+R back); where it would leave the array it stays', () => {
+  const ed = standard();
+  drag(ed, E(5, 2), E(8, 2));
+  ed.pointerUp();
+  const path = () => byType(ed, 'path')[0];
+  assert.ok(ed.rotateSelected(1));
+  assert.deepEqual(pointsOf(path()), [E(5, 2), E(5, 5)]);
+  assert.ok(ed.rotateSelected(-1));
+  assert.deepEqual(pointsOf(path()), [E(5, 2), E(8, 2)]);
+  assert.equal(ed.rotateSelected(-1), false, 'pointing up 3 from row 2 it would leave the array');
+  assert.match(ed.notice, /doesn't fit/);
+});
+
+// --- time ------------------------------------------------------------------------------------
+
+test('[ and ] move an action in time; a linked one can’t start before what it follows ends', () => {
+  const ed = standard();
+  drag(ed, E(1, 0), E(4, 0));
+  ed.pointerUp();
+  ed.escape();
+  ed.frame = 1;
+  drag(ed, E(10, 6), E(13, 6)); // another droplet, frames 1-4
+  ed.pointerUp();
+  assert.ok(ed.shiftInTime(1));
+  assert.deepEqual(spanOf(ed, 'Path 2'), [2, 5]);
+  assert.ok(ed.moveToFrame(ed.selection, 10));
+  assert.deepEqual(spanOf(ed, 'Path 2'), [10, 13]);
+
+  ed.escape();
+  drag(ed, E(4, 0), E(4, 3)); // linked after Path 1, which ends in frame 4
+  ed.pointerUp();
+  const linked = ed.selection;
+  assert.equal(ed.action(linked).after, 'a1');
+  assert.equal(ed.shiftInTime(-1), false);
+  assert.match(ed.notice, /starts when “Path 1” ends/);
+  assert.ok(ed.shiftInTime(2));
+  assert.equal(ed.action(linked).delay, 2);
+  assert.ok(ed.setStart(linked, 20));
+  assert.equal(ed.action(linked).after, undefined);
+  assert.deepEqual(spanOf(ed, 'Path 3'), [20, 23]);
+  assert.ok(ed.setAfter(linked, ['a1'], 1));
+  assert.deepEqual([ed.action(linked).after, ed.action(linked).delay], ['a1', 1]);
+  assert.equal(ed.setAfter('a1', [linked]), false, 'no loops');
+});
+
+test('a merge template dropped where two droplets arrive waits for both', () => {
+  const ed = standard();
+  drag(ed, E(2, 0), E(2, 3)); // Droplet 1 to (2,3), frames 1-4
+  ed.pointerUp();
+  ed.escape();
+  ed.frame = 1;
+  drag(ed, E(4, 7), E(4, 6), E(4, 5)); // Droplet 2 to (4,5), frames 1-3
+  ed.pointerUp();
+  ed.escape();
+  ed.frame = 3;
+  drag(ed, E(4, 5), E(4, 3)); // and on to (4,3), frames 3-5
+  ed.pointerUp();
+  ed.frame = 5;
+  ed.startPlacement(builtIn('merge'));
+  ed.hoverPlacement(...at(E(2, 3)));
+  assert.ok(ed.placement.spot.valid, ed.placement.spot.reason);
+  ed.dropPlacement();
+  const merge = byType(ed, 'template')[0];
+  assert.deepEqual(merge.after, ['a1', 'a3']);
+  assert.equal(merge.droplet, 'Droplet 1 + Droplet 2');
+  assert.deepEqual(spanOf(ed, 'Merge two droplets'), [5, 7]);
+});
+
+// --- properties ------------------------------------------------------------------------------
+
+test('a placed mixer’s rounds and size can be changed; what follows moves in time', () => {
+  const ed = chain();
+  const id = named(ed, 'Circle mix 2×2, 3 rounds').id;
+  assert.deepEqual(ed.action(id).params, { kind: 'circle', size: 2, rounds: 3 });
+  assert.ok(ed.setParams(id, { rounds: 5 }));
+  const mix = ed.action(id);
+  assert.equal(mix.name, 'Circle mix 2×2, 5 rounds');
+  assert.equal(mix.template, 'circle-2x2-r5');
+  assert.deepEqual(spanOf(ed, mix.name), [10, 30]);
+  assert.deepEqual(spanOf(ed, 'Path 2'), [30, 35]);
+  assert.ok(ed.project.templates['circle-2x2-r5']);
+  assert.ok(ed.setParams(id, { size: 3, rounds: 1 }));
+  assert.equal(ed.action(id).name, 'Circle mix 3×3, 1 round');
+  ed.rename(id, 'My mix');
+  ed.setParams(id, { rounds: 2 });
+  assert.equal(ed.action(id).name, 'My mix', 'a name of your own stays');
+});
+
+test('a pattern’s length and a path’s wait at its end', () => {
+  const ed = standard();
+  ed.setTool('paint');
+  click(ed, E(5, 5));
+  const id = ed.selection;
+  assert.ok(ed.setFrames(id, 4));
+  assert.deepEqual(ed.action(id).frames, [[E(5, 5)], [E(5, 5)], [E(5, 5)], [E(5, 5)]]);
+  assert.ok(ed.setFrames(id, 2));
+  assert.equal(ed.action(id).frames.length, 2);
+  ed.setTool('freehand');
+  ed.escape();
+  ed.frame = 1;
+  drag(ed, E(10, 1), E(13, 1));
+  ed.pointerUp();
+  assert.ok(ed.setEndWait(ed.selection, 3000));
+  assert.equal(ed.seq.timeOf(4), 3000);
+});
+
+test('an OpenDrop file can be added to the project at the frame on screen', () => {
+  const ed = standard();
+  drag(ed, E(1, 0), E(4, 0));
+  ed.pointerUp();
+  const file = new Sequence();
+  file.set(E(10, 5), 2, true); // frame 1 of the file is empty: left out
+  file.set(E(11, 5), 3, true);
+  ed.frame = 6;
+  assert.ok(ed.addSequence(file, 'old.json'));
+  assert.deepEqual([6, 7].map((f) => onIn(ed, f)), [[E(10, 5)], [E(11, 5)]]);
+  const near = new Sequence();
+  near.set(E(5, 1), 1, true); // next to where Path 1's droplet rests
+  assert.equal(ed.addSequence(near, 'near.json'), false);
+  assert.match(ed.notice, /would touch/);
 });

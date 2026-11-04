@@ -90,3 +90,21 @@ test('stored templates are checked; export and import round-trip', () => {
   assert.throws(() => T.importText('{"something": "else"}'), /not a templates file/);
   assert.throws(() => T.importText('[{"name": "x"}]'), /no templates/);
 });
+
+test('built-in mixes have parameters; other values make other frames, with a key and a name', () => {
+  assert.deepEqual(byId('circle-3x3').params, { kind: 'circle', size: 3, rounds: 2 });
+  for (const t of T.BUILT_IN.filter((x) => x.params)) {
+    const again = T.fromParams(t.params);
+    assert.equal(again.id, t.id, 'its own parameters give the built-in itself');
+    assert.deepEqual(again.frames, t.frames);
+  }
+  const big = T.fromParams({ kind: 'circle', size: 3, rounds: 5 });
+  assert.equal(big.id, 'circle-3x3-r5');
+  assert.equal(big.name, 'Circle mix 3×3, 5 rounds');
+  assert.equal(T.stepsOf(big), 8 * 5);
+  const line = T.fromParams({ kind: 'backforth', length: 3, rounds: 1 });
+  assert.deepEqual(line.frames, [[[0, 0]], [[1, 0]], [[2, 0]], [[1, 0]], [[0, 0]]]);
+  assert.equal(T.fromParams({ kind: 'splitmerge', rounds: 1 }).frames.length, 7);
+  assert.deepEqual(T.cleanParams({ kind: 'circle', size: 9, rounds: 'x' }), { kind: 'circle', size: 3, rounds: 3 });
+  assert.equal(T.fromParams({ kind: 'nope' }), null);
+});

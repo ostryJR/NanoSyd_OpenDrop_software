@@ -125,3 +125,20 @@ test('templates are copied in once: built-in ones by their id, others as t1, t2�
   assert.equal(P.embedTemplate(p, { ...circle, frames: [[[0, 0]]] }), 't3');
   assert.deepEqual(p.templates['circle-2x2'].frames, circle.frames);
 });
+
+test('“after” may list several actions (a merge); a template keeps its parameters', () => {
+  const { project, warnings } = P.parse(JSON.stringify({
+    openDropGeneratorProject: 1,
+    templates: { 'circle-3x3-r5': { name: 'Circle mix 3×3, 5 rounds', frames: [[[0, 0]]] } },
+    actions: [
+      { id: 'a', type: 'path', start: 1, points: [{ e: 9 }] },
+      { id: 'b', type: 'path', start: 1, points: [{ e: 20 }] },
+      { id: 'm', type: 'template', after: ['a', 'b'], delay: 2, template: 'circle-3x3-r5', at: 9, params: { kind: 'circle', size: 3, rounds: 5 } },
+    ],
+  }));
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(project.actions[2].after, ['a', 'b']);
+  assert.equal(project.actions[2].delay, 2);
+  assert.deepEqual(project.actions[2].params, { kind: 'circle', size: 3, rounds: 5 });
+  assert.match(P.serialize(project), /"after": \["a","b"\],\n {6}"delay": 2,/);
+});

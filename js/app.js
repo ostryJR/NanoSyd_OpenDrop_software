@@ -7,6 +7,7 @@
   const { Editor } = root.OD.editor;
   const { BoardView, dropletColour } = root.OD.view;
   const { TimingChart, formatTime } = root.OD.chart;
+  const { Timeline } = root.OD.timeline;
   const G = layout.GEOMETRY;
   const $ = (id) => document.getElementById(id);
 
@@ -31,7 +32,7 @@
   const PREFS_KEY = 'opendrop-generator.prefs';
   const stored = readStored(PREFS_KEY, {});
   const prefs = {
-    timingMin: false, templatesMin: false, chart: 'step', lines: true, tab: 'actions',
+    timingMin: false, templatesMin: false, chart: 'timeline', lines: true, tab: 'properties',
     ...(stored && typeof stored === 'object' ? stored : {}),
   };
   const savePrefs = () => {
@@ -107,7 +108,7 @@
     board.render(ed, { numbers: showNumbers, lines: showLines });
     if (ed.draft && ed.draft.moved) showDraft(ed.draft);
     showTiming();
-    showActions();
+    showProperties();
     if (ed.makingTemplate) showMakerInfo();
   }
 
@@ -146,7 +147,7 @@
     evt.preventDefault();
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const { mx, my } = toGrid(evt);
-    const action = ed.pointerDown(mx, my, { shift: evt.shiftKey, now: performance.now() });
+    const action = ed.pointerDown(mx, my, { shift: evt.shiftKey, alt: evt.altKey, now: performance.now() });
     if (DIALOGS[action]) {
       // Browsers only open file dialogs during a user gesture: a mouse press counts,
       // a touch only once the finger lifts.
@@ -157,7 +158,7 @@
     } else if (action && action.startsWith('tool')) {
       savePrefs();
     }
-    showNotice();
+    if (!showNotice() && ed.info) setStatus(ed.info);
     if (ed.dragging) svg.setPointerCapture(evt.pointerId);
     redraw();
   });
@@ -262,8 +263,9 @@
       return;
     }
     if (evt.altKey && !evt.metaKey && !evt.ctrlKey && NUDGE[key]) {
-      // Option/Alt + arrow keys move the selected action one electrode.
-      if (ed.nudge(...NUDGE[key])) setStatus(`Moved ${quote(ed.selected)}`);
+      // Option/Alt + arrow keys move the selected action one electrode; with Shift, together with
+      // everything that follows it.
+      if (ed.nudge(...NUDGE[key], { chain: evt.shiftKey })) setStatus(`Moved ${quote(ed.selected)}${evt.shiftKey ? ' and what follows it' : ''}`);
       else showNotice();
       evt.preventDefault();
       redraw();
@@ -301,6 +303,17 @@
         break;
       case 'v':
         setTool('select');
+        break;
+      case 'r':
+        if (ed.rotateSelected(evt.shiftKey ? -1 : 1)) setStatus(`Turned ${quote(ed.selected)}`);
+        else showNotice();
+        break;
+      case '[':
+      case ']':
+        if (ed.shiftInTime(key === '[' ? -1 : 1)) {
+          const span = ed.span(ed.selection);
+          setStatus(`${quote(ed.selected)}: frames ${span.from} to ${span.to}`);
+        } else showNotice();
         break;
       case 'Delete':
       case 'Backspace':
@@ -517,7 +530,11 @@
     const last = seq.lastFrame();
     totalText.textContent = `Total ${formatTime(seq.elapsed(last))} over ${plural(last, 'frame')}`;
     showWarning();
-    if (prefs.timingMin) return; // the chart is folded away
+    if (prefs.timingMin) return; // the chart and timeline are folded away
+    if (prefs.chart === 'timeline') {
+      showTimeline();
+      return;
+    }
     const times = [];
     const own = [];
     for (let f = 1; f <= Math.max(last, ed.frame); f++) {
@@ -581,12 +598,17 @@
   for (const input of [defaultInput, frameInput]) editKeys(input);
 
   const viewButtons = [...document.querySelectorAll('#timing .segmented button')];
+  const chartBox = $('chart');
+  const timelineBox = $('timeline');
   function setChartView(view) {
-    prefs.chart = ['step', 'total', 'table'].includes(view) ? view : 'step';
+    prefs.chart = ['timeline', 'step', 'total', 'table'].includes(view) ? view : 'timeline';
     for (const b of viewButtons) b.setAttribute('aria-pressed', String(b.dataset.view === prefs.chart));
-    legend.style.visibility = prefs.chart === 'step' ? '' : 'hidden';
-    chart.setMode(prefs.chart);
+    legend.style.display = prefs.chart === 'step' ? '' : 'none';
+    timelineBox.hidden = prefs.chart !== 'timeline';
+    chartBox.hidden = prefs.chart === 'timeline';
+    if (prefs.chart !== 'timeline') chart.setMode(prefs.chart);
     savePrefs();
+    redraw();
   }
   for (const b of viewButtons) {
     b.addEventListener('click', () => {
@@ -595,111 +617,239 @@
     });
   }
 
-  // --- actions panel ---------------------------------------------------------------------
+  // --- timeline --------------------------------------------------------------------------
+  // One track per droplet, each action a clip; actions without a droplet name get a track each.
 
   const KIND = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern' };
-  const actionList = $('action-list');
-  const actionFields = $('action-fields');
-  const kindText = $('action-kind');
-  const nameField = $('action-name');
-  const dropletField = $('action-droplet');
-  const stepField = $('action-step');
-  const infoText = $('action-info');
-  const dropletNames = $('droplet-names');
-  let actionsKey = '';
-
-  function showActions() {
-    const { compiled, project } = ed;
-    const rows = project.actions
-      .map((a, index) => {
-        const span = compiled.spans.get(a.id) || null;
-        const before = a.after ? project.actions.find((x) => x.id === a.after) : null;
-        return {
-          id: a.id,
-          name: a.name,
-          droplet: a.droplet || '',
-          type: a.type,
-          span: span && [span.from, span.to],
-          after: before ? before.name : null,
-          problems: compiled.issues.filter((i) => i.id === a.id && i.kind !== 'waits').map((i) => i.text),
-          index,
-        };
-      })
-      .sort((p, q) => (p.span ? p.span[0] : 1e9) - (q.span ? q.span[0] : 1e9) || p.index - q.index);
-    const key = JSON.stringify([rows, ed.selection]);
-    if (key !== actionsKey) {
-      actionsKey = key;
-      actionList.replaceChildren(...rows.map(actionRow));
-      $('no-actions').hidden = rows.length > 0;
-      const names = [...new Set(project.actions.map((a) => a.droplet).filter(Boolean))];
-      dropletNames.replaceChildren(...names.map((n) => new Option(n)));
-    }
-    showActionFields();
-  }
-
-  function actionRow(row) {
-    const li = document.createElement('li');
-    li.className = 'action' + (row.id === ed.selection ? ' selected' : '') + (row.problems.length ? ' problem' : '');
-    const chip = document.createElement('span');
-    chip.className = 'chip';
-    chip.style.background = dropletColour(row.droplet);
-    chip.title = row.droplet ? `Droplet: ${row.droplet}` : 'No droplet name';
-    const text = document.createElement('div');
-    text.className = 'text';
-    const name = document.createElement('div');
-    name.className = 'name';
-    name.textContent = row.name; // names come from files: text only
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    const parts = [KIND[row.type] || row.type];
-    if (row.span) parts.push(row.span[0] === row.span[1] ? `frame ${row.span[0]}` : `frames ${row.span[0]}–${row.span[1]}`);
-    if (row.after) parts.push(`after ${row.after}`);
-    if (row.droplet) parts.push(row.droplet);
-    meta.textContent = parts.join(' · ');
-    text.append(name, meta);
-    for (const p of row.problems) {
-      const div = document.createElement('div');
-      div.className = 'problem-text';
-      div.textContent = p;
-      text.appendChild(div);
-    }
-    li.append(chip, text, iconButton('×', 'Delete it', () => {
-      ed.select(row.id);
-      deleteSelected();
-    }));
-    li.addEventListener('click', (evt) => {
-      if (evt.target.closest('button')) return;
-      ed.select(row.id);
-      if (row.span && !ed.playing) ed.frame = row.span[0];
+  const timeline = new Timeline(timelineBox, {
+    onSelect(id) {
+      if (ed.dragging) return;
+      ed.select(id);
       redraw();
-    });
-    return li;
+    },
+    onFrame(f) {
+      if (ed.dragging || ed.placement) return;
+      ed.frame = f;
+      redraw();
+    },
+    onPreview(id, frame) {
+      const check = ed.previewTime(id, frame);
+      const span = check.valid ? check.compiled.spans.get(id) : null;
+      return { valid: check.valid, reason: check.reason, from: span ? span.from : null, to: span ? span.to : null };
+    },
+    onMove(id, frame) {
+      ed.select(id);
+      if (ed.moveToFrame(id, frame)) {
+        const span = ed.span(id);
+        setStatus(`${quote(ed.action(id))}: frames ${span.from} to ${span.to}`);
+      } else showNotice();
+      redraw();
+    },
+  });
+
+  function showTimeline() {
+    const { compiled, project } = ed;
+    const preds = (a) => (a.after === undefined ? [] : Array.isArray(a.after) ? a.after : [a.after]);
+    const clips = [];
+    for (const a of project.actions) {
+      // An action that can't run still gets a clip, one frame long where it would start, so it
+      // can be found and fixed.
+      let span = compiled.spans.get(a.id);
+      const broken = !span;
+      if (broken) {
+        const ends = preds(a).map((id) => compiled.spans.get(id)).filter(Boolean).map((s) => s.to);
+        const from = a.start || (ends.length ? Math.max(...ends) + (a.delay || 0) : 1);
+        span = { from: Math.min(200, from), to: Math.min(200, from) };
+      }
+      const followers = project.actions.filter((b) => preds(b).includes(a.id));
+      const problem = compiled.issues.filter((i) => i.id === a.id && i.kind !== 'waits').map((i) => i.text).join('; ');
+      clips.push({
+        id: a.id,
+        name: a.name,
+        type: a.type,
+        track: a.droplet ? `d:${a.droplet}` : `a:${a.id}`,
+        trackName: a.droplet || a.name,
+        colour: dropletColour(a.droplet),
+        from: span.from,
+        to: span.to,
+        problem: problem || null,
+        broken,
+        split: Boolean(a.split),
+        handIn: preds(a).some((id) => compiled.spans.get(id) && compiled.spans.get(id).to === span.from),
+        handOut: followers.some((b) => compiled.spans.get(b.id) && compiled.spans.get(b.id).from === span.to),
+        preds: preds(a),
+      });
+    }
+    const last = clips.reduce((m, c) => Math.max(m, c.to), 0);
+    timeline.update({ frames: Math.min(200, Math.max(30, last + 10, ed.frame + 5)), frame: ed.frame, selection: ed.selection, clips });
   }
 
-  function showActionFields() {
+  // --- properties ------------------------------------------------------------------------
+  // The selected action's name, droplet, start, times and settings. Each field changes it when
+  // it is left (or Enter is pressed); a change that doesn't fit is refused and the field shows
+  // the old value again.
+
+  const propsNone = $('props-none');
+  const props = $('props');
+  const summary = $('props-summary');
+  const kindText = $('prop-kind');
+  const nameField = $('prop-name');
+  const dropletField = $('prop-droplet');
+  const startMode = $('prop-start-mode');
+  const startField = $('prop-start');
+  const afterBox = $('prop-after');
+  const afterList = $('prop-after-list');
+  const delayField = $('prop-delay');
+  const stepField = $('prop-step');
+  const splitBox = $('prop-split');
+  const sizeField = $('prop-size');
+  const lengthField = $('prop-length');
+  const roundsField = $('prop-rounds');
+  const framesField = $('prop-frames');
+  const endWaitField = $('prop-endwait');
+  const infoText = $('prop-info');
+  const dropletNames = $('droplet-names');
+  const show = (node, on) => (node.hidden = !on);
+  let propsKey = '';
+  let afterDraft = null; // predecessors being picked in the "after" list, not yet applied
+  let propsFor = null; // the action the fields show
+
+  const predsOf = (a) => (a.after === undefined ? [] : Array.isArray(a.after) ? a.after : [a.after]);
+  const keep = (input, value) => {
+    if (document.activeElement !== input) input.value = value;
+  };
+
+  function showProperties() {
     const a = ed.selected;
-    actionFields.hidden = !a;
-    if (!a) return;
-    const span = ed.span(a.id);
-    kindText.textContent = `${KIND[a.type] || a.type}${span ? ` · frames ${span.from}–${span.to}` : ''}`;
-    if (document.activeElement !== nameField) nameField.value = a.name;
-    if (document.activeElement !== dropletField) dropletField.value = a.droplet || '';
-    if (document.activeElement !== stepField) stepField.value = a.stepTime ? seconds(a.stepTime) : '';
+    if ((a && a.id) !== propsFor) {
+      propsFor = a && a.id;
+      afterDraft = null;
+    }
+    const span = a && ed.span(a.id);
+    const key = JSON.stringify([a, span, ed.project.actions.map((x) => [x.id, x.name]), ed.compiled.issues.filter((i) => a && i.id === a.id), afterDraft]);
+    if (key === propsKey) return;
+    propsKey = key;
+    show(propsNone, !a);
+    show(props, Boolean(a));
+    if (!a) {
+      afterDraft = null;
+      const last = ed.seq.lastFrame();
+      summary.textContent = ed.project.actions.length
+        ? `${plural(ed.project.actions.length, 'action')} · ${plural(last, 'frame')} · ${formatTime(ed.seq.elapsed(last))}`
+        : '';
+      return;
+    }
+    kindText.textContent = `${KIND[a.type] || a.type}${span ? ` · ${span.from === span.to ? `frame ${span.from}` : `frames ${span.from}–${span.to}`}` : ''}`;
+    keep(nameField, a.name);
+    keep(dropletField, a.droplet || '');
+    dropletNames.replaceChildren(...[...new Set(ed.project.actions.map((x) => x.droplet).filter(Boolean))].map((n) => new Option(n)));
+
+    // Starts: at a frame, or after other actions (and a delay).
+    const preds = afterDraft || predsOf(a);
+    const linked = preds.length > 0 || afterDraft !== null;
+    if (document.activeElement !== startMode) startMode.value = linked ? 'after' : 'frame';
+    show(startField, !linked);
+    keep(startField, String(a.start || (span ? span.from : 1)));
+    show(afterBox, linked);
+    keep(delayField, String(a.delay || 0));
+    const others = ed.project.actions.filter((x) => x.id !== a.id);
+    const rows = (preds.length ? preds : ['']).map((id, i) => {
+      const row = document.createElement('span');
+      row.className = 'row';
+      const select = document.createElement('select');
+      select.add(new Option('— pick an action —', ''));
+      for (const x of others) select.add(new Option(x.name, x.id));
+      select.value = id;
+      select.addEventListener('change', () => setPreds(preds.map((p, j) => (j === i ? select.value : p)).concat(preds.length ? [] : [select.value]).filter(Boolean)));
+      row.appendChild(select);
+      if (preds.length > 1) row.appendChild(iconButton('×', 'Stop waiting for it', () => setPreds(preds.filter((_, j) => j !== i))));
+      return row;
+    });
+    afterList.replaceChildren(...rows);
+
+    keep(stepField, a.stepTime ? seconds(a.stepTime) : '');
     stepField.placeholder = `${seconds(ed.project.frameTime)} (default)`;
+    splitBox.checked = Boolean(a.split);
+    show($('prop-turn'), a.type !== 'dispense');
+    const p = a.type === 'template' && a.params ? a.params : null;
+    show($('prop-size-row'), Boolean(p && p.size !== undefined));
+    show($('prop-length-row'), Boolean(p && p.length !== undefined));
+    show($('prop-rounds-row'), Boolean(p && p.rounds !== undefined));
+    if (p) {
+      if (p.size !== undefined) sizeField.value = String(p.size);
+      if (p.length !== undefined) keep(lengthField, String(p.length));
+      if (p.rounds !== undefined) keep(roundsField, String(p.rounds));
+    }
+    show($('prop-frames-row'), a.type === 'pattern');
+    if (a.type === 'pattern') keep(framesField, String(a.frames.length));
+    show($('prop-endwait-row'), a.type === 'path');
+    if (a.type === 'path') {
+      const end = a.points[a.points.length - 1];
+      keep(endWaitField, end.wait ? seconds(end.wait) : '');
+    }
     const notes = ed.issuesOf(a.id).filter((i) => i.kind !== 'waits').map((i) => i.text);
-    if (a.split) notes.push('Its long steps stretch over frames, so the others keep moving');
-    if (a.type === 'dispense') notes.push('A dispense stays at its reservoir');
-    infoText.textContent = notes.join('. ');
+    infoText.className = notes.length ? 'info' : 'info ok';
+    if (!notes.length && a.type === 'dispense') notes.push('A dispense stays at its reservoir');
+    infoText.textContent = notes.map((n) => n[0].toUpperCase() + n.slice(1)).join('. ');
+  }
+
+  // Applies a property change: ok -> status text, refused -> the editor's reason.
+  function propChange(done, text) {
+    if (done) setStatus(text());
+    else showNotice();
+    propsKey = '';
+    redraw();
+  }
+
+  function setPreds(preds) {
+    const a = ed.selected;
+    if (!a) return;
+    if (!preds.length) {
+      afterDraft = [];
+      propsKey = '';
+      redraw();
+      return;
+    }
+    afterDraft = null;
+    propChange(ed.setAfter(a.id, preds, Number(delayField.value) || 0), () => `${quote(a)} starts after ${preds.map((id) => quote(ed.action(id))).join(' and ')}`);
   }
 
   nameField.addEventListener('change', () => {
     const a = ed.selected;
-    if (a && ed.rename(a.id, nameField.value)) setStatus(`Renamed to ${quote(a)}`);
-    redraw();
+    if (a) propChange(ed.rename(a.id, nameField.value), () => `Renamed to ${quote(ed.selected)}`);
   });
   dropletField.addEventListener('change', () => {
     const a = ed.selected;
-    if (a && ed.setDroplet(a.id, dropletField.value)) setStatus(a.droplet ? `${quote(a)} moves the droplet “${a.droplet}”` : `${quote(a)} has no droplet name`);
+    if (a) propChange(ed.setDroplet(a.id, dropletField.value), () => (dropletField.value.trim() ? `${quote(a)} moves the droplet “${dropletField.value.trim()}”` : `${quote(a)} has no droplet name`));
+  });
+  startMode.addEventListener('change', () => {
+    const a = ed.selected;
+    if (!a) return;
+    if (startMode.value === 'frame') {
+      afterDraft = null;
+      const span = ed.span(a.id);
+      propChange(ed.setStart(a.id, span ? span.from : 1), () => `${quote(a)} starts in frame ${ed.span(a.id).from}`);
+    } else {
+      afterDraft = predsOf(a);
+      propsKey = '';
+      redraw();
+    }
+  });
+  startField.addEventListener('change', () => {
+    const a = ed.selected;
+    const f = Math.round(Number(startField.value));
+    if (a && f >= 1) propChange(ed.setStart(a.id, f), () => `${quote(a)} starts in frame ${f}`);
+  });
+  delayField.addEventListener('change', () => {
+    const a = ed.selected;
+    const preds = a ? predsOf(a) : [];
+    if (preds.length) propChange(ed.setAfter(a.id, preds, Math.max(0, Math.round(Number(delayField.value) || 0))), () => `${quote(a)} waits ${plural(ed.action(a.id).delay || 0, 'frame')} first`);
+  });
+  $('prop-after-add').addEventListener('click', () => {
+    const a = ed.selected;
+    if (!a) return;
+    afterDraft = [...predsOf(a), ''];
+    propsKey = '';
     redraw();
   });
   stepField.addEventListener('change', () => {
@@ -707,14 +857,60 @@
     if (!a) return;
     const ms = stepField.value.trim() === '' ? 0 : readSeconds(stepField);
     if (ms === null) setStatus('Times are in seconds, more than 0', 'warn');
-    else if (ed.setStepTime(a.id, ms)) setStatus(ms ? `Each step of ${quote(a)} lasts ${formatTime(a.stepTime)}` : `${quote(a)} uses the default frame time`);
-    stepField.value = a.stepTime ? seconds(a.stepTime) : '';
-    redraw();
+    else propChange(ed.setStepTime(a.id, ms), () => (ms ? `Each step of ${quote(a)} lasts ${formatTime(ed.action(a.id).stepTime)}` : `${quote(a)} uses the default frame time`));
   });
-  for (const input of [nameField, dropletField, stepField]) editKeys(input);
-  $('action-delete').addEventListener('click', (evt) => {
+  splitBox.addEventListener('change', () => {
+    const a = ed.selected;
+    if (a) propChange(ed.setSplit(a.id, splitBox.checked), () => (splitBox.checked ? `${quote(a)} lets the others keep moving` : `Actions running with ${quote(a)} wait for its long steps`));
+  });
+  $('prop-turn-left').addEventListener('click', () => propChange(ed.rotateSelected(-1), () => `Turned ${quote(ed.selected)}`));
+  $('prop-turn-right').addEventListener('click', () => propChange(ed.rotateSelected(1), () => `Turned ${quote(ed.selected)}`));
+  for (const [field, name] of [[sizeField, 'size'], [lengthField, 'length'], [roundsField, 'rounds']]) {
+    field.addEventListener('change', () => {
+      const a = ed.selected;
+      if (a) propChange(ed.setParams(a.id, { [name]: Math.round(Number(field.value)) }), () => `${quote(ed.selected)}: ${plural(ed.stepsOf(a.id).length - 1, 'step')}`);
+    });
+  }
+  framesField.addEventListener('change', () => {
+    const a = ed.selected;
+    if (a) propChange(ed.setFrames(a.id, Number(framesField.value)), () => `${quote(a)} lasts ${plural(ed.action(a.id).frames.length, 'frame')}`);
+  });
+  endWaitField.addEventListener('change', () => {
+    const a = ed.selected;
+    if (!a) return;
+    const ms = endWaitField.value.trim() === '' || Number(endWaitField.value) === 0 ? 0 : readSeconds(endWaitField);
+    if (ms === null) setStatus('Times are in seconds', 'warn');
+    else propChange(ed.setEndWait(a.id, ms), () => (ms ? `${quote(a)} waits ${formatTime(ms)} at its end` : `${quote(a)} doesn't wait at its end`));
+  });
+  for (const input of [nameField, dropletField, startField, delayField, stepField, lengthField, roundsField, framesField, endWaitField]) editKeys(input);
+  $('prop-delete').addEventListener('click', (evt) => {
     evt.currentTarget.blur();
     deleteSelected();
+  });
+
+  // --- adding a file ---------------------------------------------------------------------
+
+  const addFileInput = $('add-file-input');
+  $('add-file').addEventListener('click', (evt) => {
+    evt.currentTarget.blur();
+    addFileInput.click();
+  });
+  addFileInput.addEventListener('change', async () => {
+    const file = addFileInput.files[0];
+    addFileInput.value = '';
+    if (!file) return;
+    let result;
+    try {
+      result = jsonio.decode(await file.text());
+    } catch (err) {
+      setStatus(`Could not add ${file.name}: ${err.message}`, 'error');
+      return;
+    }
+    if (ed.addSequence(result.seq, file.name)) {
+      const span = ed.span(ed.selection);
+      setStatus(`Added ${file.name} as one block: frames ${span.from} to ${span.to}`);
+    } else showNotice();
+    redraw();
   });
 
   // --- templates panel -------------------------------------------------------------------
@@ -861,9 +1057,11 @@
       setStatus(`Added “${t.name}”: ${plural(added.steps, 'step')}, frames ${added.from} to ${added.to}${after}`);
     } else if (spot) {
       setStatus(
-        spot.fits
-          ? `“${t.name}” would run past frame 200 if it started in frame ${spot.frame}`
-          : `“${t.name}” doesn't fit there: part of it would be off the array`,
+        spot.reason
+          ? `“${t.name}” can't go there: ${spot.reason}`
+          : spot.fits
+            ? `“${t.name}” would run past frame 200 if it started in frame ${spot.frame}`
+            : `“${t.name}” doesn't fit there: part of it would be off the array`,
         'warn'
       );
     } else {
@@ -986,9 +1184,9 @@
 
   const tabButtons = [...document.querySelectorAll('#panel [role="tab"]')];
   function setTab(tab) {
-    prefs.tab = tab === 'templates' ? 'templates' : 'actions';
+    prefs.tab = tab === 'templates' ? 'templates' : 'properties';
     for (const b of tabButtons) b.setAttribute('aria-selected', String(b.dataset.tab === prefs.tab));
-    $('actions').hidden = prefs.tab !== 'actions';
+    $('properties').hidden = prefs.tab !== 'properties';
     library.hidden = prefs.tab !== 'templates';
     savePrefs();
   }
@@ -1048,7 +1246,7 @@
     const templatesSmall = prefs.templatesMin && !ed.makingTemplate;
     timingSection.classList.toggle('minimised', prefs.timingMin);
     timingToggle.querySelector('.arrow').textContent = prefs.timingMin ? '▸' : '▾';
-    timingToggle.title = prefs.timingMin ? 'Show the timing panel' : 'Minimise the timing panel';
+    timingToggle.title = prefs.timingMin ? 'Show the timeline panel' : 'Minimise the timeline panel';
     timingToggle.setAttribute('aria-expanded', String(!prefs.timingMin));
     templatesPanel.classList.toggle('minimised', templatesSmall);
     templatesTab.setAttribute('aria-expanded', String(!templatesSmall));
@@ -1079,6 +1277,6 @@
   applyPanels();
   setChartView(prefs.chart);
   setTab(prefs.tab);
-  root.OD.app = { editor: ed, board, chart, save, exportFrames, templates: () => myTemplates }; // for the console
+  root.OD.app = { editor: ed, board, chart, timeline, redraw, save, exportFrames, templates: () => myTemplates }; // for the console
   paint(); // the first picture straight away, not at the next animation frame
 })(globalThis);

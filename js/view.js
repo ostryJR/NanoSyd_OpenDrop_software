@@ -206,20 +206,24 @@
       const draft = ed.draft && ed.draft.moved ? ed.draft : null;
       const spot = !draft && ed.placement ? ed.placement.spot : null;
       const edit = !draft && !spot && ed.edit ? ed.edit.preview : null;
-      const sel = !draft && !spot && !edit ? ed.selected : null;
+      const pending = !draft && !spot && !edit ? ed.pending : null;
+      const sel = !draft && !spot && !edit && !pending ? ed.selected : null;
 
       const cls = new Map();
       let badge = null; // { text, bad, cells, end, beside }
       if (draft) {
-        for (const e of draft.cells) cls.set(e, 'path');
+        // A path that would touch another droplet shows red, with the reason.
+        const bad = Boolean(draft.check && !draft.check.valid);
+        for (const e of draft.cells) cls.set(e, bad ? 'bad' : 'path');
         if (draft.steps > 0) {
-          cls.set(draft.end, 'path-end');
+          cls.set(draft.end, bad ? 'bad-end' : 'path-end');
           const a = this.centres.get(draft.end);
           const b = this.centres.get(draft.cells[draft.cells.length - 2]);
           // After a step up or down the badge goes beside the end, after a step sideways above
           // it, so it never hides the path's last step.
           badge = {
-            text: plural(draft.steps, 'step') + (draft.limited ? ' · frame 200 limit' : ''),
+            text: bad ? draft.check.reason : plural(draft.steps, 'step') + (draft.limited ? ' · frame 200 limit' : ''),
+            bad,
             end: draft.end,
             beside: Math.abs(a.y - b.y) > Math.abs(a.x - b.x),
           };
@@ -229,10 +233,13 @@
         for (const e of spot.frames.flat()) cls.set(e, bad ? 'bad' : 'path');
         cls.set(spot.anchor, bad ? 'bad-end' : 'path-end');
         badge = {
-          text: spot.valid ? plural(spot.steps, 'step') : spot.fits ? 'runs past frame 200' : "doesn't fit here",
+          text: spot.valid ? plural(spot.steps, 'step') : spot.reason || (spot.fits ? 'runs past frame 200' : "doesn't fit here"),
           bad,
           cells: [...spot.frames.flat(), spot.anchor],
         };
+      } else if (pending) {
+        cls.set(pending.e, 'path-end');
+        badge = { text: 'Shift+click the next corner', end: pending.e };
       } else if (edit) {
         const ids = edit.valid ? [...edit.changes.keys()] : [ed.edit.id];
         const source = edit.valid ? shown : ed.compiled;

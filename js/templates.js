@@ -31,18 +31,78 @@
   const SPLIT = [[[0, 0]], [[-1, 0], [0, 0], [1, 0]], [[-1, 0], [1, 0]], [[-2, 0], [2, 0]]];
   const MERGE_BACK = [[[-1, 0], [1, 0]], [[-1, 0], [0, 0], [1, 0]]];
 
-  const BUILT_IN = [
-    { id: 'circle-2x2', name: 'Circle mix 2×2, 3 rounds', frames: rounds([[0, 0], [1, 0], [1, 1], [0, 1]], 3) },
-    {
-      id: 'circle-3x3',
-      name: 'Circle mix 3×3, 2 rounds',
-      frames: rounds([[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]], 2),
+  // The edge of a size x size square, clockwise from its top-left electrode.
+  function ring(size) {
+    const cells = [];
+    for (let c = 0; c < size; c++) cells.push([c, 0]);
+    for (let r = 1; r < size; r++) cells.push([size - 1, r]);
+    for (let c = size - 2; c >= 0; c--) cells.push([c, size - 1]);
+    for (let r = size - 2; r > 0; r--) cells.push([0, r]);
+    return cells;
+  }
+
+  const roundsText = (n) => `${n} round${n === 1 ? '' : 's'}`;
+  const clampInt = (v, [lo, hi], fallback) => (Number.isInteger(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
+
+  // Built-in operations that take parameters: what can be set (with limits and defaults), the
+  // frames, the name, and a key for the copy kept in project files.
+  const FAMILIES = {
+    circle: {
+      limits: { size: [2, 3, 2], rounds: [1, 20, 3] },
+      frames: (p) => rounds(ring(p.size), p.rounds),
+      name: (p) => `Circle mix ${p.size}×${p.size}, ${roundsText(p.rounds)}`,
+      key: (p) => `circle-${p.size}x${p.size}-r${p.rounds}`,
     },
-    { id: 'back-and-forth', name: 'Back-and-forth mix', frames: rounds([[0, 0], [1, 0], [2, 0], [3, 0], [2, 0], [1, 0]], 2) },
+    backforth: {
+      limits: { length: [2, 6, 4], rounds: [1, 20, 2] },
+      frames: (p) => {
+        const there = Array.from({ length: p.length }, (_, i) => [i, 0]);
+        return rounds([...there, ...there.slice(1, -1).reverse()], p.rounds);
+      },
+      name: (p) => (p.length === 4 && p.rounds === 2 ? 'Back-and-forth mix' : `Back-and-forth mix over ${p.length}, ${roundsText(p.rounds)}`),
+      key: (p) => `back-and-forth-${p.length}-r${p.rounds}`,
+    },
+    splitmerge: {
+      limits: { rounds: [1, 10, 2] },
+      frames: (p) => [...Array.from({ length: p.rounds }, () => [...SPLIT, ...MERGE_BACK]).flat(), [[0, 0]]],
+      name: (p) => `Split & merge, ${roundsText(p.rounds)}`,
+      key: (p) => `split-merge-r${p.rounds}`,
+    },
+  };
+
+  // Parameters checked against their family's limits ({ kind, ... }), or null for an unknown kind.
+  function cleanParams(params) {
+    const fam = params && FAMILIES[params.kind];
+    if (!fam) return null;
+    const out = { kind: params.kind };
+    for (const [k, [lo, hi, def]] of Object.entries(fam.limits)) out[k] = clampInt(params[k], [lo, hi], def);
+    return out;
+  }
+
+  const sameParams = (a, b) => Boolean(a && b) && Object.keys({ ...a, ...b }).every((k) => a[k] === b[k]);
+
+  const BUILT_IN = [
+    { id: 'circle-2x2', params: { kind: 'circle', size: 2, rounds: 3 } },
+    { id: 'circle-3x3', params: { kind: 'circle', size: 3, rounds: 2 } },
+    { id: 'back-and-forth', params: { kind: 'backforth', length: 4, rounds: 2 } },
     { id: 'split', name: 'Split in two', frames: SPLIT },
     { id: 'merge', name: 'Merge two droplets', frames: [[[0, 0], [2, 0]], [[0, 0], [1, 0], [2, 0]], [[1, 0]]] },
-    { id: 'split-merge', name: 'Split & merge, 2 rounds', frames: [...SPLIT, ...MERGE_BACK, ...SPLIT, ...MERGE_BACK, [[0, 0]]] },
-  ].map((t) => ({ ...t, builtIn: true }));
+    { id: 'split-merge', params: { kind: 'splitmerge', rounds: 2 } },
+  ].map((t) => {
+    if (!t.params) return { ...t, builtIn: true };
+    const fam = FAMILIES[t.params.kind];
+    return { id: t.id, name: fam.name(t.params), frames: fam.frames(t.params), params: t.params, builtIn: true };
+  });
+
+  // A built-in operation made with other parameters: { id, name, frames, params, builtIn }. The
+  // id is the built-in one when the parameters are its own, so files keep one copy of it.
+  function fromParams(params) {
+    const p = cleanParams(params);
+    if (!p) return null;
+    const fam = FAMILIES[p.kind];
+    const same = BUILT_IN.find((t) => sameParams(t.params, p));
+    return { id: same ? same.id : fam.key(p), name: fam.name(p), frames: fam.frames(p), params: p, builtIn: true };
+  }
 
   const stepsOf = (template) => template.frames.length - 1;
 
@@ -170,6 +230,7 @@
     JSON.stringify(a.times || null) === JSON.stringify(b.times || null);
 
   return {
-    BUILT_IN, stepsOf, rotate, place, fromSequence, toSequence, clean, exportText, importText, sameTemplate,
+    BUILT_IN, FAMILIES, stepsOf, rotate, place, fromSequence, toSequence, clean, exportText, importText, sameTemplate,
+    fromParams, cleanParams, sameParams, DROPLET_CELLS,
   };
 });

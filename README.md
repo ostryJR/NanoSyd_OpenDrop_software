@@ -3,10 +3,11 @@
 A browser app for drawing electrode sequences for the OpenDrop V4 digital-microfluidics platform
 and exporting them as the `.json` frame files used by GaudiLabs' **OpenDropController4_25**. It
 started as a port of that controller's editor and adds drag-to-draw droplet paths, templates for
-operations such as mixing or splitting, frame times with a timing chart, and undo. What you draw is
-kept as **actions** (a path, a template, a dispense, a painted pattern) in a project file, so it can
-be moved and reshaped later; the frames are worked out from the actions, and written out on export.
-It does not talk to the device.
+operations such as mixing or splitting, frame times, and undo. What you draw is kept as
+**actions** (a path, a template, a dispense, a painted pattern) in a project file, shown in a
+**timeline** under the board, one track per droplet, like a video editor. Actions can be moved and
+reshaped later, and nothing is allowed to make two droplets touch by accident. The frames are
+worked out from the actions and written out on export. It does not talk to the device.
 
 ## Run
 
@@ -20,21 +21,25 @@ file name and download the file instead of showing a save dialog.
 |---|---|
 | Draw a droplet path | Drag from the droplet's electrode. Every electrode you pass is the next frame. The path shows in blue with its step count until you let go, and is added then. **Esc** cancels; going back along the path takes steps back |
 | Draw a path in straight lines | Choose **straight** on the left (or press **S**). The path runs along the row or column you start dragging in, then turns once to the blue end electrode |
-| Select something drawn | Click it (with any tool but paint): the action on that electrode in the frame on screen, or a path's line. Clicking again picks the next one below. Or click it in the Actions list. **Esc** lets go |
-| Move it | Choose **select** (**V**) and drag it, or ⌥/Alt + arrow keys. Paths leading into and out of a template or pattern follow it. Where it doesn't fit it shows red and nothing changes |
-| Reshape a path | With **select**, drag a straight piece of the selected path sideways, or drag a corner, its start or its end. Shift+drag moves the whole path. Double-click on the line adds a point; double-click a point removes it |
-| Delete it | Delete or Backspace, × in the Actions list, or **Delete** under it |
-| Name it | The Name and Droplet fields under the Actions list |
-| Switch electrodes on or off | Choose **paint** (**P**) and click or drag, as in the original; the first electrode decides on or off. What you paint is kept as a pattern |
-| Go to the next frame and switch an electrode on | Shift+click |
+| Draw a path corner by corner | Shift+click where it starts, then Shift+click each corner (two pieces at a right angle when a click isn't in line). With a path selected, Shift+clicks carry on from its end. **Esc** stops |
+| Select something drawn | Click its clip in the timeline, or click it on the board (any tool but paint): the action on that electrode in the frame on screen, or a path's line. Clicking again picks the next one below. **Esc** lets go |
+| Reshape the selected path | With freehand, straight or select: drag a straight piece sideways, or drag a corner or its start. Dragging its free end draws it on (freehand also goes back along it). Double-click on the line adds a point; double-click a point removes it |
+| Move something | ⌥/Alt + drag (any tool), **select** (**V**) + drag, or ⌥/Alt + arrow keys. Paths leading into and out of a template or pattern follow it. With Shift, everything that follows it moves too |
+| Turn it | **R** (Shift+R turns back), or the Turn buttons in Properties |
+| Move it in time | Drag its clip in the timeline, **[** / **]**, or the Starts field in Properties |
+| Change it | The **Properties** tab: name, droplet, when it starts (a frame, or after other actions), time per step, letting others keep moving, a mixer's size and rounds, a pattern's frames, a path's wait at its end |
+| Delete it | Delete or Backspace, or **Delete** in Properties |
+| Switch electrodes on or off | Choose **paint** (**P**) and click or drag, as in the original; the first electrode decides on or off. What you paint is kept as a pattern. With paint, Shift+click goes to the next frame and switches an electrode on |
 | Undo / redo | ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y on Windows and Linux), or **undo** / **redo** on the left |
-| Change frame | ← / →, the mouse wheel (up = next), or the arrows under the array |
+| Change frame | ← / →, the mouse wheel (up = next), the arrows under the array, or click/drag the timeline's ruler |
 | Play / stop | Space or the **play** button; loops up to the last frame with anything on |
 | Change playback speed | Mouse wheel while playing (5–600 frames/min); this sets the default frame time |
-| Set frame times | The timing strip under the board: a default frame time, and the frame on screen's own time (empty = the default). Each action can also have a time per step, under the Actions list |
+| Set frame times | The bar above the timeline: a default frame time, and the frame on screen's own time (empty = the default) |
+| See frame times | **Step time**, **Total time** or **Table** instead of **Timeline** |
 | Drop a template | Drag it from the Templates tab onto the electrode the droplet is on; **R** turns it, **Esc** cancels |
 | Make a template | **+ New** in the Templates tab, or ✎ on a template to change it (or a copy of a built-in one) |
-| Make room for the board | **▾ Timing** folds the timing strip to one line; **›** shrinks the side panel to a tab |
+| Add an OpenDrop file to the project | **Add file…** above the timeline: it comes in as one block from the frame on screen |
+| Make room for the board | **▾ Timeline** folds the timeline to one line; **›** shrinks the side panel to a tab; Ctrl/⌘ + wheel zooms the timeline (double-click empty space to fit it again) |
 | Copy the previous frame, clear the frame, clear everything | Buttons on the right |
 | Dispense a droplet from a reservoir | The four buttons beside the reservoirs (6 frames) |
 | Save / open a project | **save** (⌘S / Ctrl+S) / **load**, top right. **load** also opens OpenDrop `.json` files |
@@ -42,28 +47,47 @@ file name and download the file instead of showing a save dialog.
 | Show electrode numbers / paths' lines | `N` / `L`, or the checkboxes in the bottom bar |
 | Use another cartridge layout | The Layout menu (all layouts from the original repository) |
 
-## Actions
+## Actions and the timeline
 
-Everything you draw becomes an action, listed in the **Actions** tab in the order they start:
+Everything you draw becomes an action, a clip in the timeline from its first to its last frame:
 
-- **Path**: drawn with freehand or straight. It is kept as a line, its start, end and corners;
-  the electrodes in between are worked out from the layout, so reshaping it changes them.
-- **Template**: dropped from the Templates tab. The project keeps its own copy of the template.
+- **Path**: drawn with freehand or straight, or corner by corner. It is kept as a line, its start,
+  end and corners; the electrodes in between are worked out from the layout, so reshaping it
+  changes them.
+- **Template**: dropped from the Templates tab. The project keeps its own copy of the template. A
+  built-in mixer keeps its size and rounds, which Properties can change.
 - **Dispense**: a reservoir button. It stays at its reservoir.
 - **Pattern**: electrodes switched on with paint, Shift+click or copy last frame, frame by frame.
-  An OpenDrop file you open becomes one pattern.
+  An OpenDrop file you open or add becomes one pattern.
 
-Each action starts in a frame, or **after another action**: in that action's last frame, where it
-hands the droplet over. That link is made when you carry on from where an action ends (the frame on
-screen and the electrode match), and the new action takes that action's droplet name. So when a
-path gets longer, everything linked after it moves later. Drawing on from the free end of the
-selected path makes that path longer instead of adding a new one.
+Each action starts in a frame, or **after other actions**: once they have ended, plus a delay. That
+link is made when you carry on from where a droplet is: the new action starts on the electrode
+where an action left its droplet (in that frame or later, as long as nothing else took it since),
+and takes its droplet name. A merge template dropped where two droplets arrive waits for both, and
+its droplet is called "A + B". So when an action gets longer, everything after it moves later.
+A linked action can't be moved earlier than what it follows; Properties can set it to a fixed frame
+instead.
+
+The timeline has one track per droplet name, the actions of a droplet end to end on its track; an
+action without a droplet name gets a track of its own. Dashed curves link a droplet to the next one
+when they are on different tracks (a merge). The red line is the frame on screen. Clips with a
+problem have a red outline; an action that can't run at all (it doesn't fit the layout, say) is
+shown as a dashed clip where it would start. Hover a clip for its frames and problems.
 
 Each action has a **name** and a **droplet** name (renaming a droplet renames it down the chain).
-The droplet names colour the paths' lines and the list.
+The droplet names colour the paths' lines and the tracks.
 
-The list shows problems in red, such as an action that doesn't fit the layout, runs past frame
-200, or doesn't start where the action it follows ends (the droplet would jump).
+## Droplets mustn't touch
+
+Two droplets touch when they are on the same or neighbouring electrodes, diagonals included, in the
+same frame, or when one moves next to where another one was the frame before. They would merge.
+So anything that would make droplets of different actions touch is refused: a template being
+dragged turns red and isn't dropped, a path being drawn turns red and isn't added, and moves,
+reshaping, time moves, turns, Properties changes and paint are taken back, with the reason in the
+status line. A droplet stays where its action left it until something carries on from there, and
+it can be touched there too. Droplets that are meant to meet do so in a merge template, or by an
+action carrying on from where a droplet is. Deleting is always allowed; a project opened with
+touching droplets shows them as problems.
 
 ## Paths
 
@@ -78,28 +102,30 @@ The list shows problems in red, such as an action that doesn't fit the layout, r
 - A straight piece runs one way on screen, left, right, up or down, between neighbouring electrodes.
   Dragging a piece sideways stretches the pieces next to it; at the start or end, or where the line
   carries on straight, a short connecting piece is added. The ends only move when you drag them.
+- The selected path can be reshaped with any tool. To draw a new path over it, press **Esc** first.
 - Paths stop at frame 200.
 
 ## Frame times and the chart
 
 - Each frame lasts the **default frame time** (0.5 s, the original's 120 frames/min) unless an
-  action in it says otherwise: its **time per step**, or the time set for that frame in the timing
-  strip. That time goes on the selected action if it runs in the frame (on a path it is a wait on
+  action in it says otherwise: its **time per step**, or the time set for that frame in the bar
+  above the timeline. That time goes on the selected action if it runs in the frame (on a path it is a wait on
   the electrode the droplet is on, which stays there when the path is reshaped), otherwise on the
   actions in the frame. Times are undoable like drawing; the default is a setting.
-- A frame lasts as long as the longest step in it. When that makes other actions wait, the timing
-  strip says so and offers **Let the others keep moving**: the long step then stretches over as
+- A frame lasts as long as the longest step in it. When that makes other actions wait, the bar
+  says so and offers **Let the others keep moving**: the long step then stretches over as
   many frames as the others take (it may end up to one frame later than asked). **Make them wait**
   turns that off.
 - Playback holds every frame for its time.
-- The chart under the board shows each step's time (gray = default, blue = its own) or the total
-  time so far, against the step number. Hover for the numbers, click or drag to go to a step, or
+- **Step time** and **Total time** (instead of the timeline) show each step's time (gray = default,
+  blue = its own) or the total time so far, against the step number. Hover for the numbers, click or drag to go to a step, or
   switch to **Table** for the list.
 
 ## Templates
 
 - Built in: circle mixing on 2 × 2 and 3 × 3 squares, back-and-forth mixing, split, merge, and
-  split & merge. Each shows its number of steps.
+  split & merge. Each shows its number of steps. Once placed, a mixer's size (2 × 2 or 3 × 3), how
+  many electrodes a back-and-forth runs over, and the number of rounds can be changed in Properties.
 - A template is dropped by its first frame's leftmost electrode (the top one if there are several),
   starting in the frame on screen. Like a path, it is added on top of what those frames hold, then
   the view moves to its last frame. Where it doesn't fit (off the array, or past frame 200) it
@@ -167,8 +193,8 @@ What **save** writes and **load** opens. JSON, one field per line:
 - `openDropGeneratorProject` is the format version; `layout` the cartridge layout; `frameTime`
   the default frame time in ms; `templates` copies of the templates the actions use.
 - Every action has an `id`, a `type`, a `name` and a `droplet` name, and **either** `start` (its
-  first frame, 1–200) **or** `after` (the id of the action it follows; it starts in that action's
-  last frame) with an optional `delay` in frames.
+  first frame, 1–200) **or** `after` (the id of the action it follows, or a list of ids: it starts in
+  the last frame of the one that ends last) with an optional `delay` in frames.
 - Optional on every action: `stepTime` (ms per step; default `frameTime`), `times` (own ms per step,
   0 = default; templates, dispenses and patterns), and `split: true` (long steps stretch over frames
   instead of making the others wait).
@@ -176,6 +202,7 @@ What **save** writes and **load** opens. JSON, one field per line:
   long the droplet stays on that point, in ms.
 - `template`: dropped with its anchor on electrode `at`, turned `turns` quarter turns clockwise;
   `template` is a key into `templates`, whose frames list `[column, row]` offsets from the anchor.
+  A built-in mixer also has `params`, e.g. `{"kind":"circle","size":3,"rounds":5}`.
 - `dispense`: `reservoir` is one of `reservoirLeftTop`, `reservoirLeftBottom`, `reservoirRightTop`,
   `reservoirRightBottom`.
 - `pattern`: `frames` lists the electrodes on in each of its frames, control lines (128–143)
@@ -183,8 +210,8 @@ What **save** writes and **load** opens. JSON, one field per line:
 - Room for later: action types and fields this version doesn't know are kept when a file is opened
   and written back when it is saved (the list shows them as not supported). Reserved for logic and
   conditions: `measure` (a value from an external instrument), `prompt` (ask the operator), `loop`
-  (`children`, `until`, `max`), `branch` (`if`/`then`/`else`), `when` on links, `after` as a list
-  (start when several actions have all ended), and a top-level `inputs`.
+  (`children`, `until`, `max`), `branch` (`if`/`then`/`else`), `when` on links, and a top-level
+  `inputs`.
 
 ## Exported files (OpenDrop `.json`)
 
@@ -218,8 +245,9 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
 
 ## Differences from the original
 
-- What you draw is kept as actions in a project file and can be moved or reshaped; the frames are
-  exported separately.
+- What you draw is kept as actions in a project file, shown in a timeline, and can be moved,
+  reshaped or retimed; droplets can't be made to touch by accident; the frames are exported
+  separately.
 - Dragging draws droplet paths (freehand or straight) that are added when you let go; the original
   drag is the **paint** tool. A click selects; paint switches single electrodes.
 - Undo and redo, templates, and frame times with a chart.
@@ -238,8 +266,8 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
   holds paths as lines and their edits, `js/editor.js` the editing behaviour and undo,
   `js/paths.js` the droplet routes and the path being drawn, `js/templates.js` the templates,
   `js/model.js` the frames and their times, `js/jsonio.js` the OpenDrop file format, `js/view.js`
-  the board, `js/chart.js` the timing chart and `js/app.js` the page wiring. All but the last three
-  run without a browser.
+  the board, `js/chart.js` the timing chart, `js/timeline.js` the timeline and `js/app.js` the page
+  wiring. All but the last four run without a browser.
 
 ## License
 
