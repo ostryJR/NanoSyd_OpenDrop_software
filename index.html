@@ -26,6 +26,8 @@
             <button type="button" id="time-frame-reset">Use default</button>
           </span>
           <span id="time-total"></span>
+          <span id="time-warning" hidden><span id="time-warning-text"></span>
+            <button type="button" id="time-split"></button></span>
           <span class="spacer"></span>
           <span class="chart-controls">
             <span id="chart-legend"><i class="swatch plain"></i>default time<i class="swatch own"></i>own time</span>
@@ -40,29 +42,59 @@
       </section>
     </div>
 
-    <aside id="templates" aria-label="Templates">
+    <aside id="templates" aria-label="Actions and templates">
       <button type="button" id="templates-tab" class="side-tab" aria-expanded="false"
-              title="Show the templates">Templates</button>
-      <div id="library">
+              title="Show the panel">Actions · Templates</button>
+      <div id="panel">
         <div class="panel-head">
-          <h2>Templates</h2>
-          <span class="panel-buttons">
-            <button type="button" id="template-new">+ New</button>
-            <button type="button" id="templates-min" class="panel-toggle" aria-expanded="true"
-                    title="Minimise the templates panel">›</button>
-          </span>
+          <div class="tabs" role="tablist" aria-label="Panel">
+            <button type="button" role="tab" id="tab-actions" data-tab="actions" aria-selected="true"
+                    aria-controls="actions">Actions</button>
+            <button type="button" role="tab" id="tab-templates" data-tab="templates" aria-selected="false"
+                    aria-controls="library">Templates</button>
+          </div>
+          <button type="button" id="templates-min" class="panel-toggle" aria-expanded="true"
+                  title="Minimise the panel">›</button>
         </div>
-        <p class="hint">Drag one onto the electrode the droplet is on. It starts in the frame on
-          screen. <kbd>R</kbd> turns it while you drag, <kbd>Esc</kbd> cancels.</p>
-        <h3>Yours</h3>
-        <ul id="my-templates" class="template-list"></ul>
-        <p id="no-templates" class="empty">None yet. Press <b>+ New</b>, draw the operation and save
-          it, or press ✎ on a built-in one to start from a copy.</p>
-        <h3>Built in</h3>
-        <ul id="builtin-templates" class="template-list"></ul>
-        <div class="panel-foot">
-          <button type="button" id="template-export">Export…</button>
-          <button type="button" id="template-import">Import…</button>
+
+        <div id="actions" role="tabpanel" aria-labelledby="tab-actions">
+          <p class="hint">Everything drawn, in the order it starts. Click one to select it. With
+            <b>select</b> (<kbd>V</kbd>) drag it on the array, or drag a path's pieces, corners and ends.</p>
+          <ul id="action-list" class="action-list"></ul>
+          <p id="no-actions" class="empty">Nothing yet. Draw a path, drop a template, paint, or press a
+            reservoir button.</p>
+          <div id="action-fields" hidden>
+            <h3 id="action-kind">Selected</h3>
+            <label class="field">Name <input type="text" id="action-name" maxlength="80" autocomplete="off"></label>
+            <label class="field">Droplet <input type="text" id="action-droplet" maxlength="60" autocomplete="off"
+                     list="droplet-names"></label>
+            <label class="field">Time per step
+              <span class="with-unit"><input type="number" id="action-step" min="0.01" max="3600" step="any"
+                     inputmode="decimal"> s</span></label>
+            <datalist id="droplet-names"></datalist>
+            <p id="action-info" class="info"></p>
+            <div class="maker-buttons">
+              <button type="button" id="action-delete">Delete</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="library" role="tabpanel" aria-labelledby="tab-templates" hidden>
+          <p class="hint">Drag one onto the electrode the droplet is on. It starts in the frame on
+            screen. <kbd>R</kbd> turns it while you drag, <kbd>Esc</kbd> cancels.</p>
+          <div class="list-head">
+            <h3>Yours</h3>
+            <button type="button" id="template-new">+ New</button>
+          </div>
+          <ul id="my-templates" class="template-list"></ul>
+          <p id="no-templates" class="empty">None yet. Press <b>+ New</b>, draw the operation and save
+            it, or press ✎ on a built-in one to start from a copy.</p>
+          <h3>Built in</h3>
+          <ul id="builtin-templates" class="template-list"></ul>
+          <div class="panel-foot">
+            <button type="button" id="template-export">Export…</button>
+            <button type="button" id="template-import">Import…</button>
+          </div>
         </div>
       </div>
 
@@ -84,16 +116,17 @@
   <footer id="bar">
     <label>Layout <select id="layout"></select></label>
     <label>Electrode numbers <kbd>N</kbd> <input type="checkbox" id="numbers"></label>
+    <label>Lines <kbd>L</kbd> <input type="checkbox" id="lines"></label>
     <span id="status" role="status" aria-live="polite"></span>
     <span id="help">
-      Drag: path (<kbd>F</kbd> freehand, <kbd>S</kbd> straight, <kbd>P</kbd> paint) ·
-      <kbd>Esc</kbd>: cancel · <kbd data-pc="Ctrl+Z">⌘Z</kbd> / <kbd data-pc="Ctrl+Y">⇧⌘Z</kbd>: undo/redo ·
-      Click: toggle · <kbd>Shift</kbd>+click: next frame + on ·
+      Drag: path (<kbd>F</kbd> freehand, <kbd>S</kbd> straight, <kbd>P</kbd> paint, <kbd>V</kbd> select) ·
+      Click: select · <kbd>⌥</kbd>+arrows: move it · <kbd>Del</kbd>: delete · <kbd>Esc</kbd>: cancel ·
+      <kbd data-pc="Ctrl+Z">⌘Z</kbd> / <kbd data-pc="Ctrl+Y">⇧⌘Z</kbd>: undo/redo · <kbd data-pc="Ctrl+S">⌘S</kbd>: save ·
       <kbd>←</kbd><kbd>→</kbd> or wheel: frame · <kbd>Space</kbd>: play/stop (wheel: speed)
     </span>
   </footer>
 
-  <input type="file" id="file-input" accept=".json,application/json" hidden>
+  <input type="file" id="file-input" accept=".json,.odproj.json,application/json" hidden>
   <input type="file" id="template-file" accept=".json,application/json" hidden>
   <div id="drag-ghost" hidden></div>
 
@@ -103,6 +136,9 @@
   <script src="js/model.js"></script>
   <script src="js/paths.js"></script>
   <script src="js/templates.js"></script>
+  <script src="js/lines.js"></script>
+  <script src="js/compile.js"></script>
+  <script src="js/project.js"></script>
   <script src="js/editor.js"></script>
   <script src="js/jsonio.js"></script>
   <script src="js/view.js"></script>

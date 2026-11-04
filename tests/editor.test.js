@@ -5,10 +5,13 @@ const { Editor, UNDO_LIMIT } = require('../js/editor.js');
 const { getLayout } = require('../js/layout.js');
 const { MAX_FRAMES, CELLS, Sequence } = require('../js/model.js');
 const { electrodeGraph } = require('../js/paths.js');
+const projects = require('../js/project.js');
 
 const standard = () => new Editor(getLayout('electrodes'));
-// Centre of electrode (column, row) of the main grid, in grid units.
-const at = (e) => [-15 + 2 * Math.floor(e / 8), -7 + 2 * (e % 8)];
+// Centre of electrode e on the standard layout, in grid units.
+const { centres } = electrodeGraph(getLayout('electrodes').rects);
+const at = (e) => [centres.get(e).x, centres.get(e).y];
+const E = (column, row) => column * 8 + row;
 const onIn = (ed, f) => {
   const on = [];
   for (let e = 0; e < CELLS; e++) if (ed.seq.get(e, f)) on.push(e);
@@ -18,13 +21,33 @@ const click = (ed, e, opts) => {
   ed.pointerDown(...at(e), opts);
   ed.pointerUp();
 };
+// Something already on: a pattern from frame `start` (not an undo step, like setting up a test).
+const put = (ed, start, frames, extra = {}) => {
+  const a = { id: projects.nextId(ed.project), type: 'pattern', name: 'Given', droplet: '', start, frames, ...extra };
+  ed.project.actions.push(a);
+  ed.recompile();
+  return a;
+};
+const paintClick = (ed, e, opts) => {
+  const tool = ed.tool;
+  ed.setTool('paint');
+  click(ed, e, opts);
+  ed.setTool(tool);
+};
+const byType = (ed, type) => ed.project.actions.filter((a) => a.type === type);
+const pointsOf = (a) => a.points.map((p) => p.e);
 
-test('a click toggles the electrode in the current frame', () => {
+test('paint: a click toggles the electrode in the current frame, kept as a pattern', () => {
   const ed = standard();
+  ed.setTool('paint');
   click(ed, 9);
   assert.deepEqual(onIn(ed, 1), [9]);
+  const [pattern] = byType(ed, 'pattern');
+  assert.deepEqual(pattern.frames, [[9]]);
+  assert.equal(ed.selection, pattern.id, 'the new pattern is selected');
   click(ed, 9);
   assert.deepEqual(onIn(ed, 1), []);
+  assert.equal(ed.project.actions.length, 0, 'an empty pattern goes away');
 });
 
 test('paint tool: dragging paints the state set by the press, without skipping electrodes', () => {
@@ -40,16 +63,33 @@ test('paint tool: dragging paints the state set by the press, without skipping e
   ed.pointerUp();
   assert.deepEqual(onIn(ed, 1), [48, 56, 64, 72, 80, 88, 96, 104, 112]);
   assert.equal(ed.frame, 1);
+  assert.equal(byType(ed, 'pattern').length, 1, 'one pattern');
+});
+
+test('paint-off only removes the pattern’s own electrodes, and says whose an electrode is', () => {
+  const ed = standard();
+  ed.pointerDown(...at(8));
+  ed.pointerMove(...at(24));
+  ed.pointerUp(); // Path 1: 8, 16, 24 in frames 1-3
+  ed.frame = 2;
+  ed.setTool('paint');
+  click(ed, 18); // a new pattern in frame 2
+  ed.pointerDown(...at(18)); // off...
+  ed.pointerMove(...at(16)); // ...and over the path's droplet
+  ed.pointerUp();
+  assert.deepEqual(onIn(ed, 2), [16], 'the path is still there');
+  assert.match(ed.notice, /16 is part of “Path 1”/);
 });
 
 test('Shift+click goes to the next frame and switches the electrode on', () => {
   const ed = standard();
-  click(ed, 9);
+  paintClick(ed, 9);
   for (const e of [17, 25, 33]) click(ed, e, { shift: true });
   assert.equal(ed.frame, 4);
   assert.deepEqual([1, 2, 3, 4].map((f) => onIn(ed, f)), [[9], [17], [25], [33]]);
+  assert.equal(byType(ed, 'pattern').length, 1, 'the pattern grows a frame each time');
 
-  ed.seq.set(41, 5, true);
+  put(ed, 5, [[41]]);
   click(ed, 41, { shift: true }); // never switches off
   assert.equal(ed.frame, 5);
   assert.deepEqual(onIn(ed, 5), [41]);
@@ -76,17 +116,19 @@ test('presses outside the array or between electrodes change nothing', () => {
   ed.pointerUp();
   assert.equal(ed.seq.lastFrame(), 1);
   assert.deepEqual(onIn(ed, 1), []);
+  assert.equal(ed.project.actions.length, 0);
 });
 
 test('copy last frame, clear frame and clear all buttons', () => {
   const ed = standard();
-  click(ed, 9);
-  click(ed, 10);
+  paintClick(ed, 9);
+  paintClick(ed, 10);
   assert.equal(ed.pointerDown(35, 5), 'copy'); // on frame 1 there is nothing to copy
   assert.equal(ed.seq.lastFrame(), 1);
   ed.nextFrame();
   ed.pointerDown(35, 5);
   assert.deepEqual(onIn(ed, 2), [9, 10]);
+  assert.deepEqual(byType(ed, 'pattern')[0].frames, [[9, 10], [9, 10]], 'copied into the same pattern');
   assert.equal(ed.pointerDown(35, 8), 'clearFrame');
   assert.deepEqual(onIn(ed, 2), []);
   assert.deepEqual(onIn(ed, 1), [9, 10]);
@@ -94,12 +136,23 @@ test('copy last frame, clear frame and clear all buttons', () => {
   assert.equal(ed.pointerDown(35, 11), 'clearAll');
   assert.equal(ed.frame, 1);
   assert.deepEqual(onIn(ed, 1), []);
+  assert.equal(ed.project.actions.length, 0);
+});
+
+test('clear frame leaves paths and templates, and says which are still on', () => {
+  const ed = standard();
+  ed.pointerDown(...at(8));
+  ed.pointerMove(...at(24));
+  ed.pointerUp();
+  ed.frame = 2;
+  ed.pointerDown(35, 8);
+  assert.deepEqual(onIn(ed, 2), [16]);
+  assert.match(ed.notice, /Still on in frame 2: “Path 1”/);
 });
 
 test('clear all also stops playback', () => {
   const ed = standard();
-  click(ed, 9);
-  ed.seq.set(10, 4, true);
+  put(ed, 1, [[9], [], [], [10]]);
   ed.togglePlay(0);
   ed.tick(501);
   assert.equal(ed.pointerDown(35, 11), 'clearAll');
@@ -125,6 +178,9 @@ test('reservoir buttons write the six-frame dispense sequences of the original',
     assert.equal(ed.frame, 8, 'ends on the last frame of the sequence');
     const sorted = (list) => [...list].sort((a, b) => a - b);
     assert.deepEqual([3, 4, 5, 6, 7, 8].map((f) => onIn(ed, f)), frames.map(sorted));
+    const [d] = byType(ed, 'dispense');
+    assert.equal(d.start, 3);
+    assert.equal(d.droplet, 'Droplet 1', 'a dispense makes a new droplet');
   }
 });
 
@@ -136,7 +192,7 @@ test('reservoir buttons do nothing on layouts without those reservoirs', () => {
 
 test('play loops from the current frame to the last non-empty frame, then from 1', () => {
   const ed = standard();
-  ed.seq.set(9, 3, true);
+  put(ed, 3, [[9]]);
   assert.equal(ed.pointerDown(39, -8), 'play'); // the label is part of the button, as in the original
   assert.ok(ed.playing);
   ed.playStart = 0;
@@ -169,26 +225,48 @@ test('the wheel steps frames when stopped and changes the speed while playing', 
   assert.equal(ed.speed, 600);
 });
 
-test('save, load and the frame arrows are found at the original positions', () => {
+test('save, load, export and the frame arrows are found on the board', () => {
   const ed = standard();
   assert.equal(ed.pointerDown(33, -19), 'save');
   assert.equal(ed.pointerDown(39, -19), 'load');
+  assert.equal(ed.pointerDown(27, -19), 'export');
   assert.equal(ed.pointerDown(19, 19), 'next');
   assert.equal(ed.frame, 2);
   assert.equal(ed.pointerDown(-19, 19), 'prev');
   assert.equal(ed.frame, 1);
 });
 
-test('loading replaces the sequence and goes back to frame 1', () => {
+test('opening an OpenDrop file gives one block and goes back to frame 1', () => {
   const ed = standard();
-  click(ed, 9);
+  paintClick(ed, 9);
   ed.frame = 7;
   const loaded = new Sequence();
   loaded.set(20, 2, true);
-  ed.replaceSequence(loaded);
+  loaded.set(128, 3, true);
+  ed.openSequence(loaded, { name: 'old.json' });
   assert.equal(ed.frame, 1);
   assert.deepEqual(onIn(ed, 1), []);
   assert.deepEqual(onIn(ed, 2), [20]);
+  assert.deepEqual(onIn(ed, 3), [128]);
+  assert.equal(ed.project.actions.length, 1);
+  assert.equal(ed.project.actions[0].name, 'old.json');
+  assert.ok(ed.undo(), 'undoable');
+  assert.deepEqual(onIn(ed, 1), [9]);
+});
+
+test('opening a project replaces the actions; its default frame time comes along', () => {
+  const ed = standard();
+  paintClick(ed, 9);
+  const { project } = projects.parse(JSON.stringify({
+    openDropGeneratorProject: 1, layout: 'electrodes', frameTime: 250, templates: {},
+    actions: [{ id: 'a1', type: 'path', name: 'Saved path', droplet: 'S', start: 2, points: [{ e: 8 }, { e: 24 }] }],
+  }));
+  ed.openProject(project);
+  assert.deepEqual([2, 3, 4].map((f) => onIn(ed, f)), [[8], [16], [24]]);
+  assert.equal(ed.seq.timeOf(2), 250);
+  assert.ok(ed.undo());
+  assert.deepEqual(onIn(ed, 1), [9]);
+  assert.equal(ed.project.frameTime, 250, 'the default frame time is a setting');
 });
 
 // --- drawing paths -----------------------------------------------------------------------------
@@ -209,10 +287,21 @@ test('freehand: a drag shows a path but adds nothing until the button is release
   assert.equal(ed.draft.end, 40);
   assert.equal(ed.seq.lastFrame(), 1);
   assert.deepEqual(onIn(ed, 1), [], 'nothing in the sequence yet');
-  assert.deepEqual(ed.pointerUp(), { from: 1, to: 5, steps: 4 });
+  assert.deepEqual(ed.pointerUp(), { kind: 'path', from: 1, to: 5, steps: 4, extended: false });
   assert.deepEqual(framesFrom(ed, 1, 5), [[8], [16], [24], [32], [40]]);
   assert.equal(ed.frame, 5, 'the view moves to the end of the path');
   assert.equal(ed.draft, null);
+});
+
+test('a drawn path is saved as a line: its ends and corners', () => {
+  const ed = standard();
+  drag(ed, 8, 24, 26, 42); // right 2, down 2, right 2
+  ed.pointerUp();
+  const [path] = byType(ed, 'path');
+  assert.deepEqual(pointsOf(path), [8, 24, 26, 42]);
+  assert.equal(path.start, 1);
+  assert.equal(path.name, 'Path 1');
+  assert.deepEqual(framesFrom(ed, 1, 7), [[8], [16], [24], [25], [26], [34], [42]]);
 });
 
 test('freehand: the next drag carries on from where the last path ended', () => {
@@ -223,6 +312,37 @@ test('freehand: the next drag carries on from where the last path ended', () => 
   ed.pointerUp();
   assert.deepEqual(framesFrom(ed, 1, 5), [[8], [16], [24], [25], [26]]);
   assert.equal(ed.frame, 5);
+  const paths = byType(ed, 'path');
+  assert.equal(paths.length, 1, 'drawing on from the selected path’s free end extends it');
+  assert.deepEqual(pointsOf(paths[0]), [8, 24, 26]);
+});
+
+test('drawing on from a path that something follows starts a new, linked path', () => {
+  const ed = standard();
+  drag(ed, 8, 24);
+  ed.pointerUp();
+  ed.escape(); // nothing selected: the next path is a new one, linked after the first
+  drag(ed, 24, 26);
+  ed.pointerUp();
+  const [first, second] = byType(ed, 'path');
+  assert.equal(second.after, first.id);
+  assert.equal(second.droplet, first.droplet, 'the same droplet');
+  assert.equal(second.start, undefined);
+  assert.deepEqual(framesFrom(ed, 1, 5), [[8], [16], [24], [25], [26]]);
+});
+
+test('a path drawn elsewhere starts at its frame with a new droplet name', () => {
+  const ed = standard();
+  drag(ed, 8, 24);
+  ed.pointerUp();
+  ed.frame = 1;
+  drag(ed, 100, 102);
+  ed.pointerUp();
+  const [first, second] = byType(ed, 'path');
+  assert.equal(second.start, 1);
+  assert.equal(second.after, undefined);
+  assert.equal(first.droplet, 'Droplet 1');
+  assert.equal(second.droplet, 'Droplet 2');
 });
 
 test('freehand: diagonal and fast moves become steps between neighbouring electrodes', () => {
@@ -235,6 +355,8 @@ test('freehand: diagonal and fast moves become steps between neighbouring electr
   }
   assert.equal(ed.draft.end, 61);
   assert.equal(ed.draft.steps, 6 + 5, 'six columns across and five rows down');
+  ed.pointerUp();
+  for (let i = 0; i < cells.length; i++) assert.deepEqual(onIn(ed, 1 + i), [cells[i]], 'the line gives back the drawn route');
 });
 
 test('freehand: going back over the path takes steps back; back at the start, nothing is added', () => {
@@ -257,20 +379,42 @@ test('freehand: a loop keeps every step, including the return to the start', () 
   assert.deepEqual(framesFrom(ed, 1, 5), [[8], [16], [17], [9], [8]]);
 });
 
-test('path tools: a click without a drag still toggles the electrode', () => {
-  for (const tool of ['freehand', 'straight']) {
+test('path tools and the select tool: a click selects what is there instead of toggling', () => {
+  for (const tool of ['freehand', 'straight', 'select']) {
     const ed = standard();
+    drag(ed, 8, 24);
+    ed.pointerUp();
+    ed.escape();
     ed.setTool(tool);
-    click(ed, 9);
-    assert.deepEqual(onIn(ed, 1), [9], tool);
-    click(ed, 9);
-    assert.deepEqual(onIn(ed, 1), [], tool);
+    ed.frame = 2;
+    click(ed, 16);
+    assert.equal(ed.selection, 'a1', tool);
+    assert.deepEqual(onIn(ed, 2), [16], `${tool}: nothing toggled`);
+    click(ed, 50);
+    assert.equal(ed.selection, null, `${tool}: a click on nothing lets go`);
+    click(ed, 24); // not on in frame 2, but on the path's line
+    assert.equal(ed.selection, 'a1', `${tool}: the line can be clicked too`);
   }
+});
+
+test('clicking again on the same electrode picks the next action below', () => {
+  const ed = standard();
+  put(ed, 1, [[9]]);
+  put(ed, 1, [[9, 10]]);
+  ed.setTool('select');
+  click(ed, 9);
+  assert.equal(ed.selection, 'a2', 'the latest first');
+  click(ed, 9);
+  assert.equal(ed.selection, 'a1');
+  click(ed, 9);
+  assert.equal(ed.selection, 'a2');
+  assert.equal(ed.escape(), 'deselected');
+  assert.equal(ed.selection, null);
 });
 
 test('paths are added on top of what their frames already hold', () => {
   const ed = standard();
-  ed.seq.set(120, 2, true);
+  put(ed, 2, [[120]]);
   drag(ed, 8, 24);
   ed.pointerUp();
   assert.deepEqual(onIn(ed, 2), [16, 120]);
@@ -282,7 +426,7 @@ test('paths stop at frame 200', () => {
   drag(ed, 8, 48); // five steps wanted, two fit
   assert.equal(ed.draft.steps, 2);
   assert.ok(ed.draft.limited);
-  assert.deepEqual(ed.pointerUp(), { from: 198, to: 200, steps: 2 });
+  assert.deepEqual(ed.pointerUp(), { kind: 'path', from: 198, to: 200, steps: 2, extended: false });
   assert.deepEqual(onIn(ed, MAX_FRAMES), [24]);
 
   ed.setTool('straight');
@@ -308,6 +452,7 @@ test('straight: the first line follows the direction the drag starts in', () => 
   ed.pointerUp();
   assert.deepEqual(framesFrom(ed, 1, 4), [[8], [9], [10], [11]]);
   assert.equal(ed.frame, 4);
+  assert.deepEqual(pointsOf(byType(ed, 'path')[0]), [8, 11]);
 });
 
 test('straight: between electrodes or off the array, the path stays as it was', () => {
@@ -345,12 +490,178 @@ test('Esc drops the path being drawn, and takes back a paint drag', () => {
   assert.equal(ed.cancel(), false, 'nothing left to cancel');
 });
 
+// --- reshaping lines and moving actions ------------------------------------------------------
+
+// Dispense from the upper-left reservoir, a path to (3,3), a 2 x 2 circle mix there, and a path
+// on to (8,3): all linked, one droplet.
+const { BUILT_IN } = require('../js/templates.js');
+const builtIn = (id) => BUILT_IN.find((t) => t.id === id);
+function chain() {
+  const ed = standard();
+  ed.pointerDown(-29, -5); // upper-left reservoir: frames 1-6, ends on 9
+  drag(ed, 9, E(3, 1), E(3, 3));
+  ed.pointerUp();
+  ed.startPlacement(builtIn('circle-2x2'));
+  ed.hoverPlacement(...at(E(3, 3)));
+  ed.dropPlacement();
+  drag(ed, E(3, 3), E(8, 3));
+  ed.pointerUp();
+  ed.setTool('select');
+  return ed;
+}
+const named = (ed, name) => ed.project.actions.find((a) => a.name === name);
+const spanOf = (ed, name) => {
+  const s = ed.span(named(ed, name).id);
+  return [s.from, s.to];
+};
+
+test('a chain of actions: each linked after the one before, one droplet', () => {
+  const ed = chain();
+  const [d, p1, mix, p2] = ed.project.actions;
+  assert.deepEqual(ed.project.actions.map((a) => a.type), ['dispense', 'path', 'template', 'path']);
+  assert.equal(p1.after, d.id);
+  assert.equal(mix.after, p1.id);
+  assert.equal(p2.after, mix.id);
+  assert.ok(ed.project.actions.every((a) => a.droplet === 'Droplet 1'));
+  assert.deepEqual([spanOf(ed, 'Path 1'), spanOf(ed, mix.name), spanOf(ed, 'Path 2')], [[6, 10], [10, 22], [22, 27]]);
+  assert.deepEqual(ed.compiled.issues, []);
+});
+
+test('dragging a piece of a line sideways re-routes it; the ends stay', () => {
+  const ed = chain();
+  ed.select(named(ed, 'Path 1').id);
+  ed.pointerDown(...at(E(2, 1))); // on the piece from 9 to (3,1)
+  ed.pointerMove(...at(E(2, 2)));
+  assert.ok(ed.edit.preview.valid);
+  assert.equal(onIn(ed, 7).length, 1, 'nothing changes until the button is released');
+  assert.deepEqual(ed.pointerUp(), { kind: 'edit', name: 'Path 1', reshaped: true });
+  assert.deepEqual(pointsOf(named(ed, 'Path 1')), [9, E(1, 2), E(3, 2), E(3, 3)]);
+  assert.deepEqual(framesFrom(ed, 6, 5).map((f) => f.filter((e) => e >= 8)), [[9], [10], [18], [26], [27]]);
+  assert.ok(ed.undo());
+  assert.deepEqual(pointsOf(named(ed, 'Path 1')), [9, E(3, 1), E(3, 3)]);
+});
+
+test('a longer line moves what is linked after it later; dragging a corner or an end', () => {
+  const ed = chain();
+  ed.select(named(ed, 'Path 1').id);
+  ed.pointerDown(...at(E(3, 1))); // the corner
+  ed.pointerMove(...at(E(5, 1)));
+  ed.pointerUp();
+  assert.deepEqual(pointsOf(named(ed, 'Path 1')), [9, E(5, 1), E(5, 3), E(3, 3)], 'corner moved, the end stays with a connecting piece');
+  assert.deepEqual(spanOf(ed, 'Path 1'), [6, 14], '4 steps longer');
+  assert.deepEqual(spanOf(ed, 'Circle mix 2×2, 3 rounds'), [14, 26], 'the mixer follows in time');
+  assert.deepEqual(spanOf(ed, 'Path 2'), [26, 31]);
+
+  ed.select(named(ed, 'Path 2').id);
+  ed.pointerDown(...at(E(8, 3))); // its end
+  ed.pointerMove(...at(E(8, 6)));
+  ed.pointerUp();
+  assert.deepEqual(pointsOf(named(ed, 'Path 2')), [E(3, 3), E(8, 3), E(8, 6)]);
+});
+
+test('moving a mixer: the path coming in and the path going out follow it', () => {
+  const ed = chain();
+  const mix = named(ed, 'Circle mix 2×2, 3 rounds');
+  ed.frame = 11; // the mixer's droplet is on (4,3)
+  click(ed, E(4, 3));
+  assert.equal(ed.selection, mix.id);
+  ed.pointerDown(...at(E(4, 3)));
+  ed.pointerMove(...at(E(6, 3)));
+  assert.deepEqual(ed.edit.attached, { incoming: [named(ed, 'Path 1').id], outgoing: [named(ed, 'Path 2').id] });
+  ed.pointerUp();
+  assert.equal(ed.action(mix.id).at, E(5, 3));
+  assert.deepEqual(pointsOf(named(ed, 'Path 1')), [9, E(5, 1), E(5, 3)]);
+  assert.deepEqual(pointsOf(named(ed, 'Path 2')), [E(5, 3), E(8, 3)]);
+  assert.deepEqual([spanOf(ed, 'Path 1'), spanOf(ed, mix.name), spanOf(ed, 'Path 2')], [[6, 12], [12, 24], [24, 27]]);
+  assert.deepEqual(ed.compiled.issues, []);
+});
+
+test('a move that doesn’t fit shows red and changes nothing', () => {
+  const ed = chain();
+  const mix = named(ed, 'Circle mix 2×2, 3 rounds');
+  ed.frame = 11;
+  click(ed, E(4, 3));
+  const before = ed.state();
+  ed.pointerDown(...at(E(4, 3)));
+  ed.pointerMove(...at(E(14, 7))); // the mixer would hang off the bottom-right corner
+  assert.equal(ed.edit.preview.valid, false);
+  assert.equal(ed.pointerUp(), null);
+  assert.match(ed.notice, /can't go there|doesn't fit|off the array/);
+  assert.equal(ed.state(), before);
+  assert.equal(mix.at, E(3, 3));
+});
+
+test('a dispense stays at its reservoir', () => {
+  const ed = chain();
+  ed.frame = 2;
+  click(ed, 3);
+  assert.equal(ed.selected.type, 'dispense');
+  ed.pointerDown(...at(3));
+  ed.pointerMove(...at(E(2, 2)));
+  ed.pointerUp();
+  assert.match(ed.notice, /stays at its reservoir/);
+  assert.equal(ed.nudge(1, 0), false);
+});
+
+test('Shift+drag and ⌥/Alt + arrows move a whole path; a moved path no longer starts where it should', () => {
+  const ed = chain();
+  const id = named(ed, 'Path 2').id;
+  ed.select(id);
+  ed.pointerDown(...at(E(6, 3)), { shift: true });
+  ed.pointerMove(...at(E(6, 5)));
+  ed.pointerUp();
+  assert.deepEqual(pointsOf(ed.action(id)), [E(3, 5), E(8, 5)]);
+  assert.ok(ed.compiled.issues.some((i) => i.kind === 'jump' && i.id === id), 'the droplet would jump');
+  assert.ok(ed.nudge(0, -1));
+  assert.ok(ed.nudge(0, -1));
+  assert.deepEqual(pointsOf(ed.action(id)), [E(3, 3), E(8, 3)]);
+  assert.ok(!ed.compiled.issues.some((i) => i.kind === 'jump'));
+});
+
+test('double-click adds a point to a piece, and removes a point the line doesn’t need', () => {
+  const ed = standard();
+  drag(ed, 8, 72);
+  ed.pointerUp();
+  const path = () => byType(ed, 'path')[0];
+  assert.ok(ed.doubleClick(...at(40)));
+  assert.deepEqual(pointsOf(path()), [8, 40, 72]);
+  ed.setTool('select');
+  ed.pointerDown(...at(56)); // the piece after the new point
+  ed.pointerMove(...at(58));
+  ed.pointerUp();
+  assert.deepEqual(pointsOf(path()), [8, 40, 42, 74, 72], 'only the part after the point moved');
+  assert.equal(ed.doubleClick(...at(42)), false, "a corner can't go");
+  assert.ok(ed.doubleClick(...at(40)) === false, "nor can one where the line turns");
+});
+
+test('deleting an action: the ones after it keep their frames', () => {
+  const ed = chain();
+  const mix = named(ed, 'Circle mix 2×2, 3 rounds');
+  ed.select(named(ed, 'Path 1').id);
+  assert.ok(ed.deleteSelected());
+  assert.equal(mix.after, undefined);
+  assert.equal(mix.start, 10);
+  assert.deepEqual(spanOf(ed, mix.name), [10, 22]);
+  assert.equal(ed.selection, null);
+});
+
+test('names and droplet names; a droplet name carries down the chain', () => {
+  const ed = chain();
+  const p1 = named(ed, 'Path 1');
+  ed.rename(p1.id, '  Sample to mixer ');
+  assert.equal(p1.name, 'Sample to mixer');
+  ed.setDroplet(p1.id, 'Sample');
+  assert.deepEqual(ed.project.actions.map((a) => a.droplet), ['Droplet 1', 'Sample', 'Sample', 'Sample']);
+  ed.undo();
+  assert.deepEqual(ed.project.actions.map((a) => a.droplet), ['Droplet 1', 'Droplet 1', 'Droplet 1', 'Droplet 1']);
+});
+
 // --- undo ----------------------------------------------------------------------------------------
 
 test('undo and redo go back and forth, each to the frame the change was made in', () => {
   const ed = standard();
   assert.ok(!ed.canUndo && !ed.canRedo);
-  click(ed, 9);
+  paintClick(ed, 9);
   drag(ed, 9, 25); // 9, 17, 25 in frames 1-3
   ed.pointerUp();
   assert.equal(ed.frame, 3);
@@ -370,27 +681,32 @@ test('undo and redo go back and forth, each to the frame the change was made in'
   assert.equal(ed.redo(), false);
 
   ed.undo();
-  click(ed, 40); // a new change: the undone path can't be redone any more
+  paintClick(ed, 40); // a new change: the undone path can't be redone any more
   assert.ok(!ed.canRedo);
 });
 
-test('each change is one undo step: clicks, drags, Shift+click, buttons, reservoirs, loading', () => {
+test('each change is one undo step: paint, Shift+click, drags, buttons, reservoirs, opening', () => {
   const ed = standard();
   const changes = [
-    () => click(ed, 9),
-    () => click(ed, 17, { shift: true }),
+    () => paintClick(ed, 9),
+    () => paintClick(ed, 17, { shift: true }),
     () => {
       ed.setTool('paint');
       drag(ed, 10, 106);
       ed.pointerUp();
     },
-    () => ed.pointerDown(35, 5), // copy last frame (frame 2 = frame 1)
+    () => ed.pointerDown(35, 5), // copy last frame into frame 2
     () => ed.pointerDown(35, 8), // clear frame
     () => ed.pointerDown(29, -5), // upper-right reservoir: frames 2-7
     () => {
+      ed.setTool('freehand');
+      drag(ed, 113, 115);
+      ed.pointerUp();
+    },
+    () => {
       const loaded = new Sequence();
       loaded.set(50, 4, true);
-      ed.replaceSequence(loaded);
+      ed.openSequence(loaded);
     },
     () => ed.pointerDown(35, 11), // clear all
   ];
@@ -417,12 +733,13 @@ test('changing frames and buttons that change nothing leave nothing to undo', ()
   ed.wheel(1);
   ed.pointerDown(39, -8); // play
   ed.pointerDown(39, -8); // stop
+  click(ed, 9); // selects nothing
   assert.ok(!ed.canUndo);
 });
 
 test('undo during a drag only cancels the drag', () => {
   const ed = standard();
-  click(ed, 40);
+  paintClick(ed, 40);
   drag(ed, 8, 24);
   assert.ok(ed.undo());
   assert.equal(ed.draft, null);
@@ -432,7 +749,7 @@ test('undo during a drag only cancels the drag', () => {
 
 test(`undo keeps the last ${UNDO_LIMIT} changes`, () => {
   const ed = standard();
-  for (let i = 0; i < UNDO_LIMIT + 5; i++) click(ed, 9);
+  for (let i = 0; i < UNDO_LIMIT + 5; i++) paintClick(ed, 9);
   let undone = 0;
   while (ed.undo()) undone++;
   assert.equal(undone, UNDO_LIMIT);
@@ -442,12 +759,14 @@ test('the switch on the left picks the drag tool, with undo and redo buttons bel
   const ed = standard();
   assert.equal(ed.pointerDown(-42, -5), 'toolStraight');
   assert.equal(ed.tool, 'straight');
-  assert.equal(ed.pointerDown(-38, -2), 'toolPaint'); // on the label
-  assert.equal(ed.tool, 'paint');
+  assert.equal(ed.pointerDown(-38, 1), 'toolSelect'); // on the label
+  assert.equal(ed.tool, 'select');
   assert.equal(ed.pointerDown(-42, -8), 'toolFreehand');
   assert.equal(ed.tool, 'freehand');
   ed.setTool('nonsense');
   assert.equal(ed.tool, 'freehand');
+  assert.equal(ed.pointerDown(-38, -2), 'toolPaint');
+  assert.equal(ed.tool, 'paint');
 
   click(ed, 9);
   assert.equal(ed.pointerDown(-42, 5), 'undo');
@@ -458,12 +777,9 @@ test('the switch on the left picks the drag tool, with undo and redo buttons bel
 
 // --- templates and timing ----------------------------------------------------------------------
 
-const { BUILT_IN } = require('../js/templates.js');
-const builtIn = (id) => BUILT_IN.find((t) => t.id === id);
-
 test('dragging a template shows where it lands; dropping adds it and moves to its end', () => {
   const ed = standard();
-  ed.seq.set(60, 3, true); // something already in the frames it covers
+  put(ed, 3, [[60]]); // something already in the frames it covers
   ed.frame = 2;
   ed.startPlacement(builtIn('circle-2x2'));
   ed.hoverPlacement(...at(17)); // column 2, row 1
@@ -473,6 +789,9 @@ test('dragging a template shows where it lands; dropping adds it and moves to it
   assert.deepEqual(framesFrom(ed, 2, 5), [[17], [25, 60], [26], [18], [17]], 'added on top of what was there');
   assert.equal(ed.frame, 14);
   assert.equal(ed.placement, null);
+  const t = byType(ed, 'template')[0];
+  assert.deepEqual([t.template, t.at, t.turns], ['circle-2x2', 17, 0]);
+  assert.deepEqual(ed.project.templates['circle-2x2'].frames, builtIn('circle-2x2').frames, 'a copy goes into the project');
   ed.undo();
   assert.equal(ed.seq.lastFrame(), 3);
   assert.equal(ed.frame, 2);
@@ -506,9 +825,9 @@ test('templates with frame times bring them along', () => {
   assert.equal(ed.seq.timeOf(2), 4000);
 });
 
-test('making a template sets the sequence aside, with its frame and undo history', () => {
+test('making a template sets the project aside, with its frame and undo history', () => {
   const ed = standard();
-  click(ed, 9);
+  paintClick(ed, 9);
   ed.frame = 4;
   ed.startTemplate();
   assert.ok(ed.makingTemplate);
@@ -526,13 +845,26 @@ test('making a template sets the sequence aside, with its frame and undo history
   assert.equal(ed.seq.lastFrame(), 1);
   assert.equal(ed.seq.frameTime, 300, 'the default frame time is a setting and stays');
   assert.ok(ed.undo());
-  assert.deepEqual(onIn(ed, 1), [], 'the sequence keeps its own undo history');
+  assert.deepEqual(onIn(ed, 1), [], 'the project keeps its own undo history');
+});
+
+test('changing a template: it comes in as a selected pattern that paint edits', () => {
+  const ed = standard();
+  const seq = new Sequence();
+  seq.set(20, 1, true);
+  seq.set(28, 2, true);
+  ed.startTemplate(seq);
+  assert.equal(ed.selected.type, 'pattern');
+  ed.setTool('paint');
+  ed.frame = 2;
+  click(ed, 29);
+  assert.deepEqual(onIn(ed, 2), [28, 29]);
+  assert.equal(ed.project.actions.length, 1, 'painted into the template, not beside it');
 });
 
 test('playback holds each frame for its own time', () => {
   const ed = standard();
-  ed.seq.set(9, 3, true);
-  ed.seq.setTime(2, 2000);
+  put(ed, 1, [[9], [], [9]], { times: [0, 2000, 0] });
   ed.togglePlay(0);
   assert.equal(ed.tick(501), true);
   assert.equal(ed.frame, 2);
@@ -541,13 +873,52 @@ test('playback holds each frame for its own time', () => {
   assert.equal(ed.frame, 3);
 });
 
-test("a frame's own time is undoable; the default frame time is a setting", () => {
+test("a frame's own time goes on what runs in it and is undoable; the default is a setting", () => {
   const ed = standard();
+  put(ed, 1, [[9], [9], [9], [9]]);
+  assert.deepEqual(ed.setFrameTime(6, 1500), [], 'nothing runs in frame 6');
   ed.setFrameTime(3, 1500);
   assert.equal(ed.seq.timeOf(3), 1500);
+  assert.deepEqual(ed.project.actions[0].times, [0, 0, 1500, 0]);
   ed.setDefaultTime(250);
   assert.ok(ed.undo());
   assert.equal(ed.seq.timeOf(3), 250, 'back to the default, which stays at 250');
   assert.ok(!ed.canUndo);
   assert.equal(ed.speed, 240, 'shown as 240 frames/min');
+});
+
+test('on a path, a frame time is a wait at the electrode the droplet is on', () => {
+  const ed = standard();
+  drag(ed, 8, 40);
+  ed.pointerUp();
+  const path = () => byType(ed, 'path')[0];
+  ed.setFrameTime(3, 5000); // the droplet is on 24
+  assert.deepEqual(path().points, [{ e: 8 }, { e: 24, wait: 5000 }, { e: 40 }]);
+  assert.equal(ed.seq.timeOf(3), 5000);
+  ed.setTool('select');
+  ed.pointerDown(...at(32)); // reshaping elsewhere keeps the wait on its electrode
+  ed.pointerMove(...at(34));
+  ed.pointerUp();
+  assert.deepEqual(pointsOf(path()), [8, 24, 26, 42, 40]);
+  assert.deepEqual(path().points.find((p) => p.wait), { e: 24, wait: 5000 });
+  ed.setFrameTime(3, 0);
+  assert.ok(!path().points.some((p) => p.wait));
+  ed.setStepTime(path().id, 800);
+  assert.equal(ed.seq.timeOf(2), 800);
+});
+
+test('a long step makes the others wait, unless it lets them keep moving (split)', () => {
+  const ed = standard();
+  put(ed, 1, [[9]], { times: [5000], name: 'Incubate' });
+  drag(ed, 100, 102); // another droplet moving at the same time, frames 1-3
+  ed.pointerUp();
+  const wait = ed.compiled.issues.find((i) => i.kind === 'waits');
+  assert.deepEqual([wait.id, wait.frame, wait.ids], ['a1', 1, ['a2']]);
+  assert.equal(ed.seq.timeOf(1), 5000);
+  assert.ok(ed.setSplit('a1', true));
+  assert.ok(!ed.compiled.issues.some((i) => i.kind === 'waits'));
+  assert.deepEqual([1, 2, 3, 4].map((f) => ed.seq.timeOf(f)), [500, 500, 500, 3500], 'the path moves on while the hold lasts 5 s');
+  assert.deepEqual([1, 2, 3, 4].map((f) => onIn(ed, f).includes(9)), [true, true, true, true]);
+  ed.undo();
+  assert.ok(ed.compiled.issues.some((i) => i.kind === 'waits'));
 });

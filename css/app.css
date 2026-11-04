@@ -157,6 +157,62 @@ button {
   dominant-baseline: central;
 }
 
+/* The selected action: its electrodes in the frame on screen outlined, its other frames faint. */
+#board .electrodes rect.selected {
+  stroke: rgb(0, 45, 170);
+  stroke-width: 8;
+}
+
+#board .electrodes rect.footprint {
+  fill: rgb(255, 222, 120);
+}
+
+/* Droplet paths saved as lines: thin, in their droplet's colour (set inline). */
+#board .lines,
+#board .handles {
+  pointer-events: none;
+}
+
+#board .lines polyline {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.55;
+}
+
+#board .lines polyline.selected {
+  stroke-width: 12;
+  opacity: 0.9;
+}
+
+#board .lines polyline.moving {
+  stroke: rgb(0, 45, 170) !important;
+  opacity: 0.9;
+}
+
+#board .lines polyline.bad {
+  stroke: rgb(200, 20, 20) !important;
+  stroke-dasharray: 18 14;
+  opacity: 0.9;
+}
+
+/* The selected path's points: start ring, end dot, corner squares, wait diamonds. */
+#board .handles .handle {
+  fill: #fff;
+  stroke: rgb(0, 45, 170);
+  stroke-width: 5;
+}
+
+#board .handles .handle.end {
+  fill: rgb(0, 45, 170);
+  stroke: #fff;
+}
+
+#board .handles .handle.wait {
+  fill: rgb(255, 170, 0);
+}
+
 #bar {
   display: flex;
   flex-wrap: wrap;
@@ -258,6 +314,29 @@ kbd {
 
 #time-total {
   color: var(--ink-secondary);
+}
+
+#time-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-secondary);
+}
+
+#time-warning[hidden] {
+  display: none;
+}
+
+#time-warning.waits {
+  color: #8a5a00;
+}
+
+#time-warning button {
+  padding: 1px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
 }
 
 #chart-legend {
@@ -454,7 +533,7 @@ kbd {
   font-weight: 600;
 }
 
-/* ---- Templates panel --------------------------------------------------------------------- */
+/* ---- Side panel: actions and templates --------------------------------------------------- */
 
 #templates {
   flex: 0 0 264px;
@@ -488,7 +567,7 @@ kbd {
   padding: 8px 4px;
 }
 
-#templates.minimised #library,
+#templates.minimised #panel,
 #templates.minimised #maker {
   display: none;
 }
@@ -615,6 +694,128 @@ kbd {
   margin-top: 14px;
 }
 
+/* Tabs: Actions | Templates. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+#templates .tabs button {
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+
+#templates .tabs button[aria-selected="true"] {
+  background: #fff;
+  color: #000;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 14px 0 6px;
+}
+
+#templates .list-head h3 {
+  margin: 0;
+}
+
+/* The actions list: one row per action, in the order they start. */
+.action-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.action {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 4px 5px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.action:hover {
+  border-color: var(--accent);
+}
+
+.action.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: rgba(42, 120, 214, 0.06);
+}
+
+.action .chip {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+}
+
+.action .text {
+  flex: 1;
+  min-width: 0;
+}
+
+.action .name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.action .meta {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.action .problem-text {
+  color: #b00020;
+  font-size: 12px;
+}
+
+.action.problem .chip {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #b00020;
+}
+
+#templates .action button {
+  padding: 1px 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+#templates .action button:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: #000;
+}
+
+#action-fields {
+  margin-top: 6px;
+  padding-top: 2px;
+  border-top: 1px solid var(--line);
+}
+
+#action-fields .field,
 #maker .field {
   display: grid;
   gap: 4px;
@@ -622,9 +823,25 @@ kbd {
   font-size: 13px;
 }
 
+#action-fields .field input,
 #maker .field input {
   padding: 4px 6px;
   font: inherit;
+}
+
+.with-unit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.with-unit input {
+  width: 9em;
+}
+
+#action-info {
+  color: var(--ink-secondary);
+  font-weight: 400;
 }
 
 #drag-ghost {
