@@ -87,17 +87,21 @@
 
   const sameParams = (a, b) => Boolean(a && b) && Object.keys({ ...a, ...b }).every((k) => a[k] === b[k]);
 
+  // The built-in templates, in the order and groups the Templates tab lists them.
+  const GROUPS = ['Merge and split', 'Mixers'];
   const BUILT_IN = [
-    { id: 'circle-2x2', params: { kind: 'circle', size: 2, rounds: 3 } },
-    { id: 'circle-3x3', params: { kind: 'circle', size: 3, rounds: 2 } },
-    { id: 'back-and-forth', params: { kind: 'backforth', length: 4, rounds: 2 } },
-    { id: 'split', name: 'Split in two', frames: SPLIT },
-    { id: 'merge', name: 'Merge two droplets', frames: [[[0, 0], [2, 0]], [[0, 0], [1, 0], [2, 0]], [[1, 0]]] },
-    { id: 'split-merge', params: { kind: 'splitmerge', rounds: 2 } },
+    // Drawn side by side (as its card shows it), but dropped standing up: `turns` is how many
+    // quarter turns it starts with when dragged onto the array (R still turns it).
+    { id: 'merge', group: 'Merge and split', name: 'Merge two droplets', frames: [[[0, 0], [2, 0]], [[0, 0], [1, 0], [2, 0]], [[1, 0]]], turns: 1 },
+    { id: 'split', group: 'Merge and split', name: 'Split in two', frames: SPLIT },
+    { id: 'circle-2x2', group: 'Mixers', params: { kind: 'circle', size: 2, rounds: 3 } },
+    { id: 'circle-3x3', group: 'Mixers', params: { kind: 'circle', size: 3, rounds: 2 } },
+    { id: 'back-and-forth', group: 'Mixers', params: { kind: 'backforth', length: 4, rounds: 2 } },
+    { id: 'split-merge', group: 'Mixers', params: { kind: 'splitmerge', rounds: 2 } },
   ].map((t) => {
     if (!t.params) return { ...t, builtIn: true };
     const fam = FAMILIES[t.params.kind];
-    return { id: t.id, name: fam.name(t.params), frames: fam.frames(t.params), params: t.params, builtIn: true };
+    return { id: t.id, group: t.group, name: fam.name(t.params), frames: fam.frames(t.params), params: t.params, builtIn: true };
   });
 
   // A built-in operation made with other parameters: { id, name, frames, params, builtIn }. The
@@ -291,7 +295,7 @@
     JSON.stringify(a.times || null) === JSON.stringify(b.times || null);
 
   return {
-    BUILT_IN, FAMILIES, stepsOf, rotate, place, flow, fromSequence, toSequence, clean, exportText, importText, sameTemplate,
+    BUILT_IN, GROUPS, FAMILIES, stepsOf, rotate, place, flow, fromSequence, toSequence, clean, exportText, importText, sameTemplate,
     fromParams, cleanParams, sameParams, DROPLET_CELLS,
   };
 });

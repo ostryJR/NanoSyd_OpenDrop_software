@@ -1180,21 +1180,34 @@ test('a merge template dropped where two droplets arrive waits for both', () => 
   ed.pointerUp();
   ed.escape();
   ed.frame = 1;
-  drag(ed, E(4, 7), E(4, 6), E(4, 5)); // Droplet 2 to (4,5), frames 1-3
+  drag(ed, E(5, 7), E(5, 6), E(5, 5)); // Droplet 2 to (5,5), frames 1-3
   ed.pointerUp();
   ed.escape();
   ed.frame = 3;
-  drag(ed, E(4, 5), E(4, 3)); // and on to (4,3), frames 3-5
+  drag(ed, E(5, 5), E(2, 5)); // and on to (2,5), two below Droplet 1, frames 3-6
   ed.pointerUp();
-  ed.frame = 5;
+  ed.frame = 6;
   ed.startPlacement(builtIn('merge'));
+  assert.equal(ed.placement.turns, 1, 'a merge is dropped standing up');
   ed.hoverPlacement(...at(E(2, 3)));
   assert.ok(ed.placement.spot.valid, ed.placement.spot.reason);
+  assert.deepEqual(ed.placement.spot.frames, [[E(2, 3), E(2, 5)], [E(2, 3), E(2, 4), E(2, 5)], [E(2, 4)]]);
   ed.dropPlacement();
   const merge = byType(ed, 'template')[0];
+  assert.equal(merge.turns, 1);
   assert.deepEqual(merge.after, ['a1', 'a3']);
   assert.equal(merge.droplet, 'Droplet 1 + Droplet 2');
-  assert.deepEqual(spanOf(ed, 'Merge two droplets'), [5, 7]);
+  assert.deepEqual(spanOf(ed, 'Merge two droplets'), [6, 8]);
+  assert.deepEqual(ed.compiled.issues, []);
+
+  // R turns it on its side, as it is drawn on its card.
+  ed.startPlacement(builtIn('merge'));
+  ed.rotatePlacement();
+  ed.rotatePlacement();
+  ed.rotatePlacement();
+  assert.equal(ed.placement.turns, 0);
+  assert.deepEqual(builtIn('merge').frames[0], [[0, 0], [2, 0]], 'the template itself stays side by side');
+  ed.cancel();
 });
 
 // --- properties ------------------------------------------------------------------------------

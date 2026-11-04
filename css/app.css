@@ -845,6 +845,13 @@ kbd {
   opacity: 0.5;
 }
 
+/* A group of built-in templates under its name (merge and split, mixers). */
+#templates .template-group {
+  margin: 10px 0 5px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .template-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr); /* long names get an ellipsis instead of widening cards */

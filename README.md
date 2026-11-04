@@ -141,9 +141,12 @@ touching droplets shows them as problems.
 
 ## Templates
 
-- Built in: circle mixing on 2 × 2 and 3 × 3 squares, back-and-forth mixing, split, merge, and
-  split & merge. Each shows its number of steps. Once placed, a mixer's size (2 × 2 or 3 × 3), how
-  many electrodes a back-and-forth runs over, and the number of rounds can be changed in Properties.
+- Built in, in two groups: **Merge and split** (merge two droplets, split in two) and **Mixers**
+  (circle mixing on 2 × 2 and 3 × 3 squares, back-and-forth mixing, split & merge). Each shows its
+  number of steps. Once placed, a mixer's size (2 × 2 or 3 × 3), how many electrodes a
+  back-and-forth runs over, and the number of rounds can be changed in Properties.
+- The merge is drawn side by side on its card but dropped standing up: the droplets come from
+  above and below. **R** turns it while you drag it.
 - A circle mix goes round clockwise (right first) or counter-clockwise (down first): **Goes round**
   in Properties. Either way it starts and ends on the electrode it was dropped on, so the paths
   attached to it stay as they are.

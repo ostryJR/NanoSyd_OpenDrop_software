@@ -1165,7 +1165,18 @@
 
   function renderTemplates() {
     $('my-templates').replaceChildren(...myTemplates.map(templateCard));
-    $('builtin-templates').replaceChildren(...templates.BUILT_IN.map(templateCard));
+    // Built in: a heading for each group (merge and split, mixers), its templates below.
+    $('builtin-templates').replaceChildren(
+      ...templates.GROUPS.flatMap((group) => {
+        const heading = document.createElement('h4');
+        heading.className = 'template-group';
+        heading.textContent = group;
+        const list = document.createElement('ul');
+        list.className = 'template-list';
+        list.append(...templates.BUILT_IN.filter((t) => t.group === group).map(templateCard));
+        return [heading, list];
+      })
+    );
     $('no-templates').hidden = myTemplates.length > 0;
   }
 

@@ -1281,7 +1281,7 @@
     startPlacement(template) {
       this.cancel();
       this.playing = false;
-      this.placement = { template, turns: 0, spot: null };
+      this.placement = { template, turns: Number.isInteger(template.turns) ? ((template.turns % 4) + 4) % 4 : 0, spot: null };
     }
 
     hoverPlacement(mx, my) {

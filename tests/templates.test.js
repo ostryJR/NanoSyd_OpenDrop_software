@@ -108,3 +108,11 @@ test('built-in mixes have parameters; other values make other frames, with a key
   assert.deepEqual(T.cleanParams({ kind: 'circle', size: 9, rounds: 'x' }), { kind: 'circle', size: 3, rounds: 3 });
   assert.equal(T.fromParams({ kind: 'nope' }), null);
 });
+
+test('built-ins are listed in groups: merge and split first, then the mixers', () => {
+  assert.deepEqual(T.GROUPS, ['Merge and split', 'Mixers']);
+  assert.deepEqual(T.BUILT_IN.map((t) => t.id), ['merge', 'split', 'circle-2x2', 'circle-3x3', 'back-and-forth', 'split-merge']);
+  for (const t of T.BUILT_IN) assert.ok(T.GROUPS.includes(t.group), t.id);
+  assert.equal(byId('merge').turns, 1, 'a merge is dropped standing up');
+  assert.equal(byId('circle-2x2').group, 'Mixers');
+});
