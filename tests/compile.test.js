@@ -68,11 +68,25 @@ test('a pattern is taken as it is, control lines included', () => {
   assert.deepEqual(r.spans.get('a1'), { from: 2, to: 4 });
 });
 
-test('step times: a path’s waits, its own step time, or the default', () => {
+test('step times: a path’s waits on top of its step, its own step time, or the default', () => {
   const r = compile(project([path('a1', { start: 1 }, [E(1, 0), { e: E(3, 0), wait: 4000 }, E(5, 0)], { stepTime: 800 })]), rects);
-  assert.deepEqual([1, 2, 3, 4, 5].map((f) => r.seq.timeOf(f)), [800, 800, 4000, 800, 800]);
+  assert.deepEqual([1, 2, 3, 4, 5].map((f) => r.seq.timeOf(f)), [800, 800, 4800, 800, 800]);
   const t = compile(project([pattern('a1', { start: 1 }, [[9], [9]], { times: [0, 1500] })]), rects);
   assert.deepEqual([t.seq.timeOf(1), t.seq.timeOf(2), t.seq.times[1]], [500, 1500, 0]);
+});
+
+test('a wait always holds the droplet up, even one shorter than a step', () => {
+  // Slow steps (2 s each, from the default) and a 1 s wait: that electrode takes 3 s.
+  const slow = project([path('a1', { start: 1 }, [E(1, 0), { e: E(2, 0), wait: 1000 }, E(3, 0)])], { frameTime: 2000 });
+  const r = compile(slow, rects);
+  assert.deepEqual([1, 2, 3].map((f) => r.seq.timeOf(f)), [2000, 3000, 2000]);
+  // A wait at the end of a path makes the hand-over frame longer too.
+  const end = compile(project([
+    path('a1', { start: 1 }, [E(1, 0), { e: E(3, 0), wait: 2500 }]),
+    path('a2', { after: 'a1' }, [E(3, 0), E(3, 2)]),
+  ]), rects);
+  assert.deepEqual([1, 2, 3, 4, 5].map((f) => end.seq.timeOf(f)), [500, 500, 3000, 500, 500]);
+  assert.deepEqual(end.spans.get('a2'), { from: 3, to: 5 });
 });
 
 test('“after”: an action starts in the last frame of the one it follows (+ delay)', () => {

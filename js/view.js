@@ -8,6 +8,7 @@
   const G = OD.layout.GEOMETRY;
   const { CONTROLS } = OD.editor;
   const { electrodeGraph } = OD.paths;
+  const { flow } = OD.templates;
   const NS = 'http://www.w3.org/2000/svg';
   const px = (u) => G.CX + G.UNIT * u; // the original's coX()
   const py = (v) => G.CY + G.UNIT * v; // the original's coY()
@@ -61,6 +62,57 @@
     return cells;
   };
 
+  const xy = (p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+
+  // The steps of a line through `points` (px), each listed once as [from, to, both]; both = the
+  // droplet also goes back along it.
+  function movesAlong(points) {
+    const seen = new Map();
+    for (let i = 1; i < points.length; i++) {
+      const [a, b] = [points[i - 1], points[i]];
+      if (xy(a) !== xy(b)) seen.set(`${xy(a)}>${xy(b)}`, [a, b]);
+    }
+    const out = [];
+    const listed = new Set();
+    for (const [key, [a, b]] of seen) {
+      if (listed.has(key)) continue;
+      const back = `${xy(b)}>${xy(a)}`;
+      listed.add(back);
+      out.push([a, b, seen.has(back)]);
+    }
+    return out;
+  }
+
+  // Small arrowheads showing which way the droplet goes: one in the middle of each move
+  // ([from, to, both], px), or two apart, each nearer its own end, where it goes both ways.
+  // As one SVG path.
+  function arrowHeads(moves, size) {
+    const h = size / 2;
+    const w = size * 0.5;
+    let d = '';
+    const head = (a, b, t) => {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy);
+      if (len < size) return;
+      const [ux, uy] = [dx / len, dy / len];
+      const [mx, my] = [a[0] + dx * t, a[1] + dy * t];
+      const tip = [mx + ux * h, my + uy * h];
+      const left = [mx - ux * h - uy * w, my - uy * h + ux * w];
+      const right = [mx - ux * h + uy * w, my - uy * h - ux * w];
+      d += `M${xy(tip)}L${xy(left)}L${xy(right)}Z`;
+    };
+    for (const [a, b, both] of moves) {
+      if (both) {
+        head(a, b, 0.72);
+        head(b, a, 0.72);
+      } else head(a, b, 0.5);
+    }
+    return d;
+  }
+
+  const segments = (moves) => moves.map(([a, b]) => `M${xy(a)}L${xy(b)}`).join('');
+
   class BoardView {
     constructor(svg, imageHref) {
       svg.setAttribute('viewBox', `0 0 ${G.IMG_W} ${G.IMG_H}`);
@@ -97,8 +149,12 @@
 
       // The path being drawn: a line through the electrodes' centres, a dot at its start and
       // the step count next to its end. The badge also labels templates and edits.
+      // A template being placed shows how its droplet goes, the same way.
       this.pathLayer = el('g', { class: 'path-layer' }, svg);
       this.pathLine = el('polyline', { class: 'path-line', points: '' }, this.pathLayer);
+      this.pathArrows = el('path', { class: 'path-arrows', d: '' }, this.pathLayer);
+      this.spotLine = el('path', { class: 'path-line', d: '' }, this.pathLayer);
+      this.spotArrows = el('path', { class: 'path-arrows', d: '' }, this.pathLayer);
       this.pathStart = el('circle', { class: 'path-start', r: 10 }, this.pathLayer);
       this.badge = el('g', { class: 'path-badge' }, this.pathLayer);
       this.badgeBox = el('rect', { rx: 20, height: 40 }, this.badge);
@@ -145,6 +201,8 @@
 
       this.rects = [];
       this.centres = new Map();
+      this.graph = null;
+      this.flows = new WeakMap(); // a template's expanded steps -> its moves (grid units)
       this.overlayKey = '';
       this.linesKey = '';
     }
@@ -162,7 +220,9 @@
         number.textContent = r.e;
         return { node, e: r.e, fill: null, cls: '' };
       });
-      this.centres = electrodeGraph(lay.rects).centres;
+      this.graph = electrodeGraph(lay.rects);
+      this.centres = this.graph.centres;
+      this.flows = new WeakMap();
       this.overlayKey = '';
       this.linesKey = '';
       this.pathLayer.style.display = 'none';
@@ -172,6 +232,11 @@
     at(e) {
       const c = this.centres.get(e);
       return c ? [px(c.x), py(c.y)] : null;
+    }
+
+    // How the droplets of a template go (frames of electrodes), as moves in px.
+    flowOf(frames) {
+      return flow(frames, this.graph).map((m) => [[px(m.from.x), py(m.from.y)], [px(m.to.x), py(m.to.y)], m.both]);
     }
 
     render(ed, { numbers = false, lines = true } = {}) {
@@ -256,7 +321,7 @@
         for (const e of ed.cellsIn(sel.id)) cls.set(e, 'selected');
       }
 
-      const key = JSON.stringify([[...cls], badge, draft ? draft.cells : null]);
+      const key = JSON.stringify([[...cls], badge, draft ? draft.cells : null, spot ? spot.frames : null]);
       if (key === this.overlayKey) return;
       this.overlayKey = key;
 
@@ -269,13 +334,26 @@
       }
       this.pathLayer.style.display = draft || badge ? '' : 'none';
       this.pathLine.style.display = draft ? '' : 'none';
+      this.pathArrows.style.display = draft ? '' : 'none';
       this.pathStart.style.display = draft ? '' : 'none';
       if (draft) {
-        this.pathLine.setAttribute('points', draft.cells.map((e) => this.at(e).join(',')).join(' '));
+        const bad = Boolean(draft.check && !draft.check.valid);
+        this.pathLine.classList.toggle('bad', bad);
+        this.pathArrows.classList.toggle('bad', bad);
+        const points = draft.cells.map((e) => this.at(e));
+        this.pathLine.setAttribute('points', points.map((p) => p.join(',')).join(' '));
+        this.pathArrows.setAttribute('d', arrowHeads(movesAlong(points), 17));
         const [sx, sy] = this.at(draft.start);
         this.pathStart.setAttribute('cx', sx);
         this.pathStart.setAttribute('cy', sy);
       }
+      const moves = spot ? this.flowOf(spot.frames) : [];
+      for (const node of [this.spotLine, this.spotArrows]) {
+        node.style.display = moves.length ? '' : 'none';
+        node.classList.toggle('bad', Boolean(spot && !spot.valid));
+      }
+      this.spotLine.setAttribute('d', segments(moves));
+      this.spotArrows.setAttribute('d', arrowHeads(moves, 17));
       this.badge.style.display = badge ? '' : 'none';
       if (!badge) return;
       this.badge.classList.toggle('bad', Boolean(badge.bad));
@@ -303,22 +381,34 @@
       this.badgeBox.setAttribute('width', width);
     }
 
-    // Every path as a thin line in its droplet's colour (only the selected one when `all` is
-    // off), the selected path thicker with its points: start (ring), end (dot), corners (squares)
-    // and waits (diamonds). A path being reshaped follows the edit; where the edit can't be built,
-    // its points are joined in red.
+    // Every path as a thin line in its droplet's colour, with small arrows the way the droplet
+    // goes, and every template as lines between the places its droplets go round or through
+    // (only the selected one when `all` is off). The selected path is thicker, with its points:
+    // start (ring), end (dot), corners (squares) and waits (diamonds). What is being moved or
+    // reshaped follows the edit; where a path's edit can't be built, its points are joined in red.
     renderLines(ed, shown, all) {
       const edit = ed.edit && ed.edit.preview;
       const items = [];
       let handles = null;
       for (const a of ed.project.actions) {
-        if (a.type !== 'path') continue;
+        if (a.type !== 'path' && a.type !== 'template') continue;
         const changed = Boolean(edit && edit.changes.has(a.id));
         const selected = a.id === ed.selection;
         if (!all && !selected && !changed) continue;
+        let cls = a.type === 'path' ? 'line' : 'line mix';
+        if (selected) cls += ' selected';
+        if (changed && edit.valid) cls += ' moving';
+        const colour = dropletColour(a.droplet);
+        if (a.type === 'template') {
+          const x = shown.expanded.get(a.id);
+          if (!x || !x.steps) continue;
+          if (!this.flows.has(x)) this.flows.set(x, this.flowOf(x.steps.map((s) => s.cells)));
+          const moves = this.flows.get(x);
+          if (moves.length) items.push({ moves, cls, colour });
+          continue;
+        }
         let cells = null;
         let points = a.points;
-        let cls = 'line';
         if (changed && !edit.valid) {
           points = edit.changes.get(a.id).points;
           cells = points.map((p) => p.e);
@@ -329,9 +419,7 @@
           if (changed) points = edit.changes.get(a.id).points;
         }
         if (!cells) continue;
-        if (selected) cls += ' selected';
-        if (changed && edit.valid) cls += ' moving';
-        items.push({ cells, cls, colour: dropletColour(a.droplet) });
+        items.push({ cells, cls, colour });
         if (selected) handles = points;
       }
       const key = JSON.stringify([items, handles]);
@@ -340,9 +428,19 @@
 
       this.lineLayer.replaceChildren();
       for (const it of items) {
+        const size = it.cls.includes('selected') ? 22 : 16;
+        const stroke = `stroke: ${it.colour}`;
+        const fill = `fill: ${it.colour}`;
+        const arrows = it.cls.replace('line', 'arrows');
+        if (it.moves) {
+          el('path', { class: it.cls, d: segments(it.moves), style: stroke }, this.lineLayer);
+          el('path', { class: arrows, d: arrowHeads(it.moves, size), style: fill }, this.lineLayer);
+          continue;
+        }
         const pts = it.cells.map((e) => this.at(e)).filter(Boolean);
         if (pts.length === 1) pts.push(pts[0]);
-        el('polyline', { class: it.cls, points: pts.map((p) => p.join(',')).join(' '), style: `stroke: ${it.colour}` }, this.lineLayer);
+        el('polyline', { class: it.cls, points: pts.map((p) => p.join(',')).join(' '), style: stroke }, this.lineLayer);
+        el('path', { class: arrows, d: arrowHeads(movesAlong(pts), size), style: fill }, this.lineLayer);
       }
       this.handleLayer.replaceChildren();
       if (!handles) return;
@@ -355,6 +453,11 @@
         else if (i === last) el('circle', { class: 'handle end', cx: x, cy: y, r: 13 }, this.handleLayer);
         else if (p.wait) el('rect', { class: 'handle wait', x: x - 10, y: y - 10, width: 20, height: 20, transform: `rotate(45 ${x} ${y})` }, this.handleLayer);
         else el('rect', { class: 'handle corner', x: x - 9, y: y - 9, width: 18, height: 18 }, this.handleLayer);
+        // How much longer the droplet stays there, beside the point.
+        if (p.wait > 0) {
+          const s = p.wait / 1000;
+          el('text', { class: 'wait-label', x: x + 17, y: y - 17 }, this.handleLayer).textContent = s < 60 ? `+${+s.toFixed(1)} s` : `+${+(s / 60).toFixed(1)} min`;
+        }
       });
     }
   }

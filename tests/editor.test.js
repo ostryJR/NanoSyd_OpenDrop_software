@@ -894,19 +894,62 @@ test('on a path, a frame time is a wait at the electrode the droplet is on', () 
   drag(ed, 8, 40);
   ed.pointerUp();
   const path = () => byType(ed, 'path')[0];
-  ed.setFrameTime(3, 5000); // the droplet is on 24
-  assert.deepEqual(path().points, [{ e: 8 }, { e: 24, wait: 5000 }, { e: 40 }]);
+  ed.setFrameTime(3, 5000); // the droplet is on 24: its 0.5 s step and 4.5 s more
+  assert.deepEqual(path().points, [{ e: 8 }, { e: 24, wait: 4500 }, { e: 40 }]);
   assert.equal(ed.seq.timeOf(3), 5000);
   ed.setTool('select');
   ed.pointerDown(...at(32)); // reshaping elsewhere keeps the wait on its electrode
   ed.pointerMove(...at(34));
   ed.pointerUp();
   assert.deepEqual(pointsOf(path()), [8, 24, 26, 42, 40]);
-  assert.deepEqual(path().points.find((p) => p.wait), { e: 24, wait: 5000 });
+  assert.deepEqual(path().points.find((p) => p.wait), { e: 24, wait: 4500 });
   ed.setFrameTime(3, 0);
   assert.ok(!path().points.some((p) => p.wait));
   ed.setStepTime(path().id, 800);
   assert.equal(ed.seq.timeOf(2), 800);
+  ed.setFrameTime(3, 500); // no longer than the path's step: no wait
+  assert.ok(!path().points.some((p) => p.wait));
+  assert.equal(ed.seq.timeOf(3), 800);
+});
+
+test('a wait picked on the line: where it is, what it holds up, and taking it off', () => {
+  const ed = standard();
+  drag(ed, E(1, 2), E(6, 2)); // Path 1, frames 1-6
+  ed.pointerUp();
+  const id = ed.selection;
+  const spot = ed.waitSpot(E(3, 2));
+  assert.deepEqual(spot, { id, step: 2, e: E(3, 2), wait: 0 });
+  assert.ok(ed.setWaitAt(id, spot.step, 3000));
+  assert.deepEqual(ed.action(id).points, [{ e: E(1, 2) }, { e: E(3, 2), wait: 3000 }, { e: E(6, 2) }]);
+  assert.equal(ed.seq.timeOf(3), 3500, 'its step, then 3 s more');
+  assert.deepEqual(ed.waitSpot(E(3, 2)).wait, 3000);
+  assert.deepEqual(ed.waitsOf(id), [{ step: 2, e: E(3, 2), wait: 3000, frame: 3 }]);
+  assert.ok(ed.setWaitAt(id, 5, 1000), 'at the end too');
+  assert.deepEqual(ed.waitsOf(id).map((w) => [w.e, w.wait]), [[E(3, 2), 3000], [E(6, 2), 1000]]);
+  assert.ok(ed.setWaitAt(id, 2, 0));
+  assert.deepEqual(ed.action(id).points, [{ e: E(1, 2) }, { e: E(6, 2), wait: 1000 }], 'the point goes with its wait');
+  assert.ok(ed.undo());
+  assert.equal(ed.action(id).points[1].wait, 3000);
+  assert.equal(ed.waitSpot(E(3, 5)), null, 'nothing passes there');
+  assert.equal(ed.setWaitAt(id, 99, 1000), false, 'no such step');
+});
+
+test('a wait that would make droplets touch is refused', () => {
+  const ed = standard();
+  put(ed, 1, Array.from({ length: 20 }, () => [E(14, 7)])); // far away, keeps the frames at 0.5 s
+  drag(ed, E(1, 2), E(6, 2)); // Path 1, frames 1-6
+  ed.pointerUp();
+  const a = ed.selection;
+  assert.ok(ed.setSplit(a, true), 'it lets the others keep moving, so its waits stretch over frames');
+  ed.escape();
+  ed.frame = 5;
+  drag(ed, E(1, 4), E(1, 3)); // Path 2 arrives beside electrode E(2, 2) in frame 6
+  ed.pointerUp();
+  assert.equal(ed.action(ed.selection).name, 'Path 2');
+  assert.equal(ed.setWaitAt(a, 1, 3000), false, 'Path 1 would still be on E(2, 2) then');
+  assert.match(ed.notice, /would touch/);
+  assert.ok(!ed.action(a).points.some((p) => p.wait));
+  assert.ok(ed.setWaitAt(a, 1, 1000), 'a shorter wait is gone by then');
 });
 
 test('a long step makes the others wait, unless it lets them keep moving (split)', () => {
@@ -1189,7 +1232,7 @@ test('a pattern’s length and a path’s wait at its end', () => {
   drag(ed, E(10, 1), E(13, 1));
   ed.pointerUp();
   assert.ok(ed.setEndWait(ed.selection, 3000));
-  assert.equal(ed.seq.timeOf(4), 3000);
+  assert.equal(ed.seq.timeOf(4), 3500, 'its last step, then 3 s more');
 });
 
 test('an OpenDrop file can be added to the project at the frame on screen', () => {

@@ -146,6 +146,19 @@ button {
   opacity: 0.85;
 }
 
+#board .path-arrows {
+  fill: rgb(0, 45, 170);
+  stroke: none;
+}
+
+#board .path-line.bad {
+  stroke: rgb(200, 20, 20);
+}
+
+#board .path-arrows.bad {
+  fill: rgb(200, 20, 20);
+}
+
 #board .path-start {
   fill: rgb(0, 45, 170);
   stroke-width: 4;
@@ -172,13 +185,14 @@ button {
   fill: rgb(255, 222, 120);
 }
 
-/* Droplet paths saved as lines: thin, in their droplet's colour (set inline). */
+/* Droplet paths saved as lines, and the way templates move their droplets: thin, in their
+   droplet's colour (set inline), with small arrows the way the droplet goes. */
 #board .lines,
 #board .handles {
   pointer-events: none;
 }
 
-#board .lines polyline {
+#board .lines .line {
   fill: none;
   stroke-width: 7;
   stroke-linecap: round;
@@ -186,20 +200,37 @@ button {
   opacity: 0.55;
 }
 
-#board .lines polyline.selected {
+#board .lines .arrows {
+  stroke: none;
+  opacity: 0.85;
+}
+
+#board .lines .line.selected {
   stroke-width: 12;
   opacity: 0.9;
 }
 
-#board .lines polyline.moving {
+#board .lines .arrows.selected {
+  opacity: 1;
+}
+
+#board .lines .line.moving {
   stroke: rgb(0, 45, 170) !important;
   opacity: 0.9;
 }
 
-#board .lines polyline.bad {
+#board .lines .arrows.moving {
+  fill: rgb(0, 45, 170) !important;
+}
+
+#board .lines .line.bad {
   stroke: rgb(200, 20, 20) !important;
   stroke-dasharray: 18 14;
   opacity: 0.9;
+}
+
+#board .lines .arrows.bad {
+  fill: rgb(200, 20, 20) !important;
 }
 
 /* The selected path's points: start ring, end dot, corner squares, wait diamonds. */
@@ -216,6 +247,17 @@ button {
 
 #board .handles .handle.wait {
   fill: rgb(255, 170, 0);
+}
+
+/* "+3 s" beside a point where the droplet waits. */
+#board .handles .wait-label {
+  fill: rgb(0, 45, 170);
+  stroke: #fff;
+  stroke-width: 6;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  font-size: 24px;
+  font-weight: 700;
 }
 
 #bar {
@@ -344,8 +386,15 @@ kbd {
   cursor: pointer;
 }
 
+/* In the chart's top strip (the plot starts below it), so it takes no room in the bar. */
 #chart-legend {
+  position: absolute;
+  top: 6px;
+  right: 16px;
+  z-index: 1;
   color: var(--ink-secondary);
+  font-size: 12px;
+  pointer-events: none;
 }
 
 #chart-legend .swatch {
@@ -390,7 +439,7 @@ kbd {
 
 #chart {
   position: relative;
-  height: 128px;
+  height: 168px; /* the same as the timeline, so switching views moves nothing */
   margin-top: 6px;
   overflow: hidden;
   border: 1px solid rgba(11, 11, 11, 0.1);
@@ -418,9 +467,12 @@ kbd {
   overflow: auto;
 }
 
+/* Nothing in the timeline is text to select: dragging the ruler or clips shouldn't highlight it. */
 .tl-canvas {
   position: relative;
   min-height: 100%;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .tl-ruler {
@@ -539,11 +591,16 @@ kbd {
   pointer-events: none;
 }
 
-.tl-links path {
+/* A droplet coming in from another track, in its colour (set inline), with an arrow. */
+.tl-links .tl-link {
   fill: none;
-  stroke: rgba(0, 0, 0, 0.35);
   stroke-dasharray: 4 3;
   stroke-width: 1.5;
+  opacity: 0.7;
+}
+
+.tl-links .tl-arrow {
+  stroke: none;
 }
 
 .tl-playhead {
@@ -673,30 +730,6 @@ kbd {
   opacity: 0.7;
 }
 
-.chart-svg .area {
-  fill: var(--chart-own);
-  opacity: 0.1;
-}
-
-.chart-svg .line {
-  fill: none;
-  stroke: var(--chart-own);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.chart-svg .dot {
-  fill: var(--chart-own);
-  stroke: var(--chart-surface);
-  stroke-width: 2;
-}
-
-.chart-svg .cross {
-  stroke: var(--ink-muted);
-  stroke-width: 1;
-}
-
 .chart-tip {
   position: absolute;
   z-index: 2;
@@ -718,40 +751,6 @@ kbd {
 
 .chart-tip .sub {
   color: var(--ink-muted);
-}
-
-.chart-table {
-  height: 100%;
-  overflow: auto;
-}
-
-.chart-table table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.chart-table th {
-  position: sticky;
-  top: 0;
-  padding: 3px 12px;
-  background: var(--chart-surface);
-  color: var(--ink-secondary);
-  font-weight: 600;
-  text-align: left;
-}
-
-.chart-table td {
-  padding: 2px 12px;
-  border-top: 1px solid var(--chart-grid);
-  color: var(--ink-primary);
-  cursor: pointer;
-}
-
-.chart-table tr.current td {
-  background: rgba(42, 120, 214, 0.1);
-  font-weight: 600;
 }
 
 /* ---- Side panel: actions and templates --------------------------------------------------- */
@@ -1034,6 +1033,103 @@ kbd {
 
 .with-unit input {
   width: 9em;
+}
+
+/* A path's waits on the way: the place (goes to its frame), the seconds, and ×. */
+#prop-waits-list {
+  display: grid;
+  gap: 4px;
+}
+
+#prop-waits-list .place {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--ink-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+#prop-waits-list .place:hover {
+  text-decoration: underline;
+}
+
+#prop-waits-list .row input[type="number"] {
+  width: 4em;
+}
+
+#prop-waits-list .row button[aria-label] {
+  padding: 1px 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+#prop-waits-list .none,
+#prop-waits-row .hint {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+/* The form a right-click on a path's line opens. */
+#wait-pop {
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+
+#wait-pop-title {
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+
+#wait-pop label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#wait-pop input {
+  width: 6em;
+  padding: 3px 6px;
+  font: inherit;
+}
+
+.wait-pop-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.wait-pop-buttons button {
+  padding: 3px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.wait-pop-buttons button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.wait-pop-buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 #drag-ghost {

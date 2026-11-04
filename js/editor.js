@@ -715,7 +715,8 @@
         else points = lines.dragPoint(this.ctx, a.points, g.index, d);
         if (!points) return invalid('That would go off the array');
         changes.set(a.id, { ...a, points });
-        return this.tryChanges(changes);
+        const why = g.kind === 'whole' ? null : this.carryEnds(changes, a);
+        return why ? invalid(why) : this.tryChanges(changes);
       }
       const moved = this.movedAction(a, d);
       if (!moved) return invalid("It doesn't fit there");
@@ -723,6 +724,69 @@
       changes.set(a.id, next);
       const why = this.followAttached(changes, a, next, ed.attached);
       return why ? invalid(why) : this.tryChanges(changes);
+    }
+
+    // What is attached to path id's end (which = 'end': what carries on from its last electrode
+    // when it ends) or its start ('start': what ends on its first electrode when it starts).
+    // A dispense isn't: it stays at its reservoir.
+    attachedAt(id, which) {
+      const span = this.span(id);
+      const x = this.compiled.expanded.get(id);
+      if (!span || !x || !x.built) return [];
+      const cells = x.built.cells;
+      const path = this.action(id);
+      return this.project.actions.filter((b) => {
+        const sb = b.id !== id && b.type !== 'dispense' && this.span(b.id);
+        if (!sb) return false;
+        if (which === 'end') {
+          const linked = (predsOf(b) || []).includes(id) || sb.from === span.to || sb.from === span.to + 1;
+          return linked && sb.from >= span.to && this.firstCells(b.id).includes(cells[cells.length - 1]);
+        }
+        const linked = (predsOf(path) || []).includes(b.id) || sb.to === span.from || sb.to === span.from - 1;
+        return linked && sb.to <= span.from && this.lastCells(b.id).includes(cells[0]);
+      });
+    }
+
+    // Path `path` is reshaped (its new version is in `changes`): where its start or end moved,
+    // what is attached there comes along. A template or pattern moves with it (and the other
+    // paths attached to that follow); a path that carries on from it (or leads into it)
+    // stretches to meet it. Adds them to `changes`; returns a reason if one can't come along.
+    carryEnds(changes, path) {
+      const old = this.compiled.expanded.get(path.id);
+      if (!old || !old.built) return null;
+      const before = old.built.cells;
+      const points = changes.get(path.id).points;
+      const ends = [
+        ['end', before[before.length - 1], points[points.length - 1].e],
+        ['start', before[0], points[0].e],
+      ];
+      for (const [which, from, to] of ends) {
+        if (from === to) continue;
+        const d = this.offset(from, to);
+        for (const b of this.attachedAt(path.id, which)) {
+          if (changes.has(b.id)) continue;
+          if (b.type === 'path') {
+            const other = which === 'end' ? 'start' : 'end';
+            const moved = lines.dragEnd(this.ctx, b.points, other, d);
+            const meets = moved && moved[other === 'start' ? 0 : moved.length - 1].e === to;
+            if (!meets) return `${quote(b)} can't follow it there`;
+            changes.set(b.id, { ...b, points: moved });
+            continue;
+          }
+          const moved = this.movedAction(b, d);
+          const next = moved && { ...b, ...moved };
+          const x = next && expand(next, this.project, this.ctx);
+          if (!x || !x.steps) return `${quote(b)} would come along, but doesn't fit there`;
+          const cells = (which === 'end' ? x.steps[0] : x.steps[x.steps.length - 1]).cells;
+          if (!cells.includes(to)) return `${quote(b)} can't come along there`;
+          changes.set(b.id, next);
+          const { incoming, outgoing } = this.attachedPaths(b.id);
+          const others = { incoming: incoming.filter((id) => id !== path.id), outgoing: outgoing.filter((id) => id !== path.id) };
+          const why = this.followAttached(changes, b, next, others);
+          if (why) return why;
+        }
+      }
+      return null;
     }
 
     movedLine(path, d) {
@@ -771,7 +835,12 @@
       }
       this.applyChanges(ed.preview.changes);
       const a = this.action(ed.id);
-      return { kind: 'edit', name: a.name, reshaped: a.type === 'path' && ed.grab.kind !== 'whole' && ed.grab.kind !== 'chain' };
+      const done = { kind: 'edit', name: a.name, reshaped: a.type === 'path' && ed.grab.kind !== 'whole' && ed.grab.kind !== 'chain' };
+      // What came along (`along`, names): attached templates first, then paths that stretched.
+      const along = [...ed.preview.changes.keys()].filter((id) => id !== ed.id).map((id) => this.action(id));
+      along.sort((x, y) => (x.type === 'path') - (y.type === 'path'));
+      if (along.length) done.along = along.map((x) => x.name);
+      return done;
     }
 
     applyChanges(changes, templatesToo = null) {
@@ -1003,7 +1072,7 @@
       return this.commit(this.tryChanges(new Map([[id, next]])));
     }
 
-    // How long the droplet stays at a path's end (ms; 0 = no wait).
+    // How much longer the droplet stays at a path's end (ms; 0 = no wait).
     setEndWait(id, ms) {
       const a = this.action(id);
       if (!a || a.type !== 'path') return false;
@@ -1011,6 +1080,56 @@
       const end = points[points.length - 1];
       if (ms) end.wait = clampTime(ms);
       else delete end.wait;
+      return this.commit(this.tryChanges(new Map([[id, { ...a, points }]])));
+    }
+
+    // --- waits on a path -------------------------------------------------------------------------
+    // A wait holds the droplet on an electrode of its path for that much longer than a step.
+
+    // The spot on a path's line under electrode e: the selected path first, else the latest
+    // drawn path whose line passes e (where it passes e twice, the visit nearest the frame on
+    // screen). { id, step, e, wait } or null.
+    waitSpot(e) {
+      const sel = this.selected;
+      const acts = this.project.actions;
+      const order = sel && sel.type === 'path' ? [sel, ...acts.filter((a) => a !== sel).reverse()] : acts.slice().reverse();
+      for (const a of order) {
+        const x = a.type === 'path' ? this.compiled.expanded.get(a.id) : null;
+        if (!x || !x.built) continue;
+        const part = lines.partAt(x.built, a.points, e, this.stepNear(a.id));
+        if (!part) continue;
+        const at = x.built.steps.indexOf(part.step);
+        return { id: a.id, step: part.step, e, wait: at >= 0 ? a.points[at].wait || 0 : 0 };
+      }
+      return null;
+    }
+
+    // The waits on path id, in the order the droplet gets to them: [{ step, e, wait, frame }]
+    // (frame: the first frame of that step, if the path runs).
+    waitsOf(id) {
+      const a = this.action(id);
+      const x = a && a.type === 'path' ? this.compiled.expanded.get(id) : null;
+      if (!x || !x.built) return [];
+      const span = this.span(id);
+      const firstFrame = (k) => {
+        if (!span) return null;
+        for (let f = span.from; f <= span.to; f++) if (this.stepIn(id, f) === k) return f;
+        return null;
+      };
+      return a.points
+        .map((p, i) => ({ step: x.built.steps[i], e: p.e, wait: p.wait || 0 }))
+        .filter((w) => w.wait > 0)
+        .sort((u, v) => u.step - v.step)
+        .map((w) => ({ ...w, frame: firstFrame(w.step) }));
+    }
+
+    // A wait of `ms` (0 = none) at step k of path id, where its line passes that electrode.
+    setWaitAt(id, k, ms) {
+      const a = this.action(id);
+      const x = a && a.type === 'path' ? this.compiled.expanded.get(id) : null;
+      if (!x || !x.built || !Number.isInteger(k) || k < 0 || k >= x.built.cells.length) return false;
+      const points = ms > 0 ? lines.addPointAt(a.points, x.built, k, { wait: clampTime(ms) }) : lines.clearWaitAt(this.ctx.graph, a.points, x.built, k);
+      if (JSON.stringify(points) === JSON.stringify(a.points)) return true;
       return this.commit(this.tryChanges(new Map([[id, { ...a, points }]])));
     }
 
@@ -1390,7 +1509,8 @@
 
     // Frame f's time (ms; 0 = back to the default), set on the selected action if it runs in
     // frame f, otherwise on the actions in it that aren't split. On a path it is a wait at the
-    // electrode the droplet is on, on other actions that step's own time. Returns the actions it
+    // electrode the droplet is on (what the frame needs on top of the path's step; none if the
+    // step is already that long), on other actions that step's own time. Returns the actions it
     // was set on (empty if nothing runs in frame f, or the change was refused).
     setFrameTime(f, ms) {
       const act = this.compiled.active[f] || [];
@@ -1403,7 +1523,8 @@
           const a = this.action(id);
           if (a.type === 'path') {
             const { built } = this.compiled.expanded.get(id);
-            a.points = ms ? lines.addPointAt(a.points, built, step, { wait: clampTime(ms) }) : lines.clearWaitAt(this.ctx.graph, a.points, built, step);
+            const extra = ms ? ms - (a.stepTime || this.project.frameTime) : 0;
+            a.points = extra > 0 ? lines.addPointAt(a.points, built, step, { wait: clampTime(extra) }) : lines.clearWaitAt(this.ctx.graph, a.points, built, step);
             continue;
           }
           const n = this.stepsOf(id).length;

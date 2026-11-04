@@ -1,6 +1,5 @@
-/* The timing chart under the board: how long each step lasts (bars), or the total time so far
- * (a line), against the step number. Click or drag on it to go to a step, hover for the numbers,
- * or read them all in the table view. Plain SVG, no library. */
+/* The timing chart under the board: how long each step lasts (bars) against the step number.
+ * Click or drag on it to go to a step, hover for the numbers. Plain SVG, no library. */
 (function (root) {
   'use strict';
 
@@ -16,7 +15,7 @@
     primary: '#0b0b0b',
     surface: '#fcfcfb',
   };
-  const PAD = { left: 58, right: 16, top: 12, bottom: 24 };
+  const PAD = { left: 58, right: 16, top: 30, bottom: 24 }; // the legend sits in the top strip
   const MIN_SLOTS = 10; // a short sequence sits at the left instead of spreading out
 
   function el(tag, attrs, parent) {
@@ -58,7 +57,6 @@
     constructor(host, { onPick } = {}) {
       this.host = host;
       this.onPick = onPick || (() => {});
-      this.mode = 'step'; // 'step', 'total' or 'table'
       this.data = null;
       this.key = '';
       this.svg = el('svg', { class: 'chart-svg', tabindex: 0, role: 'img' }, host);
@@ -66,10 +64,6 @@
       this.tip.className = 'chart-tip';
       this.tip.hidden = true;
       host.appendChild(this.tip);
-      this.table = document.createElement('div');
-      this.table.className = 'chart-table';
-      this.table.hidden = true;
-      host.appendChild(this.table);
       this.geometry = null;
       this.pressed = false;
       this.hovered = null;
@@ -95,12 +89,6 @@
       this.svg.addEventListener('blur', () => this.hover(null));
     }
 
-    setMode(mode) {
-      this.mode = mode;
-      this.key = '';
-      this.draw();
-    }
-
     // data: { times: [ms of step 1, 2, ...], own: [true where a step has its own time], current }
     update(data) {
       const key = `${data.current}|${data.times.join(',')}|${data.own.map(Number).join('')}`;
@@ -124,14 +112,6 @@
 
     draw() {
       if (!this.data) return;
-      const table = this.mode === 'table';
-      this.svg.style.display = table ? 'none' : '';
-      this.table.hidden = !table;
-      if (table) this.drawTable();
-      else this.drawPlot();
-    }
-
-    drawPlot() {
       const { times, own, current } = this.data;
       const steps = times.length;
       const width = this.host.clientWidth;
@@ -143,9 +123,7 @@
 
       const totals = [];
       times.forEach((t, i) => totals.push((totals[i - 1] || 0) + t));
-      const showTotal = this.mode === 'total';
-      const values = showTotal ? totals : times;
-      const max = Math.max(...values);
+      const max = Math.max(...times);
       const minutes = max >= 120000;
       const unit = minutes ? 60000 : 1000;
       const yTicks = ticks(max / unit);
@@ -171,20 +149,11 @@
       }
 
       this.marks = [];
-      if (showTotal) {
-        const points = totals.map((t, i) => `${xOf(i + 1)},${yOf(t)}`);
-        el('path', { d: `M${xOf(1)},${base}L${points.join('L')}L${xOf(steps)},${base}Z`, class: 'area' }, svg);
-        el('polyline', { points: points.join(' '), class: 'line' }, svg);
-        if (current >= 1 && current <= steps) {
-          el('circle', { cx: xOf(current), cy: yOf(totals[current - 1]), r: 4.5, class: 'dot' }, svg);
-        }
-      } else {
-        const w = Math.max(1, Math.min(24, slot - 2)); // thin bars with a 2px gap between them
-        times.forEach((t, i) => {
-          const y = yOf(t);
-          this.marks.push(el('path', { d: barPath(xOf(i + 1) - w / 2, y, w, base - y), class: own[i] ? 'bar own' : 'bar' }, svg));
-        });
-      }
+      const w = Math.max(1, Math.min(24, slot - 2)); // thin bars with a 2px gap between them
+      times.forEach((t, i) => {
+        const y = yOf(t);
+        this.marks.push(el('path', { d: barPath(xOf(i + 1) - w / 2, y, w, base - y), class: own[i] ? 'bar own' : 'bar' }, svg));
+      });
       el('line', { x1: plot.x, x2: plot.x + plot.w, y1: base, y2: base, class: 'baseline' }, svg);
 
       // Step numbers: round intervals that don't crowd, plus the step on screen in dark ink.
@@ -195,10 +164,8 @@
       }
       if (current >= 1 && current <= steps) label(current, 'tick x now');
 
-      this.cross = el('line', { y1: plot.y, y2: base, class: 'cross' }, svg);
-      this.cross.style.display = 'none';
       const total = totals[totals.length - 1];
-      svg.setAttribute('aria-label', `${showTotal ? 'Total time' : 'Time of each step'} for ${steps} steps; ${formatTime(total)} in all.`);
+      svg.setAttribute('aria-label', `Time of each step for ${steps} steps; ${formatTime(total)} in all.`);
       this.hover(this.hovered);
     }
 
@@ -206,76 +173,32 @@
     hover(s, evt) {
       this.hovered = s;
       for (const m of this.marks || []) m.classList.remove('hover');
-      if (this.cross) this.cross.style.display = 'none';
-      if (!s || !this.geometry || this.mode === 'table' || s > this.geometry.steps) {
+      if (!s || !this.geometry || s > this.geometry.steps) {
         this.tip.hidden = true;
         return;
       }
       const { xOf, yOf, totals, plot } = this.geometry;
       const time = this.data.times[s - 1];
       const own = this.data.own[s - 1];
-      const showTotal = this.mode === 'total';
-      if (showTotal) {
-        this.cross.setAttribute('x1', xOf(s));
-        this.cross.setAttribute('x2', xOf(s));
-        this.cross.style.display = '';
-      } else if (this.marks[s - 1]) {
-        this.marks[s - 1].classList.add('hover');
-      }
+      if (this.marks[s - 1]) this.marks[s - 1].classList.add('hover');
 
       const strong = document.createElement('strong');
-      strong.textContent = formatTime(showTotal ? totals[s - 1] : time);
+      strong.textContent = formatTime(time);
       const first = document.createElement('div');
-      first.append(strong, ` ${showTotal ? `in all, to the end of step ${s}` : `step ${s}`}`);
+      first.append(strong, ` step ${s}`);
       const second = document.createElement('div');
       second.className = 'sub';
-      second.textContent = showTotal
-        ? `step ${s}: ${formatTime(time)}, ${own ? 'its own time' : 'the default'}`
-        : `${own ? 'its own time' : 'the default time'} · ${formatTime(totals[s - 1])} in all`;
+      second.textContent = `${own ? 'its own time' : 'the default time'} · ${formatTime(totals[s - 1])} in all`;
       this.tip.replaceChildren(first, second);
       this.tip.hidden = false;
 
       const hostRect = this.host.getBoundingClientRect();
       const x = evt ? evt.clientX - hostRect.left : xOf(s);
-      const y = evt ? evt.clientY - hostRect.top : yOf(showTotal ? totals[s - 1] : time);
+      const y = evt ? evt.clientY - hostRect.top : yOf(time);
       const tipW = this.tip.offsetWidth;
       const left = x + 14 + tipW > hostRect.width ? x - 14 - tipW : x + 14;
       this.tip.style.left = `${Math.max(0, left)}px`;
       this.tip.style.top = `${Math.max(0, Math.min(y - 20, plot.y + plot.h - this.tip.offsetHeight))}px`;
-    }
-
-    drawTable() {
-      const { times, own, current } = this.data;
-      const table = document.createElement('table');
-      const head = table.createTHead().insertRow();
-      for (const name of ['Step', 'Time', 'In all']) {
-        const th = document.createElement('th');
-        th.textContent = name;
-        head.appendChild(th);
-      }
-      const body = table.createTBody();
-      let total = 0;
-      let currentRow = null;
-      times.forEach((t, i) => {
-        total += t;
-        const row = body.insertRow();
-        row.insertCell().textContent = i + 1;
-        row.insertCell().textContent = formatTime(t) + (own[i] ? ' (own)' : '');
-        row.insertCell().textContent = formatTime(total);
-        row.addEventListener('click', () => this.onPick(i + 1));
-        if (i + 1 === current) {
-          row.className = 'current';
-          currentRow = row;
-        }
-      });
-      this.table.replaceChildren(table);
-      if (currentRow) {
-        const { offsetTop, offsetHeight } = currentRow;
-        const view = this.table;
-        if (offsetTop < view.scrollTop + 24 || offsetTop + offsetHeight > view.scrollTop + view.clientHeight) {
-          view.scrollTop = offsetTop - view.clientHeight / 2;
-        }
-      }
     }
   }
 

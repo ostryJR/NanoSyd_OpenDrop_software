@@ -31,17 +31,15 @@
           <span class="spacer"></span>
           <span class="chart-controls">
             <button type="button" id="add-file" title="Add an OpenDrop .json file to the project, from the frame on screen">Add file…</button>
-            <span id="chart-legend"><i class="swatch plain"></i>default time<i class="swatch own"></i>own time</span>
             <span class="segmented" role="group" aria-label="View">
               <button type="button" data-view="timeline" aria-pressed="true">Timeline</button>
               <button type="button" data-view="step" aria-pressed="false">Step time</button>
-              <button type="button" data-view="total" aria-pressed="false">Total time</button>
-              <button type="button" data-view="table" aria-pressed="false">Table</button>
             </span>
           </span>
         </div>
         <div id="timeline"></div>
-        <div id="chart" hidden></div>
+        <!-- The legend sits inside the chart, so switching views never changes the bar above. -->
+        <div id="chart" hidden><span id="chart-legend"><i class="swatch plain"></i>default time<i class="swatch own"></i>own time</span></div>
       </section>
     </div>
 
@@ -99,6 +97,9 @@
             </div>
             <div class="field" id="prop-size-row">Size
               <select id="prop-size"><option value="2">2 × 2</option><option value="3">3 × 3</option></select></div>
+            <div class="field" id="prop-dir-row">Goes round
+              <select id="prop-dir" title="Which way the droplet goes round; it starts and ends on the same electrode either way">
+                <option value="cw">↻ clockwise</option><option value="ccw">↺ counter-clockwise</option></select></div>
             <label class="field" id="prop-length-row">Over (electrodes)
               <input type="number" id="prop-length" min="2" max="6" step="1"></label>
             <label class="field" id="prop-rounds-row">Rounds
@@ -108,6 +109,11 @@
             <label class="field" id="prop-endwait-row">Wait at the end
               <span class="with-unit"><input type="number" id="prop-endwait" min="0" max="3600" step="any"
                      inputmode="decimal"> s</span></label>
+            <div class="field" id="prop-waits-row">Waits on the way
+              <span id="prop-waits-list"></span>
+              <span class="hint">Right-click the line where the droplet should wait<span class="mac-only"> (or
+                Ctrl+click)</span>.</span>
+            </div>
             <datalist id="droplet-names"></datalist>
             <p id="prop-info" class="info"></p>
             <div class="maker-buttons">
@@ -158,6 +164,7 @@
     <span id="help">
       Drag: path (<kbd>F</kbd> freehand, <kbd>S</kbd> straight, <kbd>P</kbd> paint, <kbd>V</kbd> select) ·
       Click: select · drag the selected path's line to reshape it · <kbd>Shift</kbd>+click: corner by corner ·
+      right-click a path's line: wait there ·
       <kbd>⌥</kbd>+drag / <kbd>⌥</kbd>+arrows: move · <kbd>Shift</kbd>+drag: with what follows · <kbd>R</kbd>: turn ·
       <kbd>[</kbd><kbd>]</kbd>: earlier/later · <kbd>Del</kbd>: delete · <kbd>Esc</kbd>: cancel ·
       <kbd data-pc="Ctrl+Z">⌘Z</kbd> / <kbd data-pc="Ctrl+Y">⇧⌘Z</kbd>: undo/redo · <kbd data-pc="Ctrl+S">⌘S</kbd>: save ·
@@ -169,6 +176,15 @@
   <input type="file" id="template-file" accept=".json,application/json" hidden>
   <input type="file" id="add-file-input" accept=".json,application/json" hidden>
   <div id="drag-ghost" hidden></div>
+  <!-- Right-click on a path's line: how much longer the droplet stays on that electrode. -->
+  <form id="wait-pop" hidden autocomplete="off">
+    <div id="wait-pop-title"></div>
+    <label>Wait <input type="number" id="wait-pop-input" min="0" max="3600" step="any" inputmode="decimal"> s</label>
+    <div class="wait-pop-buttons">
+      <button type="submit" class="primary">Set</button>
+      <button type="button" id="wait-pop-clear">No wait</button>
+    </div>
+  </form>
 
   <!-- Plain scripts (not modules) so the page also works when opened straight from disk. -->
   <script src="js/layouts-data.js"></script>

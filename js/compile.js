@@ -33,6 +33,8 @@
 
   // One action as steps { cells, time } (time 0 = the action's step time or the default), or
   // { error } if it can't be shown. Paths also return `built` (their electrodes and point steps).
+  // A wait on a path's point comes on top of its step there: the droplet arrives, then stays
+  // that much longer, so a wait always holds it up, however long a step is.
   function expand(action, project, ctx) {
     switch (action.type) {
       case 'path': {
@@ -42,7 +44,8 @@
         action.points.forEach((p, i) => {
           if (p.wait > 0) waits.set(built.steps[i], Math.max(waits.get(built.steps[i]) || 0, p.wait));
         });
-        return { steps: built.cells.map((e, k) => ({ cells: [e], time: waits.get(k) || 0 })), built };
+        const step = action.stepTime || (project && project.frameTime) || DEFAULT_FRAME_TIME;
+        return { steps: built.cells.map((e, k) => ({ cells: [e], time: waits.has(k) ? step + waits.get(k) : 0 })), built };
       }
       case 'template': {
         const def = project.templates && project.templates[action.template];

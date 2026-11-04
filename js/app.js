@@ -141,9 +141,11 @@
 
   const DIALOGS = { save: () => save(), load: () => fileInput.click(), export: () => exportFrames() };
   let pendingDialog = null;
+  const MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 
   svg.addEventListener('pointerdown', (evt) => {
     if (evt.button !== 0 || !evt.isPrimary) return;
+    if (MAC && evt.ctrlKey) return; // a right-click on a Mac: see 'contextmenu'
     evt.preventDefault();
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const { mx, my } = toGrid(evt);
@@ -176,7 +178,9 @@
         clearDraftStatus(`Added ${quote(a)}: ${plural(done.steps, 'step')}, ${frames}${after}`);
       }
     } else if (done && done.kind === 'edit') {
-      clearDraftStatus(`${done.reshaped ? 'Reshaped' : 'Moved'} “${done.name}”`);
+      const along = done.along || [];
+      const names = along.slice(0, 3).map((n) => `“${n}”`).join(', ') + (along.length > 3 ? ` and ${along.length - 3} more` : '');
+      clearDraftStatus(`${done.reshaped ? 'Reshaped' : 'Moved'} “${done.name}”${along.length ? `; ${names} came along` : ''}`);
     } else if (!showNotice()) {
       clearDraftStatus();
     }
@@ -464,7 +468,6 @@
   const frameNo = $('time-frame-no');
   const frameReset = $('time-frame-reset');
   const totalText = $('time-total');
-  const legend = $('chart-legend');
   const warningBox = $('time-warning');
   const warningText = $('time-warning-text');
   const splitButton = $('time-split');
@@ -601,12 +604,10 @@
   const chartBox = $('chart');
   const timelineBox = $('timeline');
   function setChartView(view) {
-    prefs.chart = ['timeline', 'step', 'total', 'table'].includes(view) ? view : 'timeline';
+    prefs.chart = view === 'step' ? 'step' : 'timeline'; // older settings may say 'total' or 'table'
     for (const b of viewButtons) b.setAttribute('aria-pressed', String(b.dataset.view === prefs.chart));
-    legend.style.display = prefs.chart === 'step' ? '' : 'none';
     timelineBox.hidden = prefs.chart !== 'timeline';
     chartBox.hidden = prefs.chart === 'timeline';
-    if (prefs.chart !== 'timeline') chart.setMode(prefs.chart);
     savePrefs();
     redraw();
   }
@@ -703,6 +704,7 @@
   const stepField = $('prop-step');
   const splitBox = $('prop-split');
   const sizeField = $('prop-size');
+  const dirField = $('prop-dir');
   const lengthField = $('prop-length');
   const roundsField = $('prop-rounds');
   const framesField = $('prop-frames');
@@ -772,10 +774,14 @@
     splitBox.checked = Boolean(a.split);
     show($('prop-turn'), a.type !== 'dispense');
     const p = a.type === 'template' && a.params ? a.params : null;
+    const family = p && templates.FAMILIES[p.kind];
+    const turnsRound = Boolean(family && family.choices && family.choices.dir);
     show($('prop-size-row'), Boolean(p && p.size !== undefined));
+    show($('prop-dir-row'), turnsRound);
     show($('prop-length-row'), Boolean(p && p.length !== undefined));
     show($('prop-rounds-row'), Boolean(p && p.rounds !== undefined));
     if (p) {
+      if (turnsRound) dirField.value = p.dir || family.choices.dir[0];
       if (p.size !== undefined) sizeField.value = String(p.size);
       if (p.length !== undefined) keep(lengthField, String(p.length));
       if (p.rounds !== undefined) keep(roundsField, String(p.rounds));
@@ -783,9 +789,11 @@
     show($('prop-frames-row'), a.type === 'pattern');
     if (a.type === 'pattern') keep(framesField, String(a.frames.length));
     show($('prop-endwait-row'), a.type === 'path');
+    show($('prop-waits-row'), a.type === 'path');
     if (a.type === 'path') {
       const end = a.points[a.points.length - 1];
       keep(endWaitField, end.wait ? seconds(end.wait) : '');
+      showWaits(a);
     }
     const notes = ed.issuesOf(a.id).filter((i) => i.kind !== 'waits').map((i) => i.text);
     infoText.className = notes.length ? 'info' : 'info ok';
@@ -871,6 +879,12 @@
       if (a) propChange(ed.setParams(a.id, { [name]: Math.round(Number(field.value)) }), () => `${quote(ed.selected)}: ${plural(ed.stepsOf(a.id).length - 1, 'step')}`);
     });
   }
+  dirField.addEventListener('change', () => {
+    const a = ed.selected;
+    const ccw = dirField.value === 'ccw';
+    dirField.blur();
+    if (a) propChange(ed.setParams(a.id, { dir: dirField.value }), () => `${quote(ed.selected)} goes round ${ccw ? 'counter-clockwise' : 'clockwise'}`);
+  });
   framesField.addEventListener('change', () => {
     const a = ed.selected;
     if (a) propChange(ed.setFrames(a.id, Number(framesField.value)), () => `${quote(a)} lasts ${plural(ed.action(a.id).frames.length, 'frame')}`);
@@ -887,6 +901,161 @@
     evt.currentTarget.blur();
     deleteSelected();
   });
+
+  // --- waits -----------------------------------------------------------------------------
+  // Right-click (on a Mac also Ctrl+click) on a path's line opens a small form for how much
+  // longer the droplet stays on that electrode. Properties lists a path's waits on the way.
+
+  const waitPop = $('wait-pop');
+  const waitPopTitle = $('wait-pop-title');
+  const waitPopInput = $('wait-pop-input');
+  const waitPopClear = $('wait-pop-clear');
+  let waitSpot = null; // { id, step, e, wait } the form is for
+  for (const node of document.querySelectorAll('.mac-only')) node.hidden = !MAC;
+
+  // The first frame in which path id's droplet is on step k, or null.
+  function frameOfStep(id, k) {
+    const span = ed.span(id);
+    if (span) for (let f = span.from; f <= span.to; f++) if (ed.stepIn(id, f) === k) return f;
+    return null;
+  }
+
+  const spotText = (spot) => {
+    const f = frameOfStep(spot.id, spot.step);
+    return `electrode ${spot.e}${f ? ` (frame ${f})` : ''}`;
+  };
+
+  function closeWaitPop() {
+    waitPop.hidden = true;
+    waitSpot = null;
+  }
+
+  // Opens the form next to the pointer, with the path selected and the droplet shown there.
+  function openWaitPop(spot, clientX, clientY) {
+    ed.select(spot.id);
+    const f = frameOfStep(spot.id, spot.step);
+    if (f) ed.frame = f;
+    waitSpot = spot;
+    waitPopTitle.textContent = `${quote(ed.action(spot.id))} on ${spotText(spot)}`;
+    waitPopInput.value = spot.wait ? seconds(spot.wait) : '';
+    waitPopClear.disabled = !spot.wait;
+    waitPop.hidden = false;
+    const box = waitPop.getBoundingClientRect();
+    waitPop.style.left = `${Math.max(8, Math.min(window.innerWidth - box.width - 8, clientX + 12))}px`;
+    waitPop.style.top = `${Math.max(8, Math.min(window.innerHeight - box.height - 8, clientY + 12))}px`;
+    waitPopInput.focus();
+    waitPopInput.select();
+    setStatus('How many seconds more should the droplet stay here? Enter sets it, Esc closes');
+    redraw();
+  }
+
+  // A wait of `ms` (0 = none) at a spot on a path.
+  function applyWait(spot, ms) {
+    const a = ed.action(spot.id);
+    if (!a) return;
+    const where = spotText(spot);
+    if (ed.setWaitAt(spot.id, spot.step, ms)) setStatus(ms ? `${quote(a)} waits ${formatTime(ms)} on ${where}` : `${quote(a)} doesn't wait on ${where} any more`);
+    else showNotice();
+    propsKey = '';
+    redraw();
+  }
+
+  // Seconds typed in a wait field: ms (0 for empty), or null if it isn't a number of seconds.
+  function waitMs(input) {
+    if (input.validity && input.validity.badInput) return null;
+    const text = input.value.trim();
+    if (text === '') return 0;
+    const s = parseFloat(text);
+    return Number.isFinite(s) && s >= 0 ? Math.round(s * 1000) : null;
+  }
+
+  svg.addEventListener('contextmenu', (evt) => {
+    evt.preventDefault();
+    if (ed.dragging || ed.placement) return;
+    const { mx, my } = toGrid(evt);
+    const e = root.OD.paths.electrodeAt(ed.layout.rects, mx, my);
+    const spot = e === null ? null : ed.waitSpot(e);
+    if (!spot) {
+      closeWaitPop();
+      setStatus(`Right-click${MAC ? ' (or Ctrl+click)' : ''} on a path's line where its droplet should wait`);
+      redraw();
+      return;
+    }
+    openWaitPop(spot, evt.clientX, evt.clientY);
+  });
+
+  waitPop.addEventListener('submit', (evt) => {
+    evt.preventDefault();
+    const ms = waitMs(waitPopInput);
+    if (ms === null) {
+      setStatus('Waits are in seconds', 'warn');
+      return;
+    }
+    const spot = waitSpot;
+    closeWaitPop();
+    if (spot && (ms || spot.wait)) applyWait(spot, ms);
+    else setStatus('');
+  });
+  waitPopClear.addEventListener('click', () => {
+    const spot = waitSpot;
+    closeWaitPop();
+    if (spot) applyWait(spot, 0);
+  });
+  waitPop.addEventListener('keydown', (evt) => {
+    if (evt.key !== 'Escape') return;
+    evt.preventDefault();
+    evt.stopPropagation();
+    closeWaitPop();
+    setStatus('');
+    redraw();
+  });
+  // A press anywhere else closes it (a right-click on another spot opens it there).
+  document.addEventListener('pointerdown', (evt) => {
+    if (!waitPop.hidden && !waitPop.contains(evt.target)) closeWaitPop();
+  }, true);
+
+  // The selected path's waits on the way (the one at its end has its own field): where, and how
+  // long. The place goes to the frame where the droplet is there.
+  function showWaits(a) {
+    const steps = ed.stepsOf(a.id);
+    const end = steps ? steps.length - 1 : -1;
+    const rows = ed.waitsOf(a.id).filter((w) => w.step !== end).map((w) => {
+      const spot = { id: a.id, step: w.step, e: w.e, wait: w.wait };
+      const row = document.createElement('span');
+      row.className = 'row wait-row';
+      const place = document.createElement('button');
+      place.type = 'button';
+      place.className = 'place';
+      place.textContent = `electrode ${w.e}${w.frame ? ` · frame ${w.frame}` : ''}`; // numbers stay with their word
+      place.title = 'Show the droplet there';
+      place.addEventListener('click', () => {
+        place.blur();
+        if (w.frame) ed.frame = w.frame;
+        redraw();
+      });
+      const input = document.createElement('input');
+      Object.assign(input, { type: 'number', min: '0', max: '3600', step: 'any', value: seconds(w.wait) });
+      input.inputMode = 'decimal';
+      input.setAttribute('aria-label', `Wait on electrode ${w.e}, in seconds`);
+      editKeys(input);
+      input.addEventListener('change', () => {
+        const ms = waitMs(input);
+        if (ms === null) setStatus('Waits are in seconds', 'warn');
+        else applyWait(spot, ms);
+      });
+      const unit = document.createElement('span');
+      unit.textContent = 's';
+      row.append(place, input, unit, iconButton('×', 'No wait here', () => applyWait(spot, 0)));
+      return row;
+    });
+    if (!rows.length) {
+      const none = document.createElement('span');
+      none.className = 'none';
+      none.textContent = 'None';
+      rows.push(none);
+    }
+    $('prop-waits-list').replaceChildren(...rows);
+  }
 
   // --- adding a file ---------------------------------------------------------------------
 

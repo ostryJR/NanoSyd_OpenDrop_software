@@ -31,27 +31,30 @@
   const SPLIT = [[[0, 0]], [[-1, 0], [0, 0], [1, 0]], [[-1, 0], [1, 0]], [[-2, 0], [2, 0]]];
   const MERGE_BACK = [[[-1, 0], [1, 0]], [[-1, 0], [0, 0], [1, 0]]];
 
-  // The edge of a size x size square, clockwise from its top-left electrode.
-  function ring(size) {
+  // The edge of a size x size square from its top-left electrode: clockwise on screen (right
+  // first), or counter-clockwise (down first).
+  function ring(size, ccw = false) {
     const cells = [];
     for (let c = 0; c < size; c++) cells.push([c, 0]);
     for (let r = 1; r < size; r++) cells.push([size - 1, r]);
     for (let c = size - 2; c >= 0; c--) cells.push([c, size - 1]);
     for (let r = size - 2; r > 0; r--) cells.push([0, r]);
-    return cells;
+    return ccw ? [cells[0], ...cells.slice(1).reverse()] : cells;
   }
 
   const roundsText = (n) => `${n} round${n === 1 ? '' : 's'}`;
   const clampInt = (v, [lo, hi], fallback) => (Number.isInteger(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
 
-  // Built-in operations that take parameters: what can be set (with limits and defaults), the
-  // frames, the name, and a key for the copy kept in project files.
+  // Built-in operations that take parameters: what can be set (numbers with limits and defaults;
+  // choices, whose first value is the default and is left out of the parameters), the frames,
+  // the name, and a key for the copy kept in project files.
   const FAMILIES = {
     circle: {
       limits: { size: [2, 3, 2], rounds: [1, 20, 3] },
-      frames: (p) => rounds(ring(p.size), p.rounds),
-      name: (p) => `Circle mix ${p.size}×${p.size}, ${roundsText(p.rounds)}`,
-      key: (p) => `circle-${p.size}x${p.size}-r${p.rounds}`,
+      choices: { dir: ['cw', 'ccw'] },
+      frames: (p) => rounds(ring(p.size, p.dir === 'ccw'), p.rounds),
+      name: (p) => `Circle mix ${p.size}×${p.size}${p.dir === 'ccw' ? ' counter-clockwise' : ''}, ${roundsText(p.rounds)}`,
+      key: (p) => `circle-${p.size}x${p.size}-r${p.rounds}${p.dir === 'ccw' ? '-ccw' : ''}`,
     },
     backforth: {
       limits: { length: [2, 6, 4], rounds: [1, 20, 2] },
@@ -76,6 +79,9 @@
     if (!fam) return null;
     const out = { kind: params.kind };
     for (const [k, [lo, hi, def]] of Object.entries(fam.limits)) out[k] = clampInt(params[k], [lo, hi], def);
+    for (const [k, values] of Object.entries(fam.choices || {})) {
+      if (values.indexOf(params[k]) > 0) out[k] = params[k];
+    }
     return out;
   }
 
@@ -135,6 +141,61 @@
     const inTime = frame + steps <= MAX_FRAMES;
     const times = template.times || null;
     return { anchor, frame, frames, times, steps, endFrame: frame + steps, fits, inTime, valid: fits && inTime };
+  }
+
+  // How the droplets of a placed template move, for drawing it as lines. In each frame a droplet
+  // is a group of electrodes that touch; it comes from each droplet of the frame before that it
+  // overlaps or sits next to (two, where droplets merge; one droplet gives two where it splits).
+  // `frames` are lists of electrodes. Returns each move once, between the droplets' centres in
+  // grid units: [{ from: { x, y }, to: { x, y }, both }], both = it is also made the other way.
+  function flow(frames, graph) {
+    const { neighbours, centres } = graph;
+    const groups = (cells) => {
+      const left = new Set(cells.filter((e) => centres.has(e)));
+      const out = [];
+      for (const start of left) {
+        const set = new Set([start]);
+        left.delete(start);
+        for (const e of set) {
+          for (const n of neighbours.get(e) || []) {
+            if (left.has(n)) {
+              left.delete(n);
+              set.add(n);
+            }
+          }
+        }
+        const list = [...set].map((e) => centres.get(e));
+        out.push({
+          cells: set,
+          x: list.reduce((s, c) => s + c.x, 0) / list.length,
+          y: list.reduce((s, c) => s + c.y, 0) / list.length,
+        });
+      }
+      return out;
+    };
+    const near = (a, b) => [...b.cells].some((e) => a.cells.has(e) || (neighbours.get(e) || []).some((n) => a.cells.has(n)));
+    const at = (g) => `${g.x.toFixed(2)},${g.y.toFixed(2)}`;
+    const moves = new Map();
+    let before = [];
+    for (const cells of frames) {
+      const now = groups(cells);
+      for (const b of now) {
+        for (const a of before) {
+          if (at(a) !== at(b) && near(a, b)) moves.set(`${at(a)}>${at(b)}`, { from: { x: a.x, y: a.y }, to: { x: b.x, y: b.y } });
+        }
+      }
+      before = now;
+    }
+    const out = [];
+    const listed = new Set();
+    for (const [key, m] of moves) {
+      if (listed.has(key)) continue;
+      const [p, q] = key.split('>');
+      const back = `${q}>${p}`;
+      listed.add(back);
+      out.push({ ...m, both: moves.has(back) });
+    }
+    return out;
   }
 
   const dropletFrame = (seq, f) => seq.frames[f].subarray(0, DROPLET_CELLS).includes(1);
@@ -230,7 +291,7 @@
     JSON.stringify(a.times || null) === JSON.stringify(b.times || null);
 
   return {
-    BUILT_IN, FAMILIES, stepsOf, rotate, place, fromSequence, toSequence, clean, exportText, importText, sameTemplate,
+    BUILT_IN, FAMILIES, stepsOf, rotate, place, flow, fromSequence, toSequence, clean, exportText, importText, sameTemplate,
     fromParams, cleanParams, sameParams, DROPLET_CELLS,
   };
 });

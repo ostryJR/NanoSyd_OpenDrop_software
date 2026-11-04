@@ -7,6 +7,8 @@
 
   const HEAD = 118; // px for the track names on the left
   const LANE = 26; // px per row of clips
+  const CLIP = 20; // px: a clip's height
+  const ARROW = 7; // px: an arrowhead's length
   const RULER = 22;
   const MIN_PX = 6; // px per frame
   const MAX_PX = 60;
@@ -55,6 +57,7 @@
       let scrubbing = false;
       this.ruler.addEventListener('pointerdown', (evt) => {
         if (evt.button !== 0) return;
+        evt.preventDefault(); // no text selection while scrubbing
         scrubbing = true;
         this.ruler.setPointerCapture(evt.pointerId);
         this.cb.onFrame(this.frameAt(evt.clientX));
@@ -67,6 +70,7 @@
       // Empty space in the tracks: go to that frame and let go of the selection.
       this.body.addEventListener('pointerdown', (evt) => {
         if (evt.button !== 0 || evt.target.closest('.tl-clip') || evt.target.closest('.tl-head')) return;
+        evt.preventDefault();
         this.cb.onSelect(null);
         this.cb.onFrame(this.frameAt(evt.clientX));
       });
@@ -188,7 +192,8 @@
           clip.title = `${c.name} (${frameText})${c.problem ? `\n${c.problem}` : ''}`;
           div('tl-mark', clip, TYPE_MARK[c.type] || '?');
           div('tl-label', clip, c.name);
-          this.layout.set(c.id, { x0, x1, y: y + c.row * LANE + LANE / 2 + 1 });
+          const top = y + c.row * LANE + 3;
+          this.layout.set(c.id, { x0, x1, y: y + c.row * LANE + LANE / 2 + 1, top, bottom: top + CLIP });
           this.wireClip(clip, c);
         }
         y += height;
@@ -199,23 +204,42 @@
       this.movePlayhead(resized);
     }
 
-    // Links between droplets: a curve from each action an action follows, when they aren't in
-    // the same row of the same track (there the clips meet anyway).
+    // Links between droplets: from the end of each action an action follows, when they aren't in
+    // the same row of the same track (there the clips meet anyway), a curve in the colour of the
+    // droplet coming in, with an arrow into the top or bottom of the clip near its start. Where
+    // droplets meet, their arrows point into the same clip.
     drawLinks(height) {
       const svg = this.links;
       svg.replaceChildren();
       svg.setAttribute('width', this.canvas.style.width);
       svg.setAttribute('height', height);
       svg.style.top = `${RULER}px`;
+      const colours = new Map(this.data.clips.map((c) => [c.id, c.colour]));
+      const add = (tag, attrs) => {
+        const node = document.createElementNS(NS, tag);
+        for (const k of Object.keys(attrs)) node.setAttribute(k, attrs[k]);
+        svg.appendChild(node);
+        return node;
+      };
       for (const c of this.data.clips) {
         const to = this.layout.get(c.id);
-        for (const id of c.preds || []) {
+        const preds = (c.preds || []).filter((id) => {
           const from = this.layout.get(id);
-          if (!from || !to || Math.abs(from.y - to.y) < 2) continue;
-          const path = document.createElementNS(NS, 'path');
-          const mx = (from.x1 + to.x0) / 2;
-          path.setAttribute('d', `M${from.x1},${from.y} C${mx},${from.y} ${mx},${to.y} ${to.x0},${to.y}`);
-          svg.appendChild(path);
+          return from && to && Math.abs(from.y - to.y) >= 2;
+        });
+        for (const id of preds) {
+          const from = this.layout.get(id);
+          const down = to.y > from.y; // coming from a track above
+          // Side by side where several come in from the same side.
+          const same = preds.filter((p) => this.layout.get(p).y > to.y !== down);
+          const x = Math.min(to.x0 + 7 + same.indexOf(id) * 9, Math.max(to.x0 + 3, to.x1 - 4));
+          const tip = down ? to.top : to.bottom;
+          const base = tip + (down ? -ARROW : ARROW);
+          const bend = Math.max(8, Math.abs(x - from.x1) / 2);
+          const fall = Math.max(6, Math.abs(base - from.y) / 2) * (down ? 1 : -1);
+          const colour = colours.get(id) || '#777';
+          add('path', { class: 'tl-link', d: `M${from.x1},${from.y} C${from.x1 + bend},${from.y} ${x},${base - fall} ${x},${base}`, style: `stroke: ${colour}` });
+          add('path', { class: 'tl-arrow', d: `M${x},${tip} L${x - 4.5},${base} L${x + 4.5},${base} Z`, style: `fill: ${colour}` });
         }
       }
     }
