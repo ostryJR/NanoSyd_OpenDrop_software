@@ -142,3 +142,14 @@ test('“after” may list several actions (a merge); a template keeps its param
   assert.deepEqual(project.actions[2].params, { kind: 'circle', size: 3, rounds: 5 });
   assert.match(P.serialize(project), /"after": \["a","b"\],\n {6}"delay": 2,/);
 });
+
+test('droplet short names: D12 for Droplet 12, initials for long names, each part of a merge', () => {
+  assert.equal(P.shortDroplet('Droplet 12'), 'D12');
+  assert.equal(P.shortDroplet('droplet  3'), 'D3');
+  assert.equal(P.shortDroplet('Sample'), 'Sample', 'a short word stays');
+  assert.equal(P.shortDroplet('Sample buffer 2'), 'SB2');
+  assert.equal(P.shortDroplet('Droplet 1 + Droplet 2'), 'D1 + D2', 'older merged names shorten too');
+  assert.equal(P.shortDroplet('D1 + D2 + Droplet 3'), 'D1 + D2 + D3');
+  assert.equal(P.shortDroplet(''), '');
+  assert.equal(P.shortDroplet(undefined), '');
+});

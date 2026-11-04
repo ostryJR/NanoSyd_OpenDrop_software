@@ -94,9 +94,9 @@
       });
     }
 
-    // data: { frames, frame, selection, clips: [{ id, name, type, track, trackName, colour, from,
-    //   to, problem, broken, split, handIn, handOut, preds }] } (broken: it can't run; shown where
-    //   it would start)
+    // data: { frames, frame, selection, clips: [{ id, name, type, track, trackName, trackShort,
+    //   colour, from, to, problem, broken, split, handIn, handOut, preds }] } (trackShort: the
+    //   droplet's short name, D1 ...; broken: it can't run; shown where it would start)
     update(data) {
       const key = JSON.stringify([data.frames, data.selection, data.clips]);
       this.data = data;
@@ -122,7 +122,7 @@
     tracks() {
       const tracks = new Map();
       for (const c of this.data.clips) {
-        if (!tracks.has(c.track)) tracks.set(c.track, { name: c.trackName, colour: c.colour, clips: [], first: c.from });
+        if (!tracks.has(c.track)) tracks.set(c.track, { name: c.trackName, short: c.trackShort || '', colour: c.colour, clips: [], first: c.from });
         const t = tracks.get(c.track);
         t.clips.push(c);
         t.first = Math.min(t.first, c.from);
@@ -172,8 +172,10 @@
         track.style.height = `${height}px`;
         const head = div('tl-head', track);
         head.style.setProperty('--c', t.colour);
-        head.title = t.name;
+        head.title = t.short && t.short !== t.name ? `${t.name} (${t.short})` : t.name;
         div('tl-chip', head);
+        // The short name (D1 ...) first, as merged droplets are named by it, then the full name.
+        if (t.short && t.short !== t.name) div('tl-short', head, t.short);
         div('tl-name', head, t.name);
         for (const c of t.clips) {
           const x0 = this.xOf(c.from) + (c.handIn ? this.px / 2 : 0);

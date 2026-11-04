@@ -263,10 +263,12 @@
       if (!picked.length) return null;
       const last = Math.max(...picked.map((a) => this.span(a.id).to));
       const names = [...new Set(picked.map((a) => a.droplet).filter(Boolean))];
+      // Droplets that merge give a name of their short names, "D1 + D2", so it stays readable.
+      const parts = names.length > 1 ? names.flatMap((n) => projects.shortDroplet(n).split(' + ')) : names;
       return {
         after: picked.length === 1 ? picked[0].id : picked.map((a) => a.id),
         delay: frame - last,
-        droplet: names.join(' + '),
+        droplet: [...new Set(parts)].join(' + '),
       };
     }
 

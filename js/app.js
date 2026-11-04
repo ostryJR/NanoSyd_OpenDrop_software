@@ -670,6 +670,7 @@
         type: a.type,
         track: a.droplet ? `d:${a.droplet}` : `a:${a.id}`,
         trackName: a.droplet || a.name,
+        trackShort: a.droplet ? projects.shortDroplet(a.droplet) : '',
         colour: dropletColour(a.droplet),
         from: span.from,
         to: span.to,
@@ -744,6 +745,8 @@
     kindText.textContent = `${KIND[a.type] || a.type}${span ? ` · ${span.from === span.to ? `frame ${span.from}` : `frames ${span.from}–${span.to}`}` : ''}`;
     keep(nameField, a.name);
     keep(dropletField, a.droplet || '');
+    const short = projects.shortDroplet(a.droplet);
+    $('prop-droplet-short').textContent = short && short !== a.droplet ? `· short ${short}` : '';
     dropletNames.replaceChildren(...[...new Set(ed.project.actions.map((x) => x.droplet).filter(Boolean))].map((n) => new Option(n)));
 
     // Starts: at a frame, or after other actions (and a delay).

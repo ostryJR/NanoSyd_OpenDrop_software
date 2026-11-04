@@ -66,7 +66,8 @@ Each action starts in a frame, or **after other actions**: once they have ended,
 link is made when you carry on from where a droplet is: the new action starts on the electrode
 where an action left its droplet (in that frame or later, as long as nothing else took it since),
 and takes its droplet name. A merge template dropped where two droplets arrive waits for both, and
-its droplet is called "A + B". So when an action gets longer, everything after it moves later.
+its droplet is named after their short names, "D1 + D2". So when an action gets longer, everything
+after it moves later.
 A linked action can't be moved earlier than what it follows; Properties can set it to a fixed frame
 instead.
 
@@ -78,7 +79,10 @@ problem have a red outline; an action that can't run at all (it doesn't fit the 
 shown as a dashed clip where it would start. Hover a clip for its frames and problems.
 
 Each action has a **name** and a **droplet** name (renaming a droplet renames it down the chain).
-The droplet names colour the lines on the board and the tracks.
+The droplet names colour the lines on the board and the tracks. Each droplet also has a short
+name, shown before its name on its track and next to the Droplet field: Droplet 12 is D12, a
+one-word name of up to six letters stays as it is, and a longer name gives its initials
+("Sample buffer 2" is SB2). Merged droplets are named with them, so "D1 + D2" stays readable.
 
 On the board, each path is a line with small arrows the way its droplet goes, and each template is
 drawn as lines between the places its droplets go, with arrows: round a square for a circle mix,

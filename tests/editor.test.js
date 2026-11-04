@@ -1196,7 +1196,7 @@ test('a merge template dropped where two droplets arrive waits for both', () => 
   const merge = byType(ed, 'template')[0];
   assert.equal(merge.turns, 1);
   assert.deepEqual(merge.after, ['a1', 'a3']);
-  assert.equal(merge.droplet, 'Droplet 1 + Droplet 2');
+  assert.equal(merge.droplet, 'D1 + D2', 'merged droplets are named by their short names');
   assert.deepEqual(spanOf(ed, 'Merge two droplets'), [6, 8]);
   assert.deepEqual(ed.compiled.issues, []);
 

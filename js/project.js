@@ -221,6 +221,19 @@
   const nextName = (project, word) => `${word} ${numbered(project.actions.map((a) => a.name), `${word} `)}`;
   const nextDroplet = (project) => `Droplet ${numbered(project.actions.map((a) => a.droplet), 'Droplet ')}`;
 
+  // A droplet name's short form, for merged names and where space is tight: "Droplet 12" is
+  // D12; a short one-word name stays as it is; a longer name gives its words' initials, numbers
+  // kept whole ("Sample buffer 2" is SB2); a merged name "A + B" shortens each part.
+  function shortDroplet(name) {
+    const text = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!text) return '';
+    if (text.includes('+')) return text.split('+').map(shortDroplet).filter(Boolean).join(' + ');
+    const numberedDroplet = /^droplet ?(\d+)$/i.exec(text);
+    if (numberedDroplet) return `D${numberedDroplet[1]}`;
+    if (text.length <= 6 && !text.includes(' ')) return text;
+    return text.split(' ').map((w) => (/^\d+$/.test(w) ? w : [...w][0].toUpperCase())).join('');
+  }
+
   // Copies a template into the project (once) and returns its key: a built-in one keeps its id,
   // others get t1, t2, ...
   function embedTemplate(project, t) {
@@ -235,6 +248,7 @@
   }
 
   return {
-    TAG, VERSION, EXTENSION, TYPE_NAMES, newProject, isProject, parse, serialize, nextId, nextName, nextDroplet, embedTemplate,
+    TAG, VERSION, EXTENSION, TYPE_NAMES, newProject, isProject, parse, serialize, nextId, nextName, nextDroplet, shortDroplet,
+    embedTemplate,
   };
 });

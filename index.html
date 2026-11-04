@@ -66,8 +66,9 @@
           <div id="props" hidden>
             <h3 id="prop-kind">Selected</h3>
             <label class="field">Name <input type="text" id="prop-name" maxlength="80" autocomplete="off"></label>
-            <label class="field">Droplet <input type="text" id="prop-droplet" maxlength="60" autocomplete="off"
-                     list="droplet-names"></label>
+            <label class="field"><span>Droplet <span id="prop-droplet-short" class="short-name"
+                     title="Its short name, used when droplets merge"></span></span>
+              <input type="text" id="prop-droplet" maxlength="60" autocomplete="off" list="droplet-names"></label>
             <div class="field">Starts
               <span class="row">
                 <select id="prop-start-mode">

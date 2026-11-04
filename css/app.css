@@ -528,6 +528,18 @@ kbd {
   background: var(--c);
 }
 
+/* A droplet's short name (D1 ...), as merged droplets are named by it; then its full name. */
+.tl-short {
+  flex: none;
+  color: var(--c);
+  font-weight: 700;
+}
+
+.tl-short + .tl-name {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
 .tl-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1155,4 +1167,10 @@ kbd {
 body.dragging-template,
 body.dragging-template * {
   cursor: grabbing !important;
+}
+
+/* A droplet's short name next to the Droplet field. */
+#properties .short-name {
+  color: var(--ink-muted);
+  font-weight: 600;
 }
