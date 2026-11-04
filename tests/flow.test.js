@@ -189,3 +189,51 @@ test('a placed circle mix can be switched to counter-clockwise; the paths stay a
   assert.deepEqual(ed.action(id).params, { kind: 'circle', size: 2, rounds: 3 });
   assert.equal(ed.action(id).template, 'circle-2x2');
 });
+
+test('moving a merge: the droplet that got there first and waits comes along too, and is picked up', () => {
+  const ed = new Editor(getLayout('electrodes'));
+  drag(ed, E(1, 2), E(5, 2)); // Droplet 1: frames 1-5
+  ed.escape();
+  ed.frame = 1;
+  drag(ed, E(5, 6), E(5, 4)); // Droplet 2: frames 1-3, then it waits on (5,4)
+  ed.escape();
+  ed.frame = 5;
+  ed.startPlacement(builtIn('merge')); // vertical: (5,2) and (5,4) meet on (5,3)
+  ed.hoverPlacement(...at(E(5, 2)));
+  ed.dropPlacement();
+  const [p1, p2, merge] = ed.project.actions;
+  assert.deepEqual(merge.after, [p1.id, p2.id]);
+  ed.setTool('select');
+  ed.pointerDown(...at(E(5, 2)));
+  ed.pointerMove(...at(E(7, 2)));
+  assert.deepEqual(ed.edit.attached.incoming, [p1.id, p2.id], 'both paths into it are attached');
+  ed.pointerUp();
+  assert.equal(ed.action(merge.id).at, E(7, 2));
+  assert.deepEqual(pointsOf(ed.action(p2.id)), [E(5, 6), E(5, 4), E(7, 4)]);
+  assert.deepEqual(ed.compiled.issues, []);
+  // Both droplets are on in the merge's first frame, where they were brought.
+  const first = ed.span(merge.id).from;
+  assert.ok(ed.seq.get(E(7, 2), first) && ed.seq.get(E(7, 4), first));
+});
+
+test('a move, turn or resize that would lose a droplet is refused', () => {
+  const ed = new Editor(getLayout('electrodes'));
+  ed.pointerDown(-29, -5); // the upper-left reservoir: its droplet ends on 9 in frame 6
+  ed.pointerUp();
+  ed.startPlacement(builtIn('circle-2x2'));
+  ed.hoverPlacement(...at(9));
+  ed.dropPlacement(); // a mixer straight after the dispense, no path in between
+  const mix = ed.project.actions[1];
+  assert.equal(mix.after, ed.project.actions[0].id);
+  const before = ed.state();
+  ed.setTool('select');
+  ed.frame = 7;
+  ed.pointerDown(...at(E(2, 1)));
+  ed.pointerMove(...at(E(4, 1)));
+  assert.equal(ed.edit.preview.valid, false);
+  assert.match(ed.edit.preview.reason, /wouldn't start where “Dispense left top” leaves its droplet, so that droplet would be lost/);
+  assert.equal(ed.pointerUp(), null);
+  assert.equal(ed.state(), before);
+  assert.equal(ed.nudge(1, 0), false, 'nor with ⌥/Alt + arrows');
+  assert.ok(ed.rotateSelected(1), 'turning it round its drop point keeps it on the droplet');
+});

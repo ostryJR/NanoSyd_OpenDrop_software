@@ -627,8 +627,11 @@
       this.dragging = true;
     }
 
-    // Paths attached to action id: those that end on its first electrodes when it starts, and
-    // those that start on its last electrodes when it ends. They follow it when it moves.
+    // Paths attached to action id: those that end on its first electrodes, and those that start
+    // on its last electrodes. They follow it when it moves. A path it is linked to (one it waits
+    // for, or one that waits for it) counts however long its droplet waits in between, such as
+    // the droplet that gets to a merge first; one that isn't linked counts if it hands over in
+    // the same frame or the next.
     attachedPaths(id) {
       const span = this.span(id);
       const steps = this.stepsOf(id);
@@ -637,15 +640,40 @@
       if (!span || !steps) return { incoming, outgoing };
       const first = steps[0].cells;
       const last = steps[steps.length - 1].cells;
+      const preds = predsOf(this.action(id)) || [];
       for (const p of this.project.actions) {
         const ps = this.span(p.id);
         const x = this.compiled.expanded.get(p.id);
         if (p.type !== 'path' || p.id === id || !ps || !x || !x.built) continue;
         const cells = x.built.cells;
-        if ((ps.to === span.from || ps.to === span.from - 1) && first.includes(cells[cells.length - 1])) incoming.push(p.id);
-        if ((ps.from === span.to || ps.from === span.to + 1) && last.includes(cells[0])) outgoing.push(p.id);
+        const into = (preds.includes(p.id) && ps.to <= span.from) || ps.to === span.from || ps.to === span.from - 1;
+        const outOf = ((predsOf(p) || []).includes(id) && ps.from >= span.to) || ps.from === span.to || ps.from === span.to + 1;
+        if (into && first.includes(cells[cells.length - 1])) incoming.push(p.id);
+        if (outOf && last.includes(cells[0])) outgoing.push(p.id);
       }
       return { incoming, outgoing };
+    }
+
+    // Why a prepared change (tryChanges) would lose a droplet: one of the actions it moves, or
+    // one linked after them, would no longer start where what it follows left its droplet.
+    // null if none would.
+    strandReason(check, skip = null) {
+      if (!check.valid) return null;
+      const ids = new Set(check.changes.keys());
+      for (const id of [...ids]) for (const f of this.followersOf(id)) ids.add(f.id);
+      ids.delete(skip);
+      const before = new Set(this.compiled.issues.filter((i) => i.kind === 'jump').map((i) => i.id));
+      const jump = check.compiled.issues.find((i) => i.kind === 'jump' && ids.has(i.id) && !before.has(i.id));
+      if (!jump) return null;
+      const name = (x) => (this.action(x) ? quote(this.action(x)) : x);
+      return `${name(jump.id)} wouldn't start where ${name(jump.other)} leaves its droplet, so that droplet would be lost`;
+    }
+
+    // A prepared change to a template or pattern (moved, turned, resized), refused if it would
+    // lose a droplet.
+    unlessStranded(check, skip = null) {
+      const why = this.strandReason(check, skip);
+      return why ? { ...check, valid: false, reason: why } : check;
     }
 
     moveEdit(mx, my) {
@@ -708,7 +736,7 @@
           const { moved, ...rest } = x;
           changes.set(id, rest);
         }
-        return this.tryChanges(changes);
+        return a.type === 'path' ? this.tryChanges(changes) : this.unlessStranded(this.tryChanges(changes));
       }
       if (a.type === 'path') {
         let points;
@@ -719,14 +747,17 @@
         if (!points) return invalid('That would go off the array');
         changes.set(a.id, { ...a, points });
         const why = g.kind === 'whole' ? null : this.carryEnds(changes, a);
-        return why ? invalid(why) : this.tryChanges(changes);
+        if (why) return invalid(why);
+        // What came along mustn't lose a droplet; the path itself may be moved away (its start
+        // then shows as a problem).
+        return changes.size > 1 ? this.unlessStranded(this.tryChanges(changes), a.id) : this.tryChanges(changes);
       }
       const moved = this.movedAction(a, d);
       if (!moved) return invalid("It doesn't fit there");
       const next = { ...a, ...moved };
       changes.set(a.id, next);
       const why = this.followAttached(changes, a, next, ed.attached);
-      return why ? invalid(why) : this.tryChanges(changes);
+      return why ? invalid(why) : this.unlessStranded(this.tryChanges(changes));
     }
 
     // What is attached to path id's end (which = 'end': what carries on from its last electrode
@@ -913,7 +944,7 @@
           return false;
         }
       }
-      return this.commit(this.tryChanges(changes));
+      return this.commit(a.type === 'path' ? this.tryChanges(changes) : this.unlessStranded(this.tryChanges(changes)));
     }
 
     // Double-click on the selected path: on a piece it adds a point, on a point it removes it.
@@ -1054,7 +1085,7 @@
         this.notice = why;
         return false;
       }
-      return this.commit(this.tryChanges(changes, [], defs), defs);
+      return this.commit(this.unlessStranded(this.tryChanges(changes, [], defs)), defs);
     }
 
     // How many frames a pattern lasts: longer repeats its last frame, shorter drops frames at

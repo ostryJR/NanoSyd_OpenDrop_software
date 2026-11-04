@@ -245,7 +245,7 @@
       if (!preds || a.type === 'dispense' || !spans.has(a.id)) continue;
       const first = firstCells(a.id);
       const away = preds.find((id) => spans.has(id) && lastCells(id).length && first.length && !shares(first, lastCells(id)));
-      if (away) issues.push({ kind: 'jump', id: a.id, text: `it doesn't start where ${nameOf(away)} ends, so the droplet would jump` });
+      if (away) issues.push({ kind: 'jump', id: a.id, other: away, text: `it doesn't start where ${nameOf(away)} ends, so the droplet would jump` });
     }
 
     // Who carries on with whose droplet: B follows A (linked), or starts on one of A's last
