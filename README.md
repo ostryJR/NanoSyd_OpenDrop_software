@@ -41,7 +41,7 @@ file name and download the file instead of showing a save dialog.
 | Drop a template | Drag it from the Templates tab onto the electrode the droplet is on; **R** turns it, **Esc** cancels |
 | Make a template | **+ New** in the Templates tab, or ✎ on a template to change it (or a copy of a built-in one) |
 | Add an OpenDrop file to the project | **Add file…** above the timeline: it comes in as one block from the frame on screen |
-| Make room for the board | **▾ Timeline** folds the timeline to one line; **›** shrinks the side panel to a tab; Ctrl/⌘ + wheel zooms the timeline (double-click empty space to fit it again) |
+| Make room for the board | Drag the timeline panel's top edge to make it taller or shorter (double-click the edge for the usual height; it is kept between visits); **▾ Timeline** folds it to one line; **›** shrinks the side panel to a tab; Ctrl/⌘ + wheel zooms the timeline (double-click empty space to fit it again) |
 | Copy the previous frame, clear the frame, clear everything | Buttons on the right |
 | Dispense a droplet from a reservoir | The four buttons beside the reservoirs (6 frames) |
 | Save / open a project | **save** (⌘S / Ctrl+S) / **load**, top right. **load** also opens OpenDrop `.json` files |

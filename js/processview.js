@@ -10,8 +10,7 @@
   const OD = root.OD;
   const P = OD.process;
   const NS = 'http://www.w3.org/2000/svg';
-  const GRID = 10;
-  const snap = (v) => Math.round(v / GRID) * GRID;
+  const NUDGE = 10; // units an arrow key moves the selected tile (with Shift, five times that)
 
   // Size [w, h] of each kind of tile, and its glyph.
   const SIZE = { start: [120, 40], end: [120, 40], decision: [190, 84], repeat: [170, 52], parallel: [230, 20], join: [230, 20] };
@@ -243,6 +242,7 @@
       // Loops: a dashed frame round their tiles, the condition on top.
       const frames = el('g', { class: 'pv-loops' }, this.svg);
       const loopRight = new Map(); // back link key -> x to go up at
+      const loopLeft = new Map(); // ... on the left, for a tile with an output on its right
       for (const lp of P.loops(p, g, back)) {
         const box = this.bounds(lp.tiles.map((id) => byId.get(id)));
         const x = box.x - 18;
@@ -254,6 +254,7 @@
         const head = byId.get(lp.to);
         text(frames, Math.max(x + 14, this.posOf(head)[0] + 12), y + 22, `↻ ${lp.label}`, 'pv-loop-label');
         loopRight.set(`${lp.from}|${lp.port}`, x + width - 20);
+        loopLeft.set(`${lp.from}|${lp.port}`, x + 9);
       }
 
       // Arrows.
@@ -269,30 +270,21 @@
           const sy = fy + oy;
           const side = ox !== 0 && oy === 0; // leaves on the right
           const up = back.has(P.linkKey(l)) || ty - th / 2 < sy + 12;
-          let d;
-          let tip;
-          if (up) {
-            const [tw] = sizeOf(to);
-            const right = Math.max(loopRight.get(`${l.from}|${l.port}`) || -Infinity, sx + 30, tx + tw / 2 + 30);
-            const ex = tx + tw / 2;
-            d = side ? `M${sx},${sy} H${right} V${ty} H${ex + 8}` : `M${sx},${sy} V${sy + 16} H${right} V${ty} H${ex + 8}`;
-            tip = [ex, ty, 'left'];
-          } else if (side) {
-            const ey = ty - th / 2;
-            d = `M${sx},${sy} H${tx} V${ey - 8}`;
-            if (Math.abs(tx - sx) < 20) d = `M${sx},${sy} H${sx + 30} V${ey - 30} H${tx} V${ey - 8}`;
-            tip = [tx, ey, 'down'];
-          } else {
-            const ey = ty - th / 2;
-            const mid = (sy + ey) / 2;
-            d = Math.abs(tx - sx) < 1 ? `M${sx},${sy} V${ey - 8}` : `M${sx},${sy} V${mid} H${tx} V${ey - 8}`;
-            tip = [tx, ey, 'down'];
-          }
+          const [tw] = sizeOf(to);
+          const right = Math.max(loopRight.get(`${l.from}|${l.port}`) || -Infinity, sx + 30, tx + tw / 2 + 30);
+          // A tile with an output on its right side (a decision's "no", a repeat's "done") takes an
+          // arrow coming back up on its left instead.
+          const rightPort = P.portsOf(to).some((pt) => {
+            const [px, py] = portAt(to, pt);
+            return px !== 0 && py === 0;
+          });
+          const left = loopLeft.has(`${l.from}|${l.port}`) ? loopLeft.get(`${l.from}|${l.port}`) : null;
+          const { d, tip, dir } = curve(sx, sy, side, [tx, ty, tw, th], up, right, rightPort, left);
           const sel = this.selected && this.selected.link && this.selected.link.from === l.from && this.selected.link.port === l.port;
           const group = el('g', { class: `pv-link${sel ? ' selected' : ''}${up ? ' back' : ''}`, 'data-from': l.from, 'data-port': l.port }, links);
           el('path', { d, class: 'pv-wire' }, group);
           el('path', { d, class: 'pv-hit' }, group);
-          el('polygon', { points: arrowHead(...tip), class: 'pv-tip' }, group);
+          el('polygon', { points: arrowHead(tip[0], tip[1], dir[0], dir[1]), class: 'pv-tip' }, group);
           if (P.portsOf(t).length > 1) text(group, sx + (side ? 6 : 6), sy + (side ? -6 : 14), P.portName(l.port), 'pv-port-label');
         }
       }
@@ -347,7 +339,9 @@
       // A connection or a new tile being dragged.
       const d = this.drag;
       if (d && d.kind === 'wire') {
-        el('path', { d: `M${d.sx},${d.sy} L${d.x},${d.y}`, class: 'pv-rubber' }, this.svg);
+        const k = Math.max(20, Math.abs(d.y - d.sy) / 2);
+        const c1 = d.side ? `${d.sx + Math.max(30, Math.abs(d.x - d.sx) * 0.6)},${d.sy}` : `${d.sx},${d.sy + k}`;
+        el('path', { d: `M${d.sx},${d.sy} C${c1} ${d.x},${d.y - k} ${d.x},${d.y}`, class: 'pv-rubber' }, this.svg);
       }
       if (d && d.kind === 'new' && d.over) {
         const [w, hh] = sizeOf({ kind: d.tileKind });
@@ -392,7 +386,7 @@
       if (hit && hit.port) {
         const t = P.tileById(this.process, hit.tile);
         const [ox, oy] = portAt(t, hit.port);
-        this.drag = { kind: 'wire', from: hit.tile, port: hit.port, sx: t.x + ox, sy: t.y + oy, x, y };
+        this.drag = { kind: 'wire', from: hit.tile, port: hit.port, sx: t.x + ox, sy: t.y + oy, side: ox !== 0 && oy === 0, x, y };
       } else if (hit && hit.tile) {
         const t = P.tileById(this.process, hit.tile);
         this.select({ tile: hit.tile });
@@ -414,8 +408,8 @@
         this.view.x = d.vx - (evt.clientX - d.cx) / this.view.zoom;
         this.view.y = d.vy - (evt.clientY - d.cy) / this.view.zoom;
       } else if (d.kind === 'move') {
-        const nx = snap(x - d.dx);
-        const ny = snap(y - d.dy);
+        const nx = Math.round(x - d.dx);
+        const ny = Math.round(y - d.dy);
         if (nx !== d.x || ny !== d.y) d.moved = true;
         d.x = nx;
         d.y = ny;
@@ -437,7 +431,7 @@
       } else if (d.kind === 'wire') {
         const target = this.tileAt(x, y);
         if (target && target.id !== d.from) this.connect(d.from, d.port, target.id);
-        else if (!target) this.offerTiles(evt.clientX, evt.clientY, (kind) => this.addTile(kind, snap(x), snap(y) + 30, { from: d.from, port: d.port }));
+        else if (!target) this.offerTiles(evt.clientX, evt.clientY, (kind) => this.addTile(kind, Math.round(x), Math.round(y) + 30, { from: d.from, port: d.port }));
       }
       this.render(true);
     }
@@ -490,7 +484,7 @@
       const moveTo = (e) => {
         const r = this.svg.getBoundingClientRect();
         drag.over = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom && e.clientX > this.palette.getBoundingClientRect().right;
-        [drag.x, drag.y] = this.toWorld(e.clientX, e.clientY).map(snap);
+        [drag.x, drag.y] = this.toWorld(e.clientX, e.clientY).map(Math.round);
         if (Math.hypot(e.clientX - sx, e.clientY - sy) > 6) drag.moved = true;
         this.render();
       };
@@ -609,7 +603,7 @@
         this.app.open(sel.tile);
         return true;
       }
-      const step = { ArrowLeft: [-GRID, 0], ArrowRight: [GRID, 0], ArrowUp: [0, -GRID], ArrowDown: [0, GRID] }[evt.key];
+      const step = { ArrowLeft: [-NUDGE, 0], ArrowRight: [NUDGE, 0], ArrowUp: [0, -NUDGE], ArrowDown: [0, NUDGE] }[evt.key];
       if (step && sel.tile) {
         const t = P.tileById(this.process, sel.tile);
         this.ed.processChange((p) => P.moveTile(p, t.id, t.x + step[0] * (evt.shiftKey ? 5 : 1), t.y + step[1] * (evt.shiftKey ? 5 : 1)));
@@ -620,9 +614,53 @@
     }
   }
 
-  function arrowHead(x, y, dir) {
-    if (dir === 'left') return `${x},${y} ${x + 10},${y - 6} ${x + 10},${y + 6}`;
-    return `${x},${y} ${x - 6},${y - 10} ${x + 6},${y - 10}`;
+  // An arrow's smooth curve from an output port at (sx, sy) to a tile [x, y, w, h] (its centre and
+  // size): it leaves the way its port faces (down; right for a decision's "no" and a repeat's
+  // "done") and comes into the tile from above. An arrow going back up bulges out to the right
+  // (half way along it reaches `right`, past the loop's tiles) and comes into the tile's right
+  // side; when an output sits on that side (`rightPort`), it goes up on the loop's left instead
+  // (at `left`) and comes into the tile's left side. The line stops just short of the tile; the
+  // arrowhead at `tip`, pointing along `dir`, covers the rest.
+  function curve(sx, sy, side, [tx, ty, tw, th], up, right, rightPort = false, left = null) {
+    if (up && rightPort && !side) {
+      const tip = [tx - tw / 2, ty];
+      const lx = Math.min(left === null ? Infinity : left, tip[0] - 24, sx - 40);
+      const by = sy + 16; // dips 12 below the port: inside the loop frame (16 below its tiles)
+      // Down from the port and round to the left, then up and round into the tile's left side.
+      const d = `M${sx},${sy} C${sx},${by} ${lx},${by} ${lx},${sy} C${lx},${(sy + ty) / 2} ${lx},${ty} ${tip[0] - 8},${ty}`;
+      return { d, tip, dir: [1, 0] };
+    }
+    let tip;
+    let c1;
+    let c2;
+    if (!up) {
+      tip = [tx, ty - th / 2];
+      const k = Math.max(20, (tip[1] - 8 - sy) / 2);
+      c1 = side ? [sx + Math.max(30, Math.abs(tx - sx) * 0.6), sy] : [sx, sy + k];
+      c2 = [tx, tip[1] - 8 - k];
+    } else if (!rightPort) {
+      tip = [tx + tw / 2, ty];
+      const ex = tip[0] + 8;
+      const k = Math.max(40, (8 * right - 4 * sx - 4 * ex) / (side ? 6 : 3));
+      c1 = side ? [sx + k, sy] : [sx, sy + 36];
+      c2 = [ex + k, ty];
+    } else {
+      // From an output on the right into a tile with one there too: in through its top.
+      tip = [tx + tw / 4, ty - th / 2];
+      c1 = [right + 30, sy];
+      c2 = [tip[0], tip[1] - 70];
+    }
+    const len = Math.hypot(tip[0] - c2[0], tip[1] - c2[1]) || 1;
+    const dir = [(tip[0] - c2[0]) / len, (tip[1] - c2[1]) / len];
+    const end = [tip[0] - dir[0] * 8, tip[1] - dir[1] * 8];
+    return { d: `M${sx},${sy} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${end[0]},${end[1]}`, tip, dir };
+  }
+
+  // An arrowhead with its tip at (x, y), pointing along the unit vector (ux, uy).
+  function arrowHead(x, y, ux, uy) {
+    const bx = x - ux * 10;
+    const by = y - uy * 10;
+    return `${x},${y} ${bx - uy * 6},${by + ux * 6} ${bx + uy * 6},${by - ux * 6}`;
   }
 
   function shape(group, t, w, h) {
