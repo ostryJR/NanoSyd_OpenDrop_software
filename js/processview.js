@@ -1,21 +1,108 @@
 /* The process view: the process as a top-down tree of tiles on an SVG canvas, in place of the
  * board. Drag a tile from the palette (or click one to add it under the selected tile), drag tiles
- * to move them, drag from a tile's output port to another tile to connect them (or into empty
- * space to add a tile there), click to select, Delete to remove, double-click or Enter to open a
- * step on the board. Arrows going back up are loops: their tiles get a dashed frame labelled with
- * the loop's condition. Plain DOM; every change goes through the editor, so it can be undone. */
+ * to move them, drag from a tile's output port to another tile to connect them (the arrow snaps to
+ * its input points; into empty space it offers a tile to add there), drop a loose tile onto an
+ * arrow to put it there, click to select (Shift+click or drag a box round them for several),
+ * Delete to remove, double-click or Enter to open a step on the board. Space+drag, the middle
+ * button or Alt+drag pans. Arrows going back up are loops: their tiles get a dashed frame labelled
+ * with the loop's condition. Plain DOM; every change goes through the editor, so it can be undone. */
 (function (root) {
   'use strict';
 
   const OD = root.OD;
   const P = OD.process;
   const NS = 'http://www.w3.org/2000/svg';
-  const GRID = 10;
-  const snap = (v) => Math.round(v / GRID) * GRID;
+  const NUDGE = 5; // units an arrow key moves the selected tiles (with Shift, five times as far)
 
   // Size [w, h] of each kind of tile, and its glyph.
   const SIZE = { start: [120, 40], end: [120, 40], decision: [190, 84], repeat: [170, 52], parallel: [230, 20], join: [230, 20] };
-  const sizeOf = (t) => SIZE[t.kind] || [210, 60];
+  const sizeOf = (t) => (P.sizeOf ? P.sizeOf(t) : SIZE[t.kind] || [210, 60]);
+  const IN_R = 4.5; // radius of an input point
+  const SNAP_PX = 40; // how near (on screen) a new arrow's end snaps to an input point
+  const DROP_PX = 12; // ... and a dragged tile's pointer must be to an arrow to go on it
+
+  // How many input points a tile has: none on Start, one per arrow coming in (at least 2) on a
+  // merge or join, one on the others.
+  function inputCount(t, process) {
+    if (P.inputsOf) {
+      const n = P.inputsOf(t, process);
+      return Array.isArray(n) ? n.length : n;
+    }
+    if (!P.takesInput(t)) return 0;
+    if (t.kind === 'merge' || t.kind === 'join') return Math.max(2, process.links.filter((l) => l.to === t.id).length);
+    return 1;
+  }
+
+  // Where input point i of n is, relative to the tile's centre: spread along the top edge.
+  function inAt(t, i, n) {
+    const [w, h] = sizeOf(t);
+    if (n <= 1) return [0, -h / 2];
+    const gap = Math.min(60, (w - 40) / (n - 1));
+    return [(i - (n - 1) / 2) * gap, -h / 2];
+  }
+
+  // Distance from (x, y) to a polyline, and the nearest point on it.
+  function nearOnLine(pts, x, y) {
+    let best = { dist: Infinity, x: 0, y: 0 };
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = pts[i - 1];
+      const [bx, by] = pts[i];
+      const len = (bx - ax) ** 2 + (by - ay) ** 2;
+      const f = len ? Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / len)) : 0;
+      const px = ax + f * (bx - ax);
+      const py = ay + f * (by - ay);
+      const dist = Math.hypot(x - px, y - py);
+      if (dist < best.dist) best = { dist, x: px, y: py };
+    }
+    return best;
+  }
+
+  // A path from `start` through segments ['L', end] or ['C', control1, control2, end]: its SVG
+  // `d`, and points along it (to find the arrow under the pointer).
+  function trace(start, segs) {
+    const f = (pt) => `${Math.round(pt[0] * 10) / 10},${Math.round(pt[1] * 10) / 10}`;
+    let d = `M${f(start)}`;
+    const pts = [start];
+    let cur = start;
+    for (const s of segs) {
+      if (s[0] === 'L') {
+        d += ` L${f(s[1])}`;
+        pts.push(s[1]);
+      } else {
+        d += ` C${f(s[1])} ${f(s[2])} ${f(s[3])}`;
+        for (let i = 1; i <= 12; i++) pts.push(bezier(cur, s[1], s[2], s[3], i / 12));
+      }
+      cur = s[s.length - 1];
+    }
+    return { d, pts };
+  }
+
+  function bezier(a, b, c, e, t) {
+    const u = 1 - t;
+    return [0, 1].map((k) => u * u * u * a[k] + 3 * u * u * t * b[k] + 3 * u * t * t * c[k] + t * t * t * e[k]);
+  }
+
+  // Segments through the corners of a path of straight runs, each corner rounded off (radius up
+  // to r; the first and last runs may be used up whole, the others half from each end).
+  function rounded(pts, r) {
+    const segs = [];
+    const K = 0.55; // a quarter circle's control length, as a part of its radius
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [a, b, c] = [pts[i - 1], pts[i], pts[i + 1]];
+      const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+      const re = Math.min(r, i === 1 ? l1 : l1 / 2, i === pts.length - 2 ? l2 : l2 / 2);
+      const d1 = [(b[0] - a[0]) / (l1 || 1), (b[1] - a[1]) / (l1 || 1)];
+      const d2 = [(c[0] - b[0]) / (l2 || 1), (c[1] - b[1]) / (l2 || 1)];
+      const s = [b[0] - d1[0] * re, b[1] - d1[1] * re];
+      const e = [b[0] + d2[0] * re, b[1] + d2[1] * re];
+      segs.push(['L', s], ['C', [s[0] + d1[0] * re * K, s[1] + d1[1] * re * K], [e[0] - d2[0] * re * K, e[1] - d2[1] * re * K], e]);
+    }
+    segs.push(['L', pts[pts.length - 1]]);
+    return segs;
+  }
+
+  const linkName = (t) => (t ? t.name || P.KINDS[t.kind].name : '?');
   const GLYPH = {
     start: '▶', end: '■', step: '□', dispense: '⬚', move: '→', mix: '↻', merge: '∨', split: '∧', wait: '⧗',
     measure: '⌖', ask: '?', decision: '◇', repeat: '↺', parallel: '⇉', join: '⇊',
@@ -35,11 +122,10 @@
     return t;
   }
 
-  // Where a tile's ports are, relative to its centre: the input on top; outputs at the bottom,
-  // except a decision's "no" and a repeat's "done", which go out on the right.
+  // Where a tile's output ports are, relative to its centre: at the bottom, except a decision's
+  // "no" and a repeat's "done", which go out on the right.
   function portAt(t, port) {
     const [w, h] = sizeOf(t);
-    if (port === 'in') return [0, -h / 2];
     if ((t.kind === 'decision' && port === 'no') || (t.kind === 'repeat' && port === 'done')) return [w / 2, 0];
     const ports = P.portsOf(t).filter((p) => !((t.kind === 'decision' && p === 'no') || (t.kind === 'repeat' && p === 'done')));
     const i = ports.indexOf(port);
@@ -92,27 +178,42 @@
       this.host = host;
       this.app = app;
       this.ed = app.editor;
-      this.selected = null; // { tile: id } or { link: { from, port } }
+      this.selected = null; // { tile: id }, { tiles: [id, ...] } (several) or { link: { from, port } }
       this.view = { x: -300, y: -60, zoom: 1 };
       this.fitted = false;
       this.drag = null;
       this.renderKey = '';
+      this.wires = []; // the arrows as drawn: [{ link, pts }], to find the one under a dragged tile
+      this.space = false; // Space held: dragging pans
 
       this.palette = document.createElement('div');
       this.palette.className = 'pv-palette';
       this.palette.setAttribute('aria-label', 'Tiles: drag one onto the process, or click to add it under the selected tile');
-      for (const kind of P.PALETTE) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.dataset.kind = kind;
-        b.className = `pv-kind ${kind}`;
-        b.title = `${P.KINDS[kind].name}: drag it onto the process, or click to add it under the selected tile`;
-        const g = document.createElement('span');
-        g.className = 'pv-glyph';
-        g.textContent = GLYPH[kind];
-        b.append(g, P.KINDS[kind].name);
-        b.addEventListener('pointerdown', (evt) => this.paletteDown(evt, kind));
-        this.palette.appendChild(b);
+      for (const group of P.PALETTE_GROUPS || [{ name: null, kinds: P.PALETTE }]) {
+        const box = document.createElement('div');
+        box.className = 'pv-group';
+        if (group.name) {
+          const head = document.createElement('div');
+          head.className = 'pv-group-name';
+          head.textContent = group.name;
+          box.appendChild(head);
+        }
+        for (const kind of group.kinds) {
+          if (!P.KINDS[kind]) continue;
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.dataset.kind = kind;
+          b.className = `pv-kind ${kind}`;
+          const about = P.KINDS[kind].about;
+          b.title = `${P.KINDS[kind].name}${about ? `: ${about}` : ''}\nDrag it onto the process (or onto an arrow), or click to add it under the selected tile`;
+          const g = document.createElement('span');
+          g.className = 'pv-glyph';
+          g.textContent = GLYPH[kind] || '□';
+          b.append(g, P.KINDS[kind].name);
+          b.addEventListener('pointerdown', (evt) => this.paletteDown(evt, kind));
+          box.appendChild(b);
+        }
+        this.palette.appendChild(box);
       }
       this.tools = document.createElement('div');
       this.tools.className = 'pv-tools';
@@ -143,6 +244,15 @@
       this.svg.addEventListener('pointermove', (evt) => this.move(evt));
       this.svg.addEventListener('pointerup', (evt) => this.up(evt));
       this.svg.addEventListener('pointercancel', () => this.cancelDrag());
+      this.svg.addEventListener('auxclick', (evt) => evt.preventDefault()); // no middle-click paste or scroll
+      const spaceUp = () => {
+        this.space = false;
+        this.host.classList.remove('pv-space');
+      };
+      window.addEventListener('keyup', (evt) => {
+        if (evt.key === ' ') spaceUp();
+      });
+      window.addEventListener('blur', spaceUp);
       this.svg.addEventListener('dblclick', (evt) => {
         const hit = this.hit(evt.target);
         if (hit && hit.tile) this.app.open(hit.tile);
@@ -188,7 +298,7 @@
       if (!p || !p.tiles.length) return;
       const [w, h] = this.size();
       const box = this.bounds(p.tiles);
-      const zoom = Math.min(1.4, Math.max(0.3, Math.min((w - 220) / (box.w + 120), (h - 40) / (box.h + 120))));
+      const zoom = Math.min(1.6, Math.max(0.3, Math.min((w - 220) / (box.w + 120), (h - 40) / (box.h + 120))));
       this.view.zoom = zoom;
       this.view.x = box.x - 60 - (w / zoom - box.w - 120) / 2 - 80 / zoom;
       this.view.y = box.y - 60 - Math.max(0, (h / zoom - box.h - 120) / 2);
@@ -211,10 +321,68 @@
       return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     }
 
-    // A tile's position, following a drag in progress.
+    // A tile's position, following a drag in progress (every selected tile moves the same way).
     posOf(t) {
       const d = this.drag;
-      return d && d.kind === 'move' && d.id === t.id ? [d.x, d.y] : [t.x, t.y];
+      if (d && d.kind === 'move' && d.moved && d.ids.includes(t.id)) return [Math.round(t.x + d.dx), Math.round(t.y + d.dy)];
+      return [t.x, t.y];
+    }
+
+    // The selected tiles' ids.
+    selectedIds() {
+      const s = this.selected;
+      return s ? (s.tile ? [s.tile] : s.tiles || []) : [];
+    }
+
+    // Whether tile id shows as selected (also while a box is dragged round it).
+    isSelected(id) {
+      const d = this.drag;
+      if (d && d.kind === 'box' && (d.hits.includes(id) || (d.add && d.base.includes(id)))) return true;
+      return this.selectedIds().includes(id);
+    }
+
+    // Each tile's input points and which arrow ends at which: Map(id -> { n, pts, of: Map(arrow
+    // key -> point) }). Arrows take a tile's points left to right by where they come from; `extra`
+    // is an arrow being drawn, counted in for its target.
+    inputLayouts(p, g, extra = null) {
+      const out = new Map();
+      for (const t of p.tiles) {
+        let ins = g.into.get(t.id);
+        let proc = p;
+        if (extra && extra.to === t.id) {
+          ins = [...ins.filter((l) => !(l.from === extra.from && l.port === extra.port)), extra];
+          proc = { ...p, links: [...p.links.filter((l) => !(l.from === extra.from && l.port === extra.port)), extra] };
+        }
+        out.set(t.id, this.inputLayout(t, ins, proc, g.byId));
+      }
+      return out;
+    }
+
+    inputLayout(t, ins, proc, byId) {
+      const n = inputCount(t, proc);
+      const pts = Array.from({ length: n }, (_, i) => inAt(t, i, n));
+      const of = new Map();
+      const [tx] = this.posOf(t);
+      const from = ins
+        .map((l) => {
+          const s = byId.get(l.from);
+          return { key: P.linkKey(l), x: this.posOf(s)[0] + portAt(s, l.port)[0], y: this.posOf(s)[1] };
+        })
+        .sort((a, b) => a.x - b.x || a.y - b.y || (a.key < b.key ? -1 : 1));
+      const k = from.length;
+      let prev = -1;
+      from.forEach((f, i) => {
+        if (k >= n) {
+          of.set(f.key, Math.min(i, n - 1));
+          return;
+        }
+        // Fewer arrows than points: each takes the nearest point that leaves room for the rest.
+        let best = prev + 1;
+        for (let j = prev + 1; j <= n - (k - i); j++) if (Math.abs(f.x - tx - pts[j][0]) < Math.abs(f.x - tx - pts[best][0])) best = j;
+        of.set(f.key, best);
+        prev = best;
+      });
+      return { n, pts, of };
     }
 
     // --- drawing ----------------------------------------------------------------------------------
@@ -245,55 +413,70 @@
       const loopRight = new Map(); // back link key -> x to go up at
       for (const lp of P.loops(p, g, back)) {
         const box = this.bounds(lp.tiles.map((id) => byId.get(id)));
+        // Room inside above and below the tiles for the arrow going back round.
         const x = box.x - 18;
-        const y = box.y - 34;
+        const y = box.y - 42;
         const width = box.w + 36 + 40;
-        const height = box.h + 50;
+        const height = box.h + 42 + 32;
         el('rect', { x, y, width, height, rx: 14, class: `pv-loop${lp.endless ? ' bad' : ''}` }, frames);
-        // The label goes right of where the arrow comes into the loop, so the arrow doesn't cross it.
+        // The label goes left of where the arrows come into the loop if it fits there, else right
+        // of it, so the arrows don't cross it.
         const head = byId.get(lp.to);
-        text(frames, Math.max(x + 14, this.posOf(head)[0] + 12), y + 22, `↻ ${lp.label}`, 'pv-loop-label');
+        const label = `↻ ${lp.label}`;
+        const hx = this.posOf(head)[0];
+        const fits = hx - 12 - (x + 14) >= label.length * 7.2;
+        text(frames, fits ? x + 14 : Math.max(x + 14, hx + 12), y + 30, label, 'pv-loop-label');
         loopRight.set(`${lp.from}|${lp.port}`, x + width - 20);
       }
 
-      // Arrows.
+      // Input points: one per tile, or one per arrow coming in on a merge or join (with the arrow
+      // being drawn counted in when it needs a point more).
+      const d = this.drag;
+      const wire = d && d.kind === 'wire' ? d : null;
+      const ins = this.inputLayouts(p, g, wire && wire.snap && wire.snap.extra ? { from: wire.from, port: wire.port, to: wire.snap.tile } : null);
+
+      // Arrows: from the middle of their output dot to the top of their input dot.
       const links = el('g', { class: 'pv-links' }, this.svg);
+      this.wires = [];
       for (const t of p.tiles) {
         for (const l of g.out.get(t.id)) {
           const to = byId.get(l.to);
           const [fx, fy] = this.posOf(t);
           const [ox, oy] = portAt(t, l.port);
           const [tx, ty] = this.posOf(to);
-          const [, th] = sizeOf(to);
+          const [tw, th] = sizeOf(to);
+          const lay = ins.get(to.id);
+          const [ix, iy] = lay.pts[lay.of.get(P.linkKey(l))] || [0, -th / 2];
+          const ex = tx + ix; // where it ends
+          const ey = ty + iy - IN_R;
           const sx = fx + ox;
           const sy = fy + oy;
           const side = ox !== 0 && oy === 0; // leaves on the right
           const up = back.has(P.linkKey(l)) || ty - th / 2 < sy + 12;
-          let d;
-          let tip;
+          const end = [ex, ey - 8]; // where the line meets the arrowhead
+          let way;
           if (up) {
-            const [tw] = sizeOf(to);
+            // Round the right side (inside the loop's frame), over the tile and down into its point.
             const right = Math.max(loopRight.get(`${l.from}|${l.port}`) || -Infinity, sx + 30, tx + tw / 2 + 30);
-            const ex = tx + tw / 2;
-            d = side ? `M${sx},${sy} H${right} V${ty} H${ex + 8}` : `M${sx},${sy} V${sy + 16} H${right} V${ty} H${ex + 8}`;
-            tip = [ex, ty, 'left'];
-          } else if (side) {
-            const ey = ty - th / 2;
-            d = `M${sx},${sy} H${tx} V${ey - 8}`;
-            if (Math.abs(tx - sx) < 20) d = `M${sx},${sy} H${sx + 30} V${ey - 30} H${tx} V${ey - 8}`;
-            tip = [tx, ey, 'down'];
+            const above = ty + iy - 30;
+            const pts = side ? [[sx, sy], [right, sy]] : [[sx, sy], [sx, sy + 20], [right, sy + 20]];
+            pts.push([right, above], [ex, above], end);
+            way = trace([sx, sy], rounded(pts, 26));
           } else {
-            const ey = ty - th / 2;
-            const mid = (sy + ey) / 2;
-            d = Math.abs(tx - sx) < 1 ? `M${sx},${sy} V${ey - 8}` : `M${sx},${sy} V${mid} H${tx} V${ey - 8}`;
-            tip = [tx, ey, 'down'];
+            // An S-curve: out of the port (down, or right from a side port), into the point from above.
+            const k = Math.max(24, (end[1] - sy) / 2);
+            const c1 = side ? [sx + Math.max(30, (ex - sx) / 2), sy] : [sx, sy + k];
+            way = Math.abs(ex - sx) < 1 && !side ? trace([sx, sy], [['L', end]]) : trace([sx, sy], [['C', c1, [ex, end[1] - k], end]]);
           }
+          const path = way.d;
+          this.wires.push({ link: { from: l.from, port: l.port, to: l.to }, pts: [...way.pts, [ex, ey]] });
           const sel = this.selected && this.selected.link && this.selected.link.from === l.from && this.selected.link.port === l.port;
-          const group = el('g', { class: `pv-link${sel ? ' selected' : ''}${up ? ' back' : ''}`, 'data-from': l.from, 'data-port': l.port }, links);
-          el('path', { d, class: 'pv-wire' }, group);
-          el('path', { d, class: 'pv-hit' }, group);
-          el('polygon', { points: arrowHead(...tip), class: 'pv-tip' }, group);
-          if (P.portsOf(t).length > 1) text(group, sx + (side ? 6 : 6), sy + (side ? -6 : 14), P.portName(l.port), 'pv-port-label');
+          const drop = d && d.onLink && d.onLink.from === l.from && d.onLink.port === l.port;
+          const group = el('g', { class: `pv-link${sel ? ' selected' : ''}${up ? ' back' : ''}${drop ? ' drop' : ''}`, 'data-from': l.from, 'data-port': l.port }, links);
+          el('path', { d: path, class: 'pv-wire' }, group);
+          el('path', { d: path, class: 'pv-hit' }, group);
+          el('polygon', { points: arrowHead(ex, ey, 'down'), class: 'pv-tip' }, group);
+          if (P.portsOf(t).length > 1) text(group, sx + 6, sy + (side ? -6 : 14), P.portName(l.port), 'pv-port-label');
         }
       }
 
@@ -308,11 +491,13 @@
         const errors = mine.filter((i) => i.level === 'error').map((i) => i.text);
         const warns = [...mine.filter((i) => i.level !== 'error').map((i) => i.text), ...board];
         const cls = ['pv-tile', t.kind];
-        if (this.selected && this.selected.tile === t.id) cls.push('selected');
+        if (this.isSelected(t.id)) cls.push('selected');
+        if (wire && wire.snap && wire.snap.tile === t.id) cls.push('target');
         if (this.ed.scope && this.ed.scope.tile === t.id) cls.push('open');
         if (running.has(t.id) || (run && run.tile === t.id)) cls.push('running');
         if (P.hasWork(t) && info && info.tile.get(t.id) && !info.tile.get(t.id).placed) cls.push('unplaced');
         const group = el('g', { class: cls.join(' '), 'data-tile': t.id, transform: `translate(${x},${y})` }, tiles);
+        if (cls.includes('target')) el('rect', { x: -w / 2 - 7, y: -hh / 2 - 7, width: w + 14, height: hh + 14, rx: 14, class: 'pv-target' }, group);
         shape(group, t, w, hh);
         const name = t.kind === 'decision' ? '' : t.name || P.KINDS[t.kind].name;
         if (t.kind === 'parallel' || t.kind === 'join') {
@@ -338,20 +523,31 @@
           const [px, py] = portAt(t, port);
           el('circle', { cx: px, cy: py, r: 7, class: 'pv-port', 'data-port': port }, group);
         }
-        if (P.takesInput(t)) {
-          const [ix, iy] = portAt(t, 'in');
-          el('circle', { cx: ix, cy: iy, r: 4, class: 'pv-in' }, group);
-        }
+        const lay = ins.get(t.id);
+        lay.pts.forEach(([ix, iy], i) => {
+          const snapped = wire && wire.snap && wire.snap.tile === t.id && wire.snap.index === i;
+          el('circle', { cx: ix, cy: iy, r: snapped ? 7 : IN_R, class: `pv-in${snapped ? ' snap' : ''}` }, group);
+        });
       }
 
-      // A connection or a new tile being dragged.
-      const d = this.drag;
-      if (d && d.kind === 'wire') {
-        el('path', { d: `M${d.sx},${d.sy} L${d.x},${d.y}`, class: 'pv-rubber' }, this.svg);
+      // A connection, a new tile or a selection box being dragged.
+      if (wire) {
+        const [ex, ey] = wire.snap ? [wire.snap.x, wire.snap.y] : [wire.x, wire.y];
+        const k = Math.max(20, Math.abs(ey - wire.sy) / 2);
+        el('path', { d: trace([wire.sx, wire.sy], [['C', [wire.sx, wire.sy + k], [ex, ey - k], [ex, ey]]]).d, class: 'pv-rubber' }, this.svg);
       }
       if (d && d.kind === 'new' && d.over) {
         const [w, hh] = sizeOf({ kind: d.tileKind });
         el('rect', { x: d.x - w / 2, y: d.y - hh / 2, width: w, height: hh, rx: 10, class: 'pv-ghost' }, this.svg);
+      }
+      if (d && d.onLink && d.hint) {
+        // Over an arrow: say what dropping does.
+        const hint = el('g', { class: 'pv-hint', transform: `translate(${d.hint[0] + 14},${d.hint[1] - 14})` }, this.svg);
+        el('rect', { x: -6, y: -15, width: 134, height: 21, rx: 6 }, hint);
+        text(hint, 0, 0, 'Drop to put it here', '');
+      }
+      if (d && d.kind === 'box') {
+        el('rect', { x: Math.min(d.x0, d.x), y: Math.min(d.y0, d.y), width: Math.abs(d.x - d.x0), height: Math.abs(d.y - d.y0), class: 'pv-box' }, this.svg);
       }
     }
 
@@ -378,32 +574,63 @@
     }
 
     down(evt) {
-      if (evt.button !== 0) return;
+      if (evt.button !== 0 && evt.button !== 1) return;
       evt.preventDefault(); // no text selection while dragging on the canvas
       this.menu.hidden = true;
       this.svg.focus({ preventScroll: true });
       const [x, y] = this.toWorld(evt.clientX, evt.clientY);
       const hit = this.hit(evt.target);
-      if (this.ed.frozen) {
-        if (hit && hit.tile) this.select({ tile: hit.tile });
+      this.svg.setPointerCapture(evt.pointerId);
+      if (evt.button === 1 || this.space || (evt.altKey && !hit)) {
+        // Panning: middle button, Space+drag, or Alt+drag on empty space.
+        this.drag = { kind: 'pan', cx: evt.clientX, cy: evt.clientY, vx: this.view.x, vy: this.view.y };
+        this.host.classList.add('pv-panning');
+        this.render();
         return;
       }
-      this.svg.setPointerCapture(evt.pointerId);
+      if (hit && hit.tile && evt.shiftKey) {
+        // Shift+click: the tile joins the selection, or leaves it.
+        const ids = this.selectedIds();
+        const on = !ids.includes(hit.tile);
+        const next = on ? [...ids, hit.tile] : ids.filter((id) => id !== hit.tile);
+        this.select(next.length ? { tiles: next } : null);
+        if (on && !this.ed.frozen) this.startMove(hit.tile, x, y, false);
+        this.render();
+        return;
+      }
+      if (this.ed.frozen) {
+        if (hit && hit.tile) this.select({ tile: hit.tile });
+        else if (!hit) this.select(null);
+        return;
+      }
       if (hit && hit.port) {
         const t = P.tileById(this.process, hit.tile);
         const [ox, oy] = portAt(t, hit.port);
-        this.drag = { kind: 'wire', from: hit.tile, port: hit.port, sx: t.x + ox, sy: t.y + oy, x, y };
+        this.drag = { kind: 'wire', from: hit.tile, port: hit.port, sx: t.x + ox, sy: t.y + oy, x, y, snap: null };
       } else if (hit && hit.tile) {
-        const t = P.tileById(this.process, hit.tile);
-        this.select({ tile: hit.tile });
-        this.drag = { kind: 'move', id: t.id, dx: x - t.x, dy: y - t.y, x: t.x, y: t.y, moved: false };
+        // On a tile of a selection of several, they all move; a click without moving keeps just it.
+        const ids = this.selectedIds();
+        const group = ids.length > 1 && ids.includes(hit.tile);
+        if (!group) this.select({ tile: hit.tile });
+        this.startMove(hit.tile, x, y, group);
       } else if (hit && hit.link) {
         this.select({ link: hit.link });
       } else {
-        this.select(null);
-        this.drag = { kind: 'pan', cx: evt.clientX, cy: evt.clientY, vx: this.view.x, vy: this.view.y };
+        // Empty space: a box selects every tile it touches (with Shift, adds them).
+        const base = evt.shiftKey ? this.selectedIds() : [];
+        if (!evt.shiftKey) this.select(null);
+        this.drag = { kind: 'box', x0: x, y0: y, x, y, add: evt.shiftKey, base, hits: [] };
       }
       this.render();
+    }
+
+    // Starts moving the selected tiles, grabbed by tile id at x, y.
+    startMove(id, x, y, collapse) {
+      const p = this.process;
+      const ids = this.selectedIds().filter((s) => P.tileById(p, s));
+      // A single tile with no arrows in or out can be dropped onto an arrow.
+      const loose = ids.length === 1 && P.takesInput(P.tileById(p, id)) && !p.links.some((l) => l.from === id || l.to === id);
+      this.drag = { kind: 'move', grab: id, ids, x0: x, y0: y, dx: 0, dy: 0, moved: false, collapse, loose, onLink: null, hint: null };
     }
 
     move(evt) {
@@ -414,14 +641,26 @@
         this.view.x = d.vx - (evt.clientX - d.cx) / this.view.zoom;
         this.view.y = d.vy - (evt.clientY - d.cy) / this.view.zoom;
       } else if (d.kind === 'move') {
-        const nx = snap(x - d.dx);
-        const ny = snap(y - d.dy);
-        if (nx !== d.x || ny !== d.y) d.moved = true;
-        d.x = nx;
-        d.y = ny;
+        // Free movement, no grid; it counts as a move after 3 pixels on screen.
+        d.dx = Math.round(x - d.x0);
+        d.dy = Math.round(y - d.y0);
+        if (Math.hypot(d.dx, d.dy) * this.view.zoom > 3) d.moved = true;
+        this.overLink(d, x, y);
       } else if (d.kind === 'wire') {
         d.x = x;
         d.y = y;
+        d.snap = this.snapTarget(d, x, y);
+      } else if (d.kind === 'box') {
+        d.x = x;
+        d.y = y;
+        const [x0, x1] = [Math.min(d.x0, x), Math.max(d.x0, x)];
+        const [y0, y1] = [Math.min(d.y0, y), Math.max(d.y0, y)];
+        d.hits = this.process.tiles
+          .filter((t) => {
+            const [w, h] = sizeOf(t);
+            return t.x + w / 2 >= x0 && t.x - w / 2 <= x1 && t.y + h / 2 >= y0 && t.y - h / 2 <= y1;
+          })
+          .map((t) => t.id);
       }
       this.render();
     }
@@ -429,21 +668,110 @@
     up(evt) {
       const d = this.drag;
       this.drag = null;
+      this.host.classList.remove('pv-panning');
       if (!d) return;
       const [x, y] = this.toWorld(evt.clientX, evt.clientY);
       if (d.kind === 'move' && d.moved) {
-        this.ed.processChange((p) => P.moveTile(p, d.id, d.x, d.y));
-        this.app.changed();
+        const t = P.tileById(this.process, d.grab);
+        if (d.onLink && t) this.putOnLink(d.onLink, (p) => P.tileById(p, d.grab), t.x + d.dx, t.y + d.dy);
+        else {
+          this.ed.processChange((p) => {
+            for (const id of d.ids) {
+              const s = P.tileById(p, id);
+              if (s) P.moveTile(p, id, s.x + d.dx, s.y + d.dy);
+            }
+          });
+          if (d.ids.length > 1) this.app.status(`Moved ${d.ids.length} tiles`);
+          this.app.changed();
+        }
+      } else if (d.kind === 'move' && d.collapse) {
+        this.select({ tile: d.grab });
       } else if (d.kind === 'wire') {
-        const target = this.tileAt(x, y);
+        const target = d.snap ? P.tileById(this.process, d.snap.tile) : this.tileAt(x, y);
         if (target && target.id !== d.from) this.connect(d.from, d.port, target.id);
-        else if (!target) this.offerTiles(evt.clientX, evt.clientY, (kind) => this.addTile(kind, snap(x), snap(y) + 30, { from: d.from, port: d.port }));
+        else if (!target) this.offerTiles(evt.clientX, evt.clientY, (kind) => this.addTile(kind, Math.round(x), Math.round(y) + 30, { from: d.from, port: d.port }));
+      } else if (d.kind === 'box') {
+        const ids = d.add ? [...d.base, ...d.hits.filter((id) => !d.base.includes(id))] : d.hits;
+        this.select(ids.length ? { tiles: ids } : null);
       }
       this.render(true);
     }
 
+    // The input point a new arrow being dragged snaps to, with the pointer at x, y: the nearest
+    // one within SNAP_PX on screen, else the nearest free one of the tile under the pointer.
+    // { tile, index, x, y, extra } (extra: a merge or join shows one point more for it) or null.
+    snapTarget(d, x, y) {
+      const p = this.process;
+      const g = P.graph(p);
+      const mine = (l) => l.from === d.from && l.port === d.port; // the arrow this one replaces
+      const spots = (t) => {
+        if (t.id === d.from) return [];
+        const ins = g.into.get(t.id).filter((l) => !mine(l));
+        const links = p.links.filter((l) => !mine(l));
+        const now = this.inputLayout(t, ins, { ...p, links }, g.byId);
+        if (!now.n) return [];
+        const extra = { from: d.from, port: d.port, to: t.id };
+        const withIt = this.inputLayout(t, [...ins, extra], { ...p, links: [...links, extra] }, g.byId);
+        const [tx, ty] = this.posOf(t);
+        const at = (lay, i, more) => ({ tile: t.id, index: i, x: tx + lay.pts[i][0], y: ty + lay.pts[i][1], extra: more });
+        // Every point taken on a merge or join: it gets one more, where the new arrow will go.
+        if (withIt.n > now.n) return [at(withIt, withIt.of.get(P.linkKey(extra)), true)];
+        const taken = new Set(now.of.values());
+        const free = now.pts.map((_, i) => i).filter((i) => !taken.has(i));
+        // A tile with one input point takes any number of arrows there.
+        return (free.length ? free : now.pts.map((_, i) => i)).map((i) => at(now, i, false));
+      };
+      const dist = (s) => Math.hypot(s.x - x, s.y - y);
+      const nearest = (list) => list.reduce((best, s) => (!best || dist(s) < dist(best) ? s : best), null);
+      const close = nearest(p.tiles.flatMap(spots).filter((s) => dist(s) <= SNAP_PX / this.view.zoom));
+      if (close) return close;
+      const under = this.tileAt(x, y);
+      return under ? nearest(spots(under)) : null;
+    }
+
+    // While a loose tile (or a new one) is dragged: the arrow near the pointer, if any, in
+    // d.onLink, and the nearest point on it in d.hint.
+    overLink(d, x, y) {
+      d.onLink = null;
+      d.hint = null;
+      if (!(d.kind === 'new' ? d.over && P.takesInput({ kind: d.tileKind }) : d.loose && d.moved)) return;
+      let best = null;
+      for (const w of this.wires) {
+        const near = nearOnLine(w.pts, x, y);
+        if (near.dist <= DROP_PX / this.view.zoom && (!best || near.dist < best.near.dist)) best = { link: w.link, near };
+      }
+      if (best) {
+        d.onLink = best.link;
+        d.hint = [Math.round(best.near.x), Math.round(best.near.y)];
+      }
+    }
+
+    // Puts a tile (make(p) gives it: a loose one, or a new one) at x, y on the arrow `link`:
+    // from --port--> tile --its first output--> where the arrow went. One undoable change.
+    putOnLink(link, make, x, y) {
+      let tile = null;
+      let why = null;
+      this.ed.processChange((p) => {
+        tile = make(p);
+        P.moveTile(p, tile.id, x, y);
+        why = P.link(p, link.from, link.port, tile.id);
+        if (!why && P.portsOf(tile).length) why = P.link(p, tile.id, P.portsOf(tile)[0], link.to);
+      });
+      if (!tile) return;
+      const p = this.process;
+      const name = linkName(P.tileById(p, tile.id));
+      const fromName = linkName(P.tileById(p, link.from));
+      const toName = linkName(P.tileById(p, link.to));
+      if (why) this.app.status(`Put ${name} there; not connected: ${why}`, 'warn');
+      else if (P.portsOf(tile).length) this.app.status(`Put ${name} between ${fromName} and ${toName}`);
+      else this.app.status(`Put ${name} after ${fromName}: it has no way out, so the arrow to ${toName} is gone`);
+      this.select({ tile: tile.id });
+      this.app.changed();
+    }
+
     cancelDrag() {
       this.drag = null;
+      this.host.classList.remove('pv-panning');
       this.render(true);
     }
 
@@ -461,10 +789,12 @@
     offerTiles(cx, cy, pick) {
       const host = this.host.getBoundingClientRect();
       this.menu.replaceChildren();
-      for (const kind of P.PALETTE.filter((k) => k !== 'start')) {
+      const kinds = P.PALETTE_GROUPS ? P.PALETTE_GROUPS.flatMap((group) => group.kinds) : P.PALETTE;
+      for (const kind of kinds.filter((k) => k !== 'start' && P.KINDS[k])) {
         const b = document.createElement('button');
         b.type = 'button';
-        b.textContent = `${GLYPH[kind]} ${P.KINDS[kind].name}`;
+        b.textContent = `${GLYPH[kind] || '□'} ${P.KINDS[kind].name}`;
+        if (P.KINDS[kind].about) b.title = P.KINDS[kind].about;
         b.addEventListener('click', () => {
           this.menu.hidden = true;
           pick(kind);
@@ -483,15 +813,17 @@
       evt.preventDefault();
       const button = evt.currentTarget;
       button.setPointerCapture(evt.pointerId);
-      const drag = { kind: 'new', tileKind: kind, over: false, x: 0, y: 0, moved: false };
+      const drag = { kind: 'new', tileKind: kind, over: false, x: 0, y: 0, moved: false, onLink: null, hint: null };
       this.drag = drag;
       const sx = evt.clientX;
       const sy = evt.clientY;
       const moveTo = (e) => {
         const r = this.svg.getBoundingClientRect();
         drag.over = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom && e.clientX > this.palette.getBoundingClientRect().right;
-        [drag.x, drag.y] = this.toWorld(e.clientX, e.clientY).map(snap);
+        const [wx, wy] = this.toWorld(e.clientX, e.clientY);
+        [drag.x, drag.y] = [Math.round(wx), Math.round(wy)];
         if (Math.hypot(e.clientX - sx, e.clientY - sy) > 6) drag.moved = true;
+        this.overLink(drag, wx, wy);
         this.render();
       };
       const finish = (e) => {
@@ -499,7 +831,8 @@
         button.removeEventListener('pointerup', finish);
         button.removeEventListener('pointercancel', cancel);
         this.drag = null;
-        if (drag.moved && drag.over) this.addTile(kind, drag.x, drag.y);
+        if (drag.moved && drag.over && drag.onLink) this.putOnLink(drag.onLink, (p) => P.addTile(p, kind, drag.x, drag.y), drag.x, drag.y);
+        else if (drag.moved && drag.over) this.addTile(kind, drag.x, drag.y);
         else if (!drag.moved) this.addBelow(kind);
         this.render(true);
         void e;
@@ -574,15 +907,24 @@
 
     // --- selection and keys ---------------------------------------------------------------------------
 
+    // Selects one tile ({ tile }), several ({ tiles: [...] }), an arrow ({ link }) or nothing.
     select(sel) {
+      if (sel && sel.tiles) sel = sel.tiles.length > 1 ? { tiles: [...sel.tiles] } : sel.tiles.length ? { tile: sel.tiles[0] } : null;
       this.selected = sel;
       this.app.select(sel && sel.tile ? sel.tile : null);
+      if (sel && sel.tiles) this.app.status(`${sel.tiles.length} tiles selected`);
       this.render();
     }
 
     // A key while the process view is on; true if it was used.
     key(evt) {
       const sel = this.selected;
+      if (evt.key === ' ') {
+        // Held, dragging pans.
+        this.space = true;
+        this.host.classList.add('pv-space');
+        return true;
+      }
       if (evt.key === 'Escape') {
         this.menu.hidden = true;
         if (this.drag) this.cancelDrag();
@@ -590,6 +932,8 @@
         return true;
       }
       if (!sel || this.ed.frozen) return false;
+      const ids = this.selectedIds().filter((id) => P.tileById(this.process, id));
+      if (ids.length > 1) return this.keyMany(evt, ids);
       if (evt.key === 'Delete' || evt.key === 'Backspace') {
         if (sel.tile) {
           const t = P.tileById(this.process, sel.tile);
@@ -609,7 +953,7 @@
         this.app.open(sel.tile);
         return true;
       }
-      const step = { ArrowLeft: [-GRID, 0], ArrowRight: [GRID, 0], ArrowUp: [0, -GRID], ArrowDown: [0, GRID] }[evt.key];
+      const step = { ArrowLeft: [-NUDGE, 0], ArrowRight: [NUDGE, 0], ArrowUp: [0, -NUDGE], ArrowDown: [0, NUDGE] }[evt.key];
       if (step && sel.tile) {
         const t = P.tileById(this.process, sel.tile);
         this.ed.processChange((p) => P.moveTile(p, t.id, t.x + step[0] * (evt.shiftKey ? 5 : 1), t.y + step[1] * (evt.shiftKey ? 5 : 1)));
@@ -617,6 +961,32 @@
         return true;
       }
       return false;
+    }
+
+    // Keys with several tiles selected: Delete removes them all, arrows nudge them all (each one
+    // undo step).
+    keyMany(evt, ids) {
+      if (evt.key === 'Delete' || evt.key === 'Backspace') {
+        const gone = new Set(ids);
+        const count = this.ed.doc.actions.filter((a) => gone.has(a.tile)).length;
+        if (this.ed.removeTiles(ids)) {
+          this.app.status(`Deleted ${ids.length} tiles${count ? ` and their ${count} action${count === 1 ? '' : 's'} on the board` : ''} (undo brings them back)`);
+        }
+        this.select(null);
+        this.app.changed();
+        return true;
+      }
+      const step = { ArrowLeft: [-NUDGE, 0], ArrowRight: [NUDGE, 0], ArrowUp: [0, -NUDGE], ArrowDown: [0, NUDGE] }[evt.key];
+      if (!step) return false;
+      const k = evt.shiftKey ? 5 : 1;
+      this.ed.processChange((p) => {
+        for (const id of ids) {
+          const t = P.tileById(p, id);
+          P.moveTile(p, id, t.x + step[0] * k, t.y + step[1] * k);
+        }
+      });
+      this.app.changed();
+      return true;
     }
   }
 

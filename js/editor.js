@@ -316,6 +316,16 @@
       });
     }
 
+    // Several tiles go, with their arrows and their actions on the board: one undo step.
+    removeTiles(ids) {
+      const gone = new Set(ids);
+      return this.processChange((p) => {
+        for (const id of gone) processes.removeTile(p, id);
+        this.doc.actions = this.doc.actions.filter((a) => !gone.has(a.tile));
+        if (this.scope) this.project = this.workingProject();
+      });
+    }
+
     // The last actions of the tiles before tile `id` in its stretch (the nearest ones with
     // something on the board): what its actions start after.
     orderAfter(id) {
