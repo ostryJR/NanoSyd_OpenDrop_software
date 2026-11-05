@@ -24,7 +24,7 @@
   const describe = (state) => (state.length ? state.map((d) => `${d.droplet} on ${d.cells.join(', ')}`).join('; ') : 'no droplets');
 
   // Everything about the process on the board: { g, back, st, stretch: Map(stretch id -> { tiles,
-  // state, compiled }), tile: Map(tile id -> { stretch, from, to, ms, placed, problems }) }.
+  // state, compiled }), tile: Map(tile id -> { stretch, from, to, ms, placed, problems, droplets }) }.
   // `state` is what comes into a stretch the first way a run gets there (not round a loop).
   function analyze(doc, rects) {
     const process = doc.process;
@@ -74,7 +74,11 @@
     for (const t of process.tiles) {
       const sid = st.of.get(t.id);
       const info = sid ? byStretch.get(sid) : null;
-      const entry = { stretch: sid || null, from: 0, to: 0, ms: 0, placed: false, problems: [] };
+      // droplets: the names of the droplets its actions move (an unplaced Dispense: the one it will make).
+      const mine = doc.actions.filter((a) => a.tile === t.id);
+      const droplets = [...new Set(mine.map((a) => a.droplet).filter(Boolean))];
+      if (!mine.length && t.kind === 'dispense' && t.droplet) droplets.push(t.droplet);
+      const entry = { stretch: sid || null, from: 0, to: 0, ms: 0, placed: false, problems: [], droplets };
       if (info) {
         const spans = doc.actions.filter((a) => a.tile === t.id).map((a) => info.compiled.spans.get(a.id)).filter(Boolean);
         entry.placed = doc.actions.some((a) => a.tile === t.id);

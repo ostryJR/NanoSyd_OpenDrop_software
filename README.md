@@ -140,7 +140,20 @@ everything drawn so far.
 - **Properties** (with a tile selected) show its settings, where its work is on the board, and its
   problems: an arrow going nowhere, a value used before it is measured, a decision inside parallel
   lanes, lanes that don't join, a step not placed yet, steps out of order on the board, droplets
-  arriving at different places by two ways in.
+  arriving at different places by two ways in, two Dispense tiles of one part making a droplet of
+  the same name.
+- **Names:**
+  - One name per step. What a Dispense, Move, Mix, Merge, Split or Wait tile puts on the board is
+    called by the tile's name, in Properties and in the timeline. Renaming it there renames the tile,
+    and the other way round. When a tile has two things on the board, the second is "Name · 2".
+  - A Step tile can hold any number of things, so they keep names of their own. The timeline shows
+    them after the step's name: "Step 1 · Sample to mixer".
+  - Droplets are named on the Dispense tile that makes them (its **Droplet** field). Left empty, the
+    droplet gets the next free "Droplet N" when it is placed.
+  - Renaming a droplet renames it from there on: on the board and in the later parts of the process
+    that take it in. Merged droplets named after it follow too ("D1 + D2" becomes "Sample + D2").
+    Renamed on the board, the Dispense tile follows.
+  - Each tile shows the droplets it works on after its name, by their short names: "Dilute · Sample".
 - **On the board:**
   - Double-click a step, or **Open on the board**, to draw its work.
   - The board shows that step with the steps that run with it up to the next stop (a decision,
@@ -357,7 +370,8 @@ What **save** writes and **load** opens. JSON, one field per line:
 - `wait`: a hold of `duration` ms where nothing is switched on; the other actions keep moving.
 - `tile` (on any action): the process tile it belongs to.
 - `process` (top level, optional):
-  - `tiles`: `{ id, kind, name, x, y, … }` with the kind's settings: `reservoir` (dispense),
+  - `tiles`: `{ id, kind, name, x, y, … }` with the kind's settings: `reservoir` and `droplet` (the
+    name of the droplet it makes) for a dispense,
     `params` (mix), `seconds` (wait), `value` and `unit` (measure), `question`, `answer` and
     `value` (ask), `value`, `op` (`<`, `<=`, `>`, `>=`, `=`, `!=`, `is`) and `than` (decision),
     `times` (repeat), `lanes` (parallel). The kinds are `start`, `end`, `step`, `dispense`,

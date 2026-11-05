@@ -153,3 +153,25 @@ test('droplet short names: D12 for Droplet 12, initials for long names, each par
   assert.equal(P.shortDroplet(''), '');
   assert.equal(P.shortDroplet(undefined), '');
 });
+
+test('a Dispense tile keeps the name of the droplet it makes; an unusable one is left out', () => {
+  const p = sample();
+  p.process = {
+    tiles: [
+      { id: 'p1', kind: 'start', x: 0, y: 0 },
+      { id: 'p2', kind: 'dispense', name: 'Sample in', x: 0, y: 100, reservoir: 'reservoirLeftTop', droplet: '  Sample ' },
+      { id: 'p3', kind: 'dispense', x: 0, y: 200, droplet: 7 },
+      { id: 'p4', kind: 'mix', x: 0, y: 300, droplet: 'Nope' },
+    ],
+    links: [{ from: 'p1', port: 'next', to: 'p2' }],
+  };
+  const { project, warnings } = P.parse(P.serialize(p));
+  assert.equal(project.process.tiles[1].droplet, 'Sample', 'trimmed');
+  assert.equal(project.process.tiles[2].droplet, undefined);
+  assert.equal(project.process.tiles[3].droplet, undefined, 'only a Dispense names a droplet');
+  assert.equal(warnings.filter((w) => /droplet name of the tile/.test(w)).length, 2);
+  const again = P.parse(P.serialize(project));
+  assert.deepEqual(again.warnings, []);
+  assert.deepEqual(again.project.process, project.process, 'saving again changes nothing');
+  assert.match(P.serialize(project), /"reservoir":"reservoirLeftTop","droplet":"Sample"\}/, 'after the other settings');
+});

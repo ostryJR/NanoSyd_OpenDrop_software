@@ -301,3 +301,122 @@ function placeLanes(ed, ids) {
   assert.equal(by('merge').droplet, 'D1 + D2');
   for (const t of Object.values(ids)) assert.deepEqual(info.tile.get(t).problems, [], t);
 }
+
+// --- names: one per step; droplets named on the Dispense tile ---------------------------------------
+
+const tileOf = (ed, id) => P.tileById(ed.doc.process, id);
+const workOf = (ed, id) => ed.doc.actions.filter((a) => a.tile === id);
+
+test('one name per step: a tile’s work on the board goes by the tile’s name; renaming either renames both', () => {
+  const { ed, ids } = placed();
+  assert.deepEqual(['dispense', 'move', 'mix'].map((k) => workOf(ed, ids[k]).map((a) => a.name)), [['Dispense'], ['Move'], ['Mix']]);
+
+  assert.ok(ed.tileSettings(ids.dispense, { name: 'Sample in' }));
+  assert.equal(workOf(ed, ids.dispense)[0].name, 'Sample in', 'renaming the tile renames its work');
+
+  ed.openTile(ids.mix);
+  const mix = workOf(ed, ids.mix)[0];
+  assert.ok(ed.rename(mix.id, 'Dilute'));
+  assert.equal(tileOf(ed, ids.mix).name, 'Dilute', 'renaming on the board renames the tile');
+  assert.equal(workOf(ed, ids.mix)[0].name, 'Dilute');
+  assert.ok(ed.namedByTile(workOf(ed, ids.mix)[0]));
+  assert.ok(ed.undo());
+  assert.equal(tileOf(ed, ids.mix).name, 'Mix', 'one undo takes it back');
+  assert.equal(workOf(ed, ids.mix)[0].name, 'Mix');
+  assert.ok(ed.compiled.issues.every((i) => !/Dilute/.test(i.text)));
+});
+
+test('a tile with two things on the board: “Move” and “Move · 2”; a Step tile’s work keeps its own names', () => {
+  const ed = new Editor(lay);
+  drag(ed, E(2, 2), E(6, 2)); // drawn before there was a process
+  ed.rename(ed.project.actions[0].id, 'Sample to mixer');
+  ed.makeProcess();
+  const step = ed.doc.process.tiles.find((t) => t.kind === 'step');
+  assert.equal(workOf(ed, step.id)[0].name, 'Sample to mixer', 'kept: it is in a Step tile');
+  assert.ok(!ed.namedByTile(workOf(ed, step.id)[0]));
+  assert.ok(ed.rename(workOf(ed, step.id)[0].id, 'To the mixer'));
+  assert.equal(step.name, 'Step 1', 'a Step tile’s work is renamed on its own');
+  assert.equal(workOf(ed, step.id)[0].name, 'To the mixer');
+
+  let move = null;
+  ed.processChange((p) => {
+    move = P.addTile(p, 'move', 0, 300);
+    P.link(p, step.id, 'next', move.id);
+  });
+  assert.ok(ed.openTile(move.id));
+  ed.frame = 1;
+  drag(ed, E(2, 6), E(5, 6));
+  ed.escape();
+  ed.frame = 1;
+  drag(ed, E(9, 4), E(12, 4));
+  assert.deepEqual(workOf(ed, move.id).map((a) => a.name), ['Move', 'Move · 2']);
+  ed.tileSettings(move.id, { name: 'Away' });
+  assert.deepEqual(workOf(ed, move.id).map((a) => a.name), ['Away', 'Away · 2']);
+});
+
+test('the Dispense tile names its droplet; renamed there or on the board, it is renamed down the process', () => {
+  const { ed, ids } = dilution();
+  assert.ok(ed.tileSettings(ids.dispense, { droplet: 'Sample' }));
+  assert.equal(tileOf(ed, ids.dispense).droplet, 'Sample');
+  // Placing: the dispense makes "Sample", which the move and (in the next part) the mix carry.
+  ed.openTile(ids.dispense);
+  ed.placeTile();
+  ed.openTile(ids.move);
+  ed.placeTile();
+  ed.frame = 6;
+  drag(ed, 9, E(3, 1), E(3, 3));
+  ed.openTile(ids.mix);
+  ed.placeTile();
+  ed.hoverPlacement(...at(E(3, 3)));
+  assert.ok(ed.dropPlacement(), ed.notice);
+  const droplets = () => ['dispense', 'move', 'mix'].map((k) => workOf(ed, ids[k])[0].droplet);
+  assert.deepEqual(droplets(), ['Sample', 'Sample', 'Sample']);
+  assert.equal(workOf(ed, ids.mix)[0].after, 'in:Sample');
+
+  // Renamed on the tile: everything after follows, the next part's link too.
+  assert.ok(ed.tileSettings(ids.dispense, { droplet: 'Buffer' }));
+  assert.deepEqual(droplets(), ['Buffer', 'Buffer', 'Buffer']);
+  assert.equal(workOf(ed, ids.mix)[0].after, 'in:Buffer');
+  const info = ed.analyze();
+  for (const k of ['dispense', 'move', 'mix']) assert.deepEqual(info.tile.get(ids[k]).problems, [], k);
+  assert.deepEqual(info.tile.get(ids.mix).droplets, ['Buffer'], 'tiles know the droplets they work on');
+
+  // Renamed on the board, on the dispense: the tile follows.
+  ed.openTile(ids.dispense);
+  assert.ok(ed.setDroplet(workOf(ed, ids.dispense)[0].id, 'Water'));
+  assert.equal(tileOf(ed, ids.dispense).droplet, 'Water');
+  assert.deepEqual(droplets(), ['Water', 'Water', 'Water']);
+
+  // Renamed from the move on: before it, it keeps its name.
+  ed.openTile(ids.move);
+  assert.ok(ed.setDroplet(workOf(ed, ids.move)[0].id, 'Diluted'));
+  assert.deepEqual(droplets(), ['Water', 'Diluted', 'Diluted']);
+  assert.equal(tileOf(ed, ids.dispense).droplet, 'Water');
+  assert.equal(workOf(ed, ids.mix)[0].after, 'in:Diluted');
+  assert.deepEqual(ed.analyze().tile.get(ids.mix).problems, []);
+  assert.ok(ed.undo());
+  assert.deepEqual(droplets(), ['Water', 'Water', 'Water']);
+});
+
+test('a Dispense tile with no droplet name gets a free one when placed, kept on the tile', () => {
+  const { ed, ids } = dilution();
+  assert.equal(ed.freeDroplet(), 'Droplet 1');
+  ed.openTile(ids.dispense);
+  ed.placeTile();
+  assert.equal(workOf(ed, ids.dispense)[0].droplet, 'Droplet 1');
+  assert.equal(tileOf(ed, ids.dispense).droplet, 'Droplet 1');
+  assert.equal(ed.freeDroplet(), 'Droplet 2');
+});
+
+test('merged droplets follow a rename by their short names; two Dispense tiles of one part can’t share a name', () => {
+  const { ed, ids } = lanes(false);
+  placeLanes(ed, ids);
+  const merge = () => workOf(ed, ids.merge)[0];
+  assert.equal(merge().droplet, 'D1 + D2');
+  assert.ok(ed.tileSettings(ids.dA, { droplet: 'Sample' }));
+  assert.equal(workOf(ed, ids.mA)[0].droplet, 'Sample');
+  assert.equal(merge().droplet, 'Sample + D2');
+  assert.ok(ed.tileSettings(ids.dB, { droplet: 'Sample' }));
+  const warned = P.check(ed.doc.process).filter((i) => /also makes “Sample”/.test(i.text)).map((i) => i.tile).sort();
+  assert.deepEqual(warned, [ids.dA, ids.dB].sort());
+});

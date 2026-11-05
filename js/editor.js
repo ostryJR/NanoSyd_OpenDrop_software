@@ -68,6 +68,18 @@
   const PITCH = 2; // grid units from one standard electrode to the next
 
   const quote = (a) => `“${a.name}”`;
+  // With a process, the actions of a tile that does one kind of thing (a dispense, a move, a
+  // mix...) are called by the tile's name; a Step tile's actions keep names of their own.
+  const namedByTile = (t) => Boolean(t) && processes.hasWork(t) && t.kind !== 'step';
+  const tileName = (t) => t.name || processes.KINDS[t.kind].name;
+  // A merged droplet's name is its droplets' short names ("D1 + D2"): with droplet `from`
+  // renamed `to`, the name it becomes, or null if `from` isn't one of its parts.
+  const mergedRenamed = (name, from, to) => {
+    const parts = name.split(' + ');
+    const was = projects.shortDroplet(from);
+    if (parts.length < 2 || !from || !to || !parts.includes(was)) return null;
+    return parts.map((p) => (p === was ? projects.shortDroplet(to) : p)).join(' + ');
+  };
   const pairKey = (x, y) => (x < y ? `${x}|${y}` : `${y}|${x}`);
   const extrasOf = ({ e, ...extra }) => extra;
 
@@ -108,6 +120,7 @@
 
     recompile() {
       this.flush();
+      this.syncNames();
       this.revision = (this.revision || 0) + 1; // goes up with every change, for keeping the work
       this.compiled = compile(this.project, this.layout.rects, { arrive: this.arrive });
       if (this.playing) this.playLast = this.compiled.seq.lastFrame();
@@ -137,6 +150,41 @@
       this.doc.actions = out;
       this.doc.templates = this.project.templates;
       this.doc.frameTime = this.project.frameTime;
+    }
+
+    // One name per step: an action of a tile that does one kind of thing is called by the tile's
+    // name, the others of the same tile "Name · 2", "Name · 3"... A Step tile's actions keep their
+    // own. It follows from the rest, so doing it again changes nothing (undo stays right).
+    syncNames() {
+      const p = this.doc.process;
+      if (!p) return;
+      const byId = new Map(p.tiles.map((t) => [t.id, t]));
+      const count = new Map();
+      for (const a of this.doc.actions) {
+        const t = a.tile && byId.get(a.tile);
+        if (!namedByTile(t)) continue;
+        const n = (count.get(t.id) || 0) + 1;
+        count.set(t.id, n);
+        const name = n > 1 ? `${tileName(t)} · ${n}` : tileName(t);
+        if (a.name !== name) a.name = name;
+      }
+    }
+
+    // The process tile action a belongs to, or null.
+    tileOf(a) {
+      return a && a.tile && this.doc.process ? processes.tileById(this.doc.process, a.tile) : null;
+    }
+
+    // Whether action a is called by its tile's name (see syncNames).
+    namedByTile(a) {
+      return namedByTile(this.tileOf(a));
+    }
+
+    // The next free droplet name, "Droplet N", besides those on the board and those the Dispense
+    // tiles will make.
+    freeDroplet() {
+      const tiles = this.doc.process ? this.doc.process.tiles.filter((t) => t.kind === 'dispense' && t.droplet).map((t) => ({ droplet: t.droplet })) : [];
+      return projects.nextDroplet({ actions: [...this.doc.actions, ...this.project.actions, ...this.arrive, ...tiles] });
     }
 
     workingProject() {
@@ -246,21 +294,28 @@
       return done;
     }
 
-    // A tile's settings; what is placed of it on the board follows (a dispense's reservoir, a
-    // wait's time). Undoable.
+    // A tile's settings; what is placed of it on the board follows (its name, a dispense's
+    // reservoir and droplet, a wait's time). Undoable.
     tileSettings(id, fields) {
       return this.processChange((p) => {
         const t = processes.tileById(p, id);
         if (!t) return;
-        Object.assign(t, fields);
+        const { droplet, ...rest } = fields;
+        Object.assign(t, rest);
         if (t.kind === 'parallel' && fields.lanes !== undefined) processes.setLanes(p, id, fields.lanes);
         for (const a of this.doc.actions) {
           if (a.tile !== id) continue;
-          if (a.type === 'dispense' && fields.reservoir && RESERVOIR_STEPS[fields.reservoir]) {
-            a.reservoir = fields.reservoir;
-            a.name = `Dispense ${RESERVOIR_NAMES[fields.reservoir]}`;
-          }
+          if (a.type === 'dispense' && fields.reservoir && RESERVOIR_STEPS[fields.reservoir]) a.reservoir = fields.reservoir;
           if (a.type === 'wait' && Number.isFinite(fields.seconds)) a.duration = Math.max(1, Math.round(fields.seconds * 1000));
+        }
+        if (droplet !== undefined && t.kind === 'dispense') {
+          // The droplet it makes: renamed down its chain once placed; until then just the tile's.
+          const value = String(droplet).trim().slice(0, 60);
+          const made = this.doc.actions.filter((a) => a.tile === id && a.type === 'dispense');
+          if (!made.length) {
+            if (value) t.droplet = value;
+            else delete t.droplet;
+          } else if (value) for (const a of made) this.renameDroplet(a, value);
         }
       });
     }
@@ -589,6 +644,8 @@
       const a = { id: projects.nextId(all), ...fields };
       const tile = this.scope && this.scope.tile;
       if (tile) a.tile = tile;
+      const t = this.tileOf(a);
+      if (namedByTile(t)) a.name = tileName(t); // syncNames numbers it if the tile has more
       const link = this.linkFor(cells, frame);
       const after = [...new Set([...(link ? [].concat(link.after) : []), ...(tile ? this.orderAfter(tile) : [])])];
       const fresh = () => (cells.some((e) => e < DROPLET_CELLS) ? projects.nextDroplet(all) : '');
@@ -1486,29 +1543,88 @@
       return this.commit(this.tryChanges(new Map([[id, { ...a, points }]])));
     }
 
+    // Renames action id; one called by its tile's name renames the tile (and so all of its).
     rename(id, name) {
       const a = this.action(id);
       const value = String(name).trim().slice(0, 80);
       if (!a || !value) return false;
+      const t = this.tileOf(a);
+      if (namedByTile(t)) return value.slice(0, 60) === tileName(t) || this.tileSettings(t.id, { name: value.slice(0, 60) });
       return this.change(() => (a.name = value));
     }
 
-    // A new droplet name for action id and the actions after it that had the same name.
+    // A new droplet name for action id and what follows it under the same name (renameDroplet).
     setDroplet(id, name) {
       const a = this.action(id);
       if (!a) return false;
       const value = String(name).trim().slice(0, 60);
-      const old = a.droplet || '';
-      return this.change(() => {
-        const seen = new Set();
-        const visit = (x) => {
-          if (seen.has(x.id)) return;
-          seen.add(x.id);
-          x.droplet = value;
-          for (const f of this.followersOf(x.id)) if ((f.droplet || '') === old) visit(f);
-        };
-        visit(a);
-      });
+      return this.change(() => this.renameDroplet(a, value));
+    }
+
+    // Names the droplet action a moves `value`, from a on (inside a change): a and the actions
+    // after it that had the same name; merged droplets named after it ("D1 + D2") follow its short
+    // name. With a process this goes over the whole project: the parts of the process further
+    // down that take the droplet in ("in:<old name>") follow, on down, and a Dispense tile making
+    // it gets the new name.
+    renameDroplet(a, value) {
+      this.flush();
+      const all = this.doc.process ? this.doc.actions : this.project.actions;
+      const followers = (x) => all.filter((y) => (predsOf(y) || []).includes(x.id));
+      const later = this.doc.process ? this.laterStretches() : null;
+      const seen = new Set();
+      const visit = (x, from, to) => {
+        if (seen.has(x.id)) return;
+        seen.add(x.id);
+        x.droplet = to;
+        const t = x.type === 'dispense' && this.tileOf(x);
+        if (t && t.kind === 'dispense') t.droplet = to;
+        for (const f of followers(x)) {
+          const name = f.droplet || '';
+          if (name === from) visit(f, from, to);
+          else {
+            const merged = mergedRenamed(name, from, to);
+            if (merged) visit(f, name, merged);
+          }
+        }
+        // Further down the process, where the droplet comes in by its name.
+        if (!later || !from || !to || !x.tile) return;
+        const below = later(x.tile);
+        for (const f of all) {
+          if (!below.has(f.tile) || !(predsOf(f) || []).includes(`in:${from}`)) continue;
+          const after = [].concat(f.after).map((id) => (id === `in:${from}` ? `in:${to}` : id));
+          f.after = after.length === 1 ? after[0] : after;
+          if ((f.droplet || '') === from) visit(f, from, to);
+        }
+      };
+      visit(a, a.droplet || '', value);
+    }
+
+    // For the parts of the process after a tile's: tile id -> the set of tiles in the stretches
+    // further down from its stretch (by arrows going down, not those going back up).
+    laterStretches() {
+      const p = this.doc.process;
+      const g = processes.graph(p);
+      const back = processes.backLinks(p, g);
+      const st = processes.stretches(p, g, back);
+      const memo = new Map();
+      return (tileId) => {
+        const sid = st.of.get(tileId);
+        if (memo.has(sid)) return memo.get(sid);
+        const s = st.list.find((x) => x.id === sid);
+        const seen = new Set(s ? s.tiles : [tileId]);
+        const stack = [...seen];
+        while (stack.length) {
+          const id = stack.pop();
+          for (const l of g.out.get(id) || []) {
+            if (back.has(processes.linkKey(l)) || seen.has(l.to)) continue;
+            seen.add(l.to);
+            stack.push(l.to);
+          }
+        }
+        const out = new Set([...seen].filter((id) => st.of.get(id) && st.of.get(id) !== sid));
+        memo.set(sid, out);
+        return out;
+      };
     }
 
     // How long each step of action id lasts (ms; 0 = the default frame time).
@@ -2037,10 +2153,15 @@
     }
 
     // A reservoir button: a dispense action from the frame on screen; the view moves to its end.
+    // In an open Dispense tile with nothing placed yet, the droplet gets the tile's droplet name (a
+    // free one, kept on the tile, if it has none).
     dispense(reservoir) {
       const done = this.change(() => {
-        const all = { actions: [...this.doc.actions, ...this.project.actions, ...this.arrive] };
-        this.addAction({ type: 'dispense', name: `Dispense ${RESERVOIR_NAMES[reservoir]}`, droplet: projects.nextDroplet(all), reservoir }, this.frame, []);
+        const t = this.scope && this.scope.tile ? processes.tileById(this.doc.process, this.scope.tile) : null;
+        const first = t && t.kind === 'dispense' && !this.doc.actions.some((a) => a.tile === t.id && a.type === 'dispense') ? t : null;
+        const droplet = (first && first.droplet) || this.freeDroplet();
+        if (first) first.droplet = droplet;
+        this.addAction({ type: 'dispense', name: `Dispense ${RESERVOIR_NAMES[reservoir]}`, droplet, reservoir }, this.frame, []);
       });
       const span = done && this.span(this.selection);
       if (span) this.frame = span.to;

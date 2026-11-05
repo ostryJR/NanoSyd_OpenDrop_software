@@ -799,9 +799,10 @@
       }
       const followers = project.actions.filter((b) => preds(b).includes(a.id));
       const problem = compiled.issues.filter((i) => i.id === a.id && i.kind !== 'waits').map((i) => i.text).join('; ');
+      const step = ed.tileOf(a); // a Step tile's actions show its name before their own
       clips.push({
         id: a.id,
-        name: a.name,
+        name: step && !ed.namedByTile(a) ? `${step.name || P.KINDS[step.kind].name} · ${a.name}` : a.name,
         type: a.type,
         track: a.droplet ? `d:${a.droplet}` : `a:${a.id}`,
         trackName: a.droplet || a.name,
@@ -888,7 +889,7 @@
       afterDraft = null;
     }
     const span = a && ed.span(a.id);
-    const key = JSON.stringify([a, span, ed.project.actions.map((x) => [x.id, x.name]), ed.compiled.issues.filter((i) => a && i.id === a.id), afterDraft]);
+    const key = JSON.stringify([a, span, ed.project.actions.map((x) => [x.id, x.name]), ed.compiled.issues.filter((i) => a && i.id === a.id), afterDraft, ed.tileOf(a)]);
     if (key === propsKey) return;
     propsKey = key;
     show(propsNone, !a);
@@ -902,7 +903,13 @@
       return;
     }
     kindText.textContent = `${KIND[a.type] || a.type}${span ? ` · ${span.from === span.to ? `frame ${span.from}` : `frames ${span.from}–${span.to}`}` : ''}`;
-    keep(nameField, a.name);
+    // With a process: an action of a tile that does one kind of thing goes by its tile's name
+    // (renaming it renames the tile); a Step tile's actions have their own, in that step.
+    const tile = ed.tileOf(a);
+    const byTile = ed.namedByTile(a);
+    keep(nameField, byTile ? tile.name || P.KINDS[tile.kind].name : a.name);
+    show($('prop-tile'), Boolean(tile));
+    $('prop-tile').textContent = !tile ? '' : byTile ? 'Named after its step in the process: renaming it here renames the step.' : `Part of the step “${tile.name || P.KINDS[tile.kind].name}” in the process.`;
     keep(dropletField, a.droplet || '');
     const short = projects.shortDroplet(a.droplet);
     $('prop-droplet-short').textContent = short && short !== a.droplet ? `· short ${short}` : '';

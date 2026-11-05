@@ -447,6 +447,9 @@
     for (const s of st.list) {
       const exits = exitsOf(s, g);
       if (exits.length > 1) add(s.start, 'This part leads to two places at once: end its lanes first', 'error');
+      // Two Dispense tiles of one part naming their droplets the same: one track, mixed up.
+      const makes = s.tiles.map((id) => g.byId.get(id)).filter((t) => t.kind === 'dispense' && t.droplet);
+      for (const t of makes) if (makes.some((o) => o !== t && o.droplet === t.droplet)) add(t.id, `Another Dispense in this part also makes “${t.droplet}”`);
     }
     for (const lp of loops(process, g, back)) if (lp.endless) add(lp.to, 'This loop never ends: nothing leads out of it', 'error');
     return issues;

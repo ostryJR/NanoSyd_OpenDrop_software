@@ -1574,6 +1574,13 @@ body.dragging-template * {
   font-size: 11px;
 }
 
+/* The droplets a tile works on, after its name. */
+.pv-canvas .pv-drops {
+  fill: #8a6d1f;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* Parallel and Wait for all: their name on the bar. */
 .pv-canvas .pv-bar-label {
   fill: #fff;

@@ -151,6 +151,15 @@
       ids.add(t.id);
       const tile = { ...t, x: Number.isFinite(t.x) ? Math.round(t.x) : 0, y: Number.isFinite(t.y) ? Math.round(t.y) : 0 };
       if (typeof tile.name !== 'string') delete tile.name;
+      // The droplet a Dispense tile makes.
+      if (tile.droplet !== undefined) {
+        const ok = tile.kind === 'dispense' && typeof tile.droplet === 'string' && tile.droplet.trim();
+        if (ok) tile.droplet = tile.droplet.trim().slice(0, 60);
+        else {
+          warn(`the droplet name of the tile “${tile.name || tile.id}” is unusable and was left out`);
+          delete tile.droplet;
+        }
+      }
       out.tiles.push(tile);
     }
     const byId = new Map(out.tiles.map((t) => [t.id, t]));

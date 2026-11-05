@@ -509,7 +509,12 @@
           text(group, 0, -4, '◇ if', 'pv-sub centre');
           text(group, 0, 14, summary(t, info, p), 'pv-name centre');
         } else {
-          text(group, -w / 2 + 14, -6, `${GLYPH[t.kind]} ${name}`, 'pv-name');
+          const head = text(group, -w / 2 + 14, -6, `${GLYPH[t.kind]} ${name}`, 'pv-name');
+          // The droplets it works on, by their short names, after its name where they fit.
+          const me = info && info.tile.get(t.id);
+          const drops = me && me.droplets ? [...new Set(me.droplets.map((n) => OD.project.shortDroplet(n)))].join(', ') : '';
+          const room = Math.floor((w - 28 - (name.length + 2) * 7.6) / 6.2) - 3;
+          if (drops && room >= 2) el('tspan', { class: 'pv-drops' }, head).textContent = ` · ${drops.length > room ? `${drops.slice(0, room - 1)}…` : drops}`;
           text(group, -w / 2 + 14, 14, clip(summary(t, info, p), w), 'pv-sub');
         }
         if (errors.length || warns.length) {

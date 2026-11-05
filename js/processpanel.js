@@ -129,9 +129,21 @@
     settings(t, p) {
       const h = this.host;
       switch (t.kind) {
-        case 'dispense':
+        case 'dispense': {
           h.append(this.field('Reservoir', this.select(Object.entries(RESERVOIRS), t.reservoir || 'reservoirLeftTop'), (v) => this.set({ reservoir: v }, `${t.name} dispenses from the ${RESERVOIRS[v]} reservoir`)));
+          // The droplet it makes: named here, carried down the process (and the same on the board).
+          const placed = this.ed.doc.actions.some((a) => a.tile === t.id && a.type === 'dispense');
+          const input = this.text(t.droplet, { maxlength: 60, placeholder: this.ed.freeDroplet(), list: 'droplet-names' });
+          const short = OD.project.shortDroplet(t.droplet || '');
+          const label = node('span', {}, 'Droplet ', short && short !== t.droplet ? node('span', { class: 'short-name', text: `· short ${short}` }) : null);
+          h.append(this.field(label, input, (v) => {
+            const name = String(v).trim();
+            if (!name && placed) return; // a placed droplet keeps a name
+            this.set({ droplet: name }, name ? `${t.name} makes the droplet “${name}”${placed ? ', renamed down the process' : ''}` : 'Its droplet gets a name when it is placed');
+          }));
+          h.append(node('p', { class: 'hint', text: placed ? 'Renaming it renames the droplet everywhere after this, on the board too.' : `The name of the droplet it makes; empty, it will be “${this.ed.freeDroplet()}”.` }));
           break;
+        }
         case 'mix': {
           const params = t.params || { kind: 'circle', size: 2, rounds: 3 };
           const apply = (change, text) => {

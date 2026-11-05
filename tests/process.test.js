@@ -327,3 +327,14 @@ test('conditions: comparisons and yes/no', () => {
   assert.equal(P.evaluate(t('is', 'no'), { v: true }), false);
   assert.equal(P.conditionText(t('<=', 2)), 'v ≤ 2');
 });
+
+test('checks: two Dispense tiles of one part making the same droplet are warned about; in different parts they may', () => {
+  const same = build(
+    [['start'], ['parallel'], ['dispense', { droplet: 'Sample' }], ['dispense', { droplet: 'Sample' }], ['join'], ['end']],
+    ['1>2', '2.lane1>3', '2.lane2>4', '3>5', '4>5', '5>6']
+  );
+  const warned = P.check(same.p).filter((i) => i.text === 'Another Dispense in this part also makes “Sample”');
+  assert.deepEqual(warned.map((i) => i.tile).sort(), [same.id(3), same.id(4)].sort());
+  const apart = build([['start'], ['dispense', { droplet: 'Sample' }], ['measure'], ['dispense', { droplet: 'Sample' }], ['end']], ['1>2', '2>3', '3>4', '4>5']);
+  assert.ok(!P.check(apart.p).some((i) => /also makes/.test(i.text)), 'a measure between: two parts');
+});
