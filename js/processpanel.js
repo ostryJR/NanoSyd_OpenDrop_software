@@ -91,6 +91,7 @@
       }
       const kind = P.KINDS[t.kind];
       this.host.append(node('h3', { text: `${GLYPH[t.kind]} ${kind.name}` }));
+      this.host.append(node('p', { class: 'hint about', text: kind.about }));
       if (!['start', 'end', 'parallel', 'join', 'decision'].includes(t.kind)) {
         this.host.append(this.field('Name', this.text(t.name, { maxlength: 60 }), (v) => this.set({ name: String(v).trim() || kind.name }, 'Renamed')));
       }
@@ -145,6 +146,14 @@
           }
           if (params.kind === 'backforth') h.append(this.field('Over (electrodes)', this.number(params.length || 4, { min: 2, max: 6, step: 1 }), (v) => apply({ length: Math.round(Number(v)) }, `${t.name}: over ${v}`)));
           h.append(this.field('Rounds', this.number(params.rounds || 3, { min: 1, max: 20, step: 1 }), (v) => apply({ rounds: Math.round(Number(v)) }, `${t.name}: ${v} rounds`)));
+          h.append(node('p', { class: 'hint', text: 'It stays one droplet. To put two droplets together, use a Merge.' }));
+          break;
+        }
+        case 'merge': {
+          const ins = p.links.filter((l) => l.to === t.id).length;
+          h.append(node('p', { class: 'hint', text: ins > 1
+            ? `${ins} arrows bring its droplets in: it waits for all of them, then puts the two droplets together. No Wait for all is needed before it.`
+            : 'Its arrows bring the droplets in: draw one from the end of each droplet’s lane, and it waits for all of them. If both droplets come the same way, one arrow is enough.' }));
           break;
         }
         case 'wait':
@@ -186,7 +195,10 @@
           break;
         case 'parallel':
           h.append(this.field('Lanes', this.number(P.lanesOf(t), { min: 2, max: P.MAX_LANES, step: 1 }), (v) => this.set({ lanes: Math.round(Number(v)) }, `${v} lanes`)));
-          h.append(node('p', { class: 'hint', text: 'Its lanes run at the same time, on one board; a Join tile waits for all of them.' }));
+          h.append(node('p', { class: 'hint', text: 'Its lanes run at the same time, on one board. End them in a Wait for all (the droplets stay apart) or in a Merge (two droplets become one).' }));
+          break;
+        case 'join':
+          h.append(node('p', { class: 'hint', text: 'The run goes on once every lane coming in has finished. To put two droplets together instead, end their lanes in a Merge.' }));
           break;
         default:
           break;

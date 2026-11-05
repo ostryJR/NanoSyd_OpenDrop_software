@@ -2,7 +2,8 @@
  * placing it on the board. Tiles are steps that have work on the board (a step, a dispense, a
  * move, a mix, a merge, a split, a wait), stops where a run waits or chooses (start, end, measure,
  * ask, decision, repeat), and parallel/join, which split the way into lanes that run at the same
- * time and join again. Arrows go from a tile's output port to another tile; one going back up is a
+ * time and end them again (a merge can end lanes too: one per droplet it puts together). Arrows
+ * go from a tile's output port to another tile; one going back up is a
  * loop. A run goes through the process stretch by stretch: a stretch is the steps between two
  * stops, and has one board and timeline. No DOM here. */
 (function (root, factory) {
@@ -11,29 +12,41 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  // What each kind of tile is: its name, its output ports, whether it has work on the board, and
-  // whether it is a stop (where a stretch ends: the run waits, asks or chooses there).
+  // What each kind of tile is: its name, what it does in a sentence (tooltips and Properties show
+  // it), its output ports, whether it has work on the board, and whether it is a stop (where a
+  // stretch ends: the run waits, asks or chooses there). The ids stay as they are in files: a
+  // 'join' is shown as "Wait for all".
   const KINDS = {
-    start: { name: 'Start', ports: ['next'], stop: true, input: false },
-    end: { name: 'End', ports: [], stop: true },
-    step: { name: 'Step', ports: ['next'], work: true },
-    dispense: { name: 'Dispense', ports: ['next'], work: true },
-    move: { name: 'Move', ports: ['next'], work: true },
-    mix: { name: 'Mix', ports: ['next'], work: true },
-    merge: { name: 'Merge', ports: ['next'], work: true },
-    split: { name: 'Split', ports: ['next'], work: true },
-    wait: { name: 'Wait', ports: ['next'], work: true },
-    measure: { name: 'Measure', ports: ['next'], stop: true },
-    ask: { name: 'Ask', ports: ['next'], stop: true },
-    decision: { name: 'Decision', ports: ['yes', 'no'], stop: true },
-    repeat: { name: 'Repeat', ports: ['again', 'done'], stop: true },
-    parallel: { name: 'Parallel', ports: null },
-    join: { name: 'Join', ports: ['next'] },
+    start: { name: 'Start', about: 'Where a run begins.', ports: ['next'], stop: true, input: false },
+    end: { name: 'End', about: 'Where a run finishes.', ports: [], stop: true },
+    step: { name: 'Step', about: 'Any work you draw on the board yourself: paths, holds, templates.', ports: ['next'], work: true },
+    dispense: { name: 'Dispense', about: 'Pulls a new droplet out of a reservoir.', ports: ['next'], work: true },
+    move: { name: 'Move', about: 'Moves a droplet along a path you draw.', ports: ['next'], work: true },
+    mix: { name: 'Mix', about: 'Mixes one droplet in place (circle, back and forth, split & merge).', ports: ['next'], work: true },
+    merge: { name: 'Merge', about: 'Two droplets become one: their lanes end here.', ports: ['next'], work: true },
+    split: { name: 'Split', about: 'One droplet becomes two.', ports: ['next'], work: true },
+    wait: { name: 'Wait', about: 'Holds the droplets where they are for a set time.', ports: ['next'], work: true },
+    measure: { name: 'Measure', about: 'The run stops and asks you for a measured value.', ports: ['next'], stop: true },
+    ask: { name: 'Ask', about: 'The run stops and asks you a question: yes or no, or a number.', ports: ['next'], stop: true },
+    decision: { name: 'Decision', about: 'Goes the yes or the no way, by a measured or asked value.', ports: ['yes', 'no'], stop: true },
+    repeat: { name: 'Repeat', about: 'Goes round what follows “again” a number of times, then on by “done”.', ports: ['again', 'done'], stop: true },
+    parallel: { name: 'Parallel', about: 'Splits the way into lanes that run at the same time, on one board.', ports: null },
+    join: { name: 'Wait for all', about: 'Waits until every lane has finished; the droplets stay apart.', ports: ['next'] },
   };
-  // How they are listed in the palette.
-  const PALETTE = ['step', 'dispense', 'move', 'mix', 'merge', 'split', 'wait', 'measure', 'ask', 'decision', 'repeat', 'parallel', 'join', 'start', 'end'];
+  // How they are listed in the palette, in groups.
+  const PALETTE_GROUPS = [
+    { name: 'On the board', kinds: ['step', 'dispense', 'move', 'mix', 'merge', 'split', 'wait'] },
+    { name: 'Measure and decide', kinds: ['measure', 'ask', 'decision', 'repeat'] },
+    { name: 'Lanes', kinds: ['parallel', 'join'] },
+    { name: 'Start and end', kinds: ['start', 'end'] },
+  ];
+  const PALETTE = PALETTE_GROUPS.flatMap((group) => group.kinds);
   const OPS = { '<': '<', '<=': '≤', '>': '>', '>=': '≥', '=': '=', '!=': '≠', is: 'is' };
   const MAX_LANES = 6;
+
+  // A tile's size on the canvas, [width, height] in units; x and y are its centre.
+  const SIZE = { start: [120, 40], end: [120, 40], decision: [190, 84], repeat: [170, 52], parallel: [230, 20], join: [230, 20] };
+  const sizeOf = (t) => (SIZE[t.kind] || [210, 60]).slice();
 
   const isTile = (t) => Boolean(t && typeof t === 'object' && KINDS[t.kind] && typeof t.id === 'string');
   const lanesOf = (t) => Math.min(MAX_LANES, Math.max(2, Number.isInteger(t.lanes) ? t.lanes : 2));
@@ -42,6 +55,17 @@
   const hasWork = (t) => Boolean(KINDS[t.kind].work);
   const takesInput = (t) => KINDS[t.kind].input !== false;
   const portName = (port) => (/^lane\d+$/.test(port) ? `lane ${port.slice(4)}` : port);
+  // Tiles where lanes end and that wait for all of them: a join, and a merge (one lane per droplet).
+  const endsLanes = (t) => t.kind === 'join' || t.kind === 'merge';
+
+  // How many input points a tile shows: none on Start; on a merge or join one per arrow coming in
+  // (counted in `process` when given), and at least two; one on everything else.
+  function inputsOf(tile, process = null) {
+    if (!takesInput(tile)) return 0;
+    if (!endsLanes(tile)) return 1;
+    const arrows = process ? process.links.filter((l) => l.to === tile.id).length : 0;
+    return Math.max(2, arrows);
+  }
 
   function emptyProcess() {
     return { tiles: [], links: [] };
@@ -190,8 +214,8 @@
 
   // Stretches: the steps between two stops, each with one board and timeline. A stretch starts at
   // a step that comes after a stop, that an arrow comes back up to, that is reached from two places
-  // (a join only when its lanes come from different stretches), or that nothing leads to. It takes
-  // in what follows without passing a stop or another stretch's start. Returns
+  // (a join or merge only when its lanes come from different stretches), or that nothing leads
+  // to. It takes in what follows without passing a stop or another stretch's start. Returns
   // { of: Map(tile id -> stretch id), list: [{ id, start, tiles }] }; a stretch's id is its first
   // tile's.
   function stretches(process, g = graph(process), back = backLinks(process, g)) {
@@ -200,7 +224,7 @@
       if (isStop(t)) continue;
       const ins = g.into.get(t.id);
       if (!ins.length || ins.some((l) => isStop(g.byId.get(l.from)) || back.has(linkKey(l)))) starts.add(t.id);
-      else if (ins.length > 1 && t.kind !== 'join') starts.add(t.id);
+      else if (ins.length > 1 && !endsLanes(t)) starts.add(t.id);
     }
     let of = new Map();
     for (let again = true; again; ) {
@@ -220,7 +244,7 @@
         }
       }
       for (const t of process.tiles) {
-        if (t.kind !== 'join' || starts.has(t.id) || isStop(t)) continue;
+        if (!endsLanes(t) || starts.has(t.id) || isStop(t)) continue;
         const from = new Set(g.into.get(t.id).map((l) => of.get(l.from)));
         if (from.size !== 1 || from.has(undefined)) {
           starts.add(t.id);
@@ -384,7 +408,7 @@
       else if (!known.get(t.id).has(t.value)) add(t.id, `${t.value} isn't measured before this on every way here: a run will ask for it`);
     }
 
-    // Parallel lanes: they must join again, with no stop on the way.
+    // Parallel lanes: they must end again, in a Wait for all or a Merge, with no stop on the way.
     for (const t of process.tiles) {
       if (t.kind !== 'parallel') continue;
       const lanes = g.out.get(t.id);
@@ -397,7 +421,7 @@
         if (seen.has(id)) return;
         seen.add(id);
         const x = g.byId.get(id);
-        if (x.kind === 'join') {
+        if (endsLanes(x)) {
           joins++;
           return;
         }
@@ -407,16 +431,22 @@
         for (const l of g.out.get(id)) if (!back.has(linkKey(l))) walk(l.to);
       };
       for (const l of lanes) walk(l.to);
-      if (stop) add(t.id, `${KINDS[stop.kind].name} can't be inside parallel lanes: put it after their Join`, 'error');
-      else if (!joins || ended) add(t.id, "Its lanes don't join again: end them in a Join tile", 'error');
+      if (stop) add(t.id, `${KINDS[stop.kind].name} can't be inside parallel lanes: put it after the lanes end, in a Wait for all or a Merge`, 'error');
+      else if (!joins || ended) add(t.id, "Its lanes don't join again: end them in a Wait for all, or in a Merge to put their droplets together", 'error');
     }
-    for (const t of process.tiles) if (t.kind === 'join' && g.into.get(t.id).length < 2) add(t.id, 'Only one lane comes into it');
+    for (const t of process.tiles) {
+      if (t.kind !== 'join') continue;
+      if (g.into.get(t.id).length < 2) add(t.id, 'Only one lane comes into it');
+      // A merge waits for its lanes itself.
+      const next = g.out.get(t.id).map((l) => g.byId.get(l.to));
+      if (next.some((x) => x.kind === 'merge')) add(t.id, "The Merge already waits for its lanes: this Wait for all isn't needed");
+    }
 
     // A stretch leading to two places at once.
     const st = stretches(process, g, back);
     for (const s of st.list) {
       const exits = exitsOf(s, g);
-      if (exits.length > 1) add(s.start, 'This part leads to two places at once: join its lanes first', 'error');
+      if (exits.length > 1) add(s.start, 'This part leads to two places at once: end its lanes first', 'error');
     }
     for (const lp of loops(process, g, back)) if (lp.endless) add(lp.to, 'This loop never ends: nothing leads out of it', 'error');
     return issues;
@@ -424,12 +454,20 @@
 
   // --- layout ----------------------------------------------------------------------------------------
 
-  const COL = 260; // units between columns
-  const ROW = 130; // ... and rows
+  const COL = 250; // a column's step for tiles added by hand (tidy measures its own)
+  const ROW = 100; // ... and a row's
+  const GAP_X = 40; // units between the widest tiles of two columns
+  const GAP_Y = 38; // ... and between the tallest tiles of two rows
+  // How far a loop's dashed outline reaches beyond its tiles (the view draws it so, its label on
+  // top), and how far tidy keeps it from the tiles around it.
+  const LOOP = { top: 34, bottom: 16, left: 18, right: 58, clear: 22 };
 
   // A tidy top-down layout: a tile goes one row below the lowest tile leading to it (arrows going
   // back up left out); a tile's later outputs (no, lane 2, ...) go to the columns on the right.
+  // Each row is as tall as its tallest tile and each column as wide as its widest, with short gaps;
+  // around a loop there is room for its outline. x and y are tile centres; the first tile's is 0, 0.
   function tidy(process) {
+    if (!process.tiles.length) return;
     const g = graph(process);
     const back = backLinks(process, g);
     const order = [];
@@ -463,9 +501,47 @@
     };
     for (const id of order) if (!g.into.get(id).filter((l) => !back.has(linkKey(l))).length) place(id, col.size ? right + 1 : 0);
     for (const id of order) place(id, right + 1);
+
+    // Sizes: the tallest tile of each row, the widest of each column.
+    const heights = [];
+    const widths = [];
     for (const t of process.tiles) {
-      t.x = col.get(t.id) * COL;
-      t.y = row.get(t.id) * ROW;
+      const [w, h] = sizeOf(t);
+      const r = row.get(t.id);
+      const c = col.get(t.id);
+      heights[r] = Math.max(heights[r] || 0, h);
+      widths[c] = Math.max(widths[c] || 0, w);
+    }
+    // Loops: the rows and columns their outlines start and end in.
+    const edges = { top: new Set(), bottom: new Set(), left: new Set(), right: new Set() };
+    for (const lp of loops(process, g, back)) {
+      const rows = lp.tiles.map((id) => row.get(id));
+      const cols = lp.tiles.map((id) => col.get(id));
+      edges.top.add(Math.min(...rows));
+      edges.bottom.add(Math.max(...rows));
+      edges.left.add(Math.min(...cols));
+      edges.right.add(Math.max(...cols));
+    }
+    // The gap after row or column i: the usual one, or more to fit a loop's outline before the next.
+    const gap = (i, usual, end, start, endRoom, startRoom) => {
+      const room = (edges[end].has(i) ? endRoom : 0) + (edges[start].has(i + 1) ? startRoom : 0);
+      return room ? Math.max(usual, room + LOOP.clear) : usual;
+    };
+    const centres = (sizes, gapAfter) => {
+      const out = [];
+      let at = 0;
+      for (let i = 0; i < sizes.length; i++) {
+        const size = sizes[i] || 0;
+        out.push(at + size / 2);
+        at += size + gapAfter(i);
+      }
+      return out.map((x) => Math.round(x - out[0]));
+    };
+    const ys = centres(heights, (i) => gap(i, GAP_Y, 'bottom', 'top', LOOP.bottom, LOOP.top));
+    const xs = centres(widths, (i) => gap(i, GAP_X, 'right', 'left', LOOP.right, LOOP.left));
+    for (const t of process.tiles) {
+      t.x = xs[col.get(t.id)];
+      t.y = ys[row.get(t.id)];
     }
   }
 
@@ -586,8 +662,8 @@
   }
 
   return {
-    KINDS, PALETTE, OPS, MAX_LANES, emptyProcess, isTile, portsOf, portName, lanesOf, isStop, hasWork, takesInput,
-    tileById, addTile, moveTile, removeTile, link, unlink, setLanes, graph, linkKey, backLinks, stretches, exitsOf,
-    conditionText, evaluate, loops, check, tidy, Walk, COL, ROW,
+    KINDS, PALETTE, PALETTE_GROUPS, OPS, MAX_LANES, emptyProcess, isTile, portsOf, portName, lanesOf, isStop, hasWork,
+    takesInput, endsLanes, inputsOf, sizeOf, tileById, addTile, moveTile, removeTile, link, unlink, setLanes, graph,
+    linkKey, backLinks, stretches, exitsOf, conditionText, evaluate, loops, check, tidy, Walk, COL, ROW, GAP_X, GAP_Y, LOOP,
   };
 });

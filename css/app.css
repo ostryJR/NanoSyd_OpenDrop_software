@@ -375,9 +375,44 @@ kbd {
 /* ---- Timing strip ------------------------------------------------------------------------ */
 
 #timing {
+  --timeline-h: 168px; /* the timeline's and the chart's height: drag the edge above to change it */
+  position: relative;
   flex: 0 0 auto;
   padding: 6px 14px 10px;
   border-top: 1px solid var(--line);
+}
+
+/* The timeline's top edge: drag it up or down. */
+#timing-resize {
+  position: absolute;
+  top: -5px;
+  right: 0;
+  left: 0;
+  z-index: 6;
+  height: 9px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+#timing-resize::after {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 44px;
+  height: 3px;
+  margin-left: -22px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.18);
+  content: "";
+}
+
+#timing-resize:hover::after,
+#timing-resize.dragging::after {
+  background: var(--accent);
+}
+
+#timing.minimised #timing-resize {
+  display: none;
 }
 
 .timing-bar {
@@ -510,7 +545,7 @@ kbd {
 
 #chart {
   position: relative;
-  height: 168px; /* the same as the timeline, so switching views moves nothing */
+  height: var(--timeline-h); /* the same as the timeline, so switching views moves nothing */
   margin-top: 6px;
   overflow: hidden;
   border: 1px solid rgba(11, 11, 11, 0.1);
@@ -520,7 +555,7 @@ kbd {
 
 #timeline {
   position: relative;
-  height: 168px;
+  height: var(--timeline-h);
   margin-top: 6px;
   overflow: hidden;
   border: 1px solid rgba(11, 11, 11, 0.1);
@@ -1406,7 +1441,7 @@ body.dragging-template * {
   inset: 0;
   overflow: hidden;
   border-top: 1px solid var(--line);
-  background: #fbfaf6;
+  background-color: #fbfaf6;
 }
 
 .pv-canvas {

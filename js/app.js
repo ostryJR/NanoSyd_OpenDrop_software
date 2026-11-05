@@ -44,10 +44,10 @@
   if (!prefs.device || typeof prefs.device !== 'object' || Array.isArray(prefs.device)) prefs.device = {};
   const savePrefs = () => {
     try {
-      const { timingMin, templatesMin, chart: chartView, tab, device: dev, view: shown } = prefs;
+      const { timingMin, templatesMin, chart: chartView, tab, device: dev, view: shown, timelineHeight } = prefs;
       localStorage.setItem(
         PREFS_KEY,
-        JSON.stringify({ layout: current.id, numbers: showNumbers, lines: showLines, tool: ed.tool, timingMin, templatesMin, chart: chartView, tab, device: dev, view: shown })
+        JSON.stringify({ layout: current.id, numbers: showNumbers, lines: showLines, tool: ed.tool, timingMin, templatesMin, chart: chartView, tab, device: dev, view: shown, timelineHeight })
       );
     } catch {
       // storage unavailable: preferences just aren't kept
@@ -1615,6 +1615,51 @@
     setMinimised('templatesMin', false);
     templatesTab.blur();
   });
+
+  // The timeline's height (the chart's too): drag the panel's top edge, or focus it and use the
+  // arrow keys; double-click it for the usual height. Kept between visits.
+  const resizeEdge = $('timing-resize');
+  resizeEdge.tabIndex = 0;
+  function setTimelineHeight(px) {
+    const max = Math.max(120, Math.round(root.innerHeight * 0.7));
+    const h = Number.isFinite(px) ? Math.round(Math.min(max, Math.max(80, px))) : null;
+    if (h) timingSection.style.setProperty('--timeline-h', `${h}px`);
+    else timingSection.style.removeProperty('--timeline-h');
+    prefs.timelineHeight = h;
+  }
+  const timelineHeight = () => ($('timeline').hidden ? $('chart') : $('timeline')).offsetHeight || 168;
+  let resizing = null;
+  resizeEdge.addEventListener('pointerdown', (evt) => {
+    if (evt.button !== 0) return;
+    evt.preventDefault();
+    resizeEdge.setPointerCapture(evt.pointerId);
+    resizing = { y: evt.clientY, h: timelineHeight() };
+    resizeEdge.classList.add('dragging');
+  });
+  resizeEdge.addEventListener('pointermove', (evt) => {
+    if (resizing) setTimelineHeight(resizing.h + (resizing.y - evt.clientY));
+  });
+  const endResize = () => {
+    if (!resizing) return;
+    resizing = null;
+    resizeEdge.classList.remove('dragging');
+    savePrefs();
+  };
+  resizeEdge.addEventListener('pointerup', endResize);
+  resizeEdge.addEventListener('pointercancel', endResize);
+  resizeEdge.addEventListener('dblclick', () => {
+    setTimelineHeight(null);
+    savePrefs();
+  });
+  resizeEdge.addEventListener('keydown', (evt) => {
+    const step = { ArrowUp: 20, ArrowDown: -20 }[evt.key];
+    if (!step) return;
+    evt.preventDefault();
+    evt.stopPropagation();
+    setTimelineHeight(timelineHeight() + step);
+    savePrefs();
+  });
+  if (Number.isFinite(prefs.timelineHeight)) setTimelineHeight(prefs.timelineHeight);
 
   // Shortcut hints: Cmd on a Mac, Ctrl elsewhere.
   if (!/Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)) {

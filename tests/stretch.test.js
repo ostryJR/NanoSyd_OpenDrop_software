@@ -237,23 +237,43 @@ test('a wait tile adds its hold; the work is kept with the open tile between vis
   assert.equal(ed.seq.lastFrame(), 13);
 });
 
-test('parallel lanes share one board: both dispense at once; after the Join the merge waits for both', () => {
+// Two lanes on one board: each dispenses and moves a droplet; the merge puts them together.
+// `join`: the lanes end in a Wait for all before the merge, else they go straight into it.
+function lanes(join) {
   const ed = new Editor(lay);
   ed.makeProcess();
   const ids = {};
+  const end = join ? 'join' : 'merge';
   ed.processChange((p) => {
     p.tiles = [];
     p.links = [];
     for (const [key, kind, fields] of [
       ['start', 'start'], ['par', 'parallel'], ['dA', 'dispense', { reservoir: 'reservoirLeftTop' }], ['mA', 'move'],
-      ['dB', 'dispense', { reservoir: 'reservoirLeftBottom' }], ['mB', 'move'], ['join', 'join'], ['merge', 'merge'], ['end', 'end'],
+      ['dB', 'dispense', { reservoir: 'reservoirLeftBottom' }], ['mB', 'move'], ...(join ? [['join', 'join']] : []), ['merge', 'merge'], ['end', 'end'],
     ]) ids[key] = P.addTile(p, kind, 0, 0, fields || {}).id;
     for (const [a, port, b] of [
-      ['start', 'next', 'par'], ['par', 'lane1', 'dA'], ['dA', 'next', 'mA'], ['mA', 'next', 'join'],
-      ['par', 'lane2', 'dB'], ['dB', 'next', 'mB'], ['mB', 'next', 'join'], ['join', 'next', 'merge'], ['merge', 'next', 'end'],
+      ['start', 'next', 'par'], ['par', 'lane1', 'dA'], ['dA', 'next', 'mA'], ['mA', 'next', end],
+      ['par', 'lane2', 'dB'], ['dB', 'next', 'mB'], ['mB', 'next', end], ...(join ? [['join', 'next', 'merge']] : []), ['merge', 'next', 'end'],
     ]) P.link(p, ids[a], port, ids[b]);
   });
+  return { ed, ids };
+}
+
+test('parallel lanes share one board: both dispense at once; the lanes go into the merge, which waits for both', () => {
+  const { ed, ids } = lanes(false);
   assert.deepEqual(P.check(ed.doc.process), []);
+  assert.equal(P.inputsOf(P.tileById(ed.doc.process, ids.merge), ed.doc.process), 2);
+  placeLanes(ed, ids);
+});
+
+test('with a Wait for all before the merge it works the same; a hint says it isn’t needed', () => {
+  const { ed, ids } = lanes(true);
+  assert.deepEqual(P.check(ed.doc.process).map((i) => [i.tile, i.level]), [[ids.join, 'warn']]);
+  placeLanes(ed, ids);
+});
+
+// Places the lanes' work, and the merge where both droplets meet: it starts after both lanes end.
+function placeLanes(ed, ids) {
   for (const lane of ['dA', 'dB']) {
     ed.openTile(ids[lane]);
     assert.equal(ed.placeTile().kind, 'added');
@@ -280,4 +300,4 @@ test('parallel lanes share one board: both dispense at once; after the Join the 
   assert.equal(span('merge').from, Math.max(span('mA').to, span('mB').to));
   assert.equal(by('merge').droplet, 'D1 + D2');
   for (const t of Object.values(ids)) assert.deepEqual(info.tile.get(t).problems, [], t);
-});
+}
