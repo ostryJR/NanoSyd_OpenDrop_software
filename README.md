@@ -7,7 +7,8 @@ operations such as mixing or splitting, frame times, and undo. What you draw is 
 **actions** (a path, a template, a dispense, a painted pattern) in a project file, shown in a
 **timeline** under the board, one track per droplet, like a video editor. Actions can be moved and
 reshaped later, and nothing is allowed to make two droplets touch by accident. The frames are
-worked out from the actions and written out on export. It does not talk to the device.
+worked out from the actions and written out on export. In Chrome or Edge it can also drive the
+OpenDrop itself over USB: live, the device shows the frame on screen.
 
 ## Run
 
@@ -45,6 +46,9 @@ file name and download the file instead of showing a save dialog.
 | Dispense a droplet from a reservoir | The four buttons beside the reservoirs (6 frames) |
 | Save / open a project | **save** (⌘S / Ctrl+S) / **load**, top right. **load** also opens OpenDrop `.json` files |
 | Export for the OpenDrop controller | **export**, top right |
+| Connect the OpenDrop (Chrome, Edge) | **connect**, bottom left, or **Connect…** in the Device tab, then pick its port. The dot by the title is green while it answers |
+| Send what is on screen to the device | **live** under play (white when on). Stepping, playing and editing then go straight to the device; live off switches everything on it off |
+| See where the device senses droplets | **feedback** under live (OpenDrop V4.2): dark dots on the board |
 | Show electrode numbers / paths' lines | `N` / `L`, or the checkboxes in the bottom bar |
 | Use another cartridge layout | The Layout menu (all layouts from the original repository) |
 
@@ -163,6 +167,35 @@ touching droplets shows them as problems.
   Changing a template opens it as a pattern that paint edits.
 - Your templates are kept in the browser. **Export…** writes them to a file and **Import…** reads
   one back, to move them to another browser or computer or to share them.
+
+## Connecting the OpenDrop
+
+The app talks to the OpenDrop over USB the way OpenDropController does, with the same buttons where
+it had them, and a **Device** tab for the rest. It needs Chrome or Edge on a computer (Web Serial);
+opening `index.html` from disk is fine. Close OpenDropController first: only one program can use
+the port.
+
+- **connect** (bottom left) or **Connect…** in the Device tab opens the browser's port picker. The
+  board's type is read from the device and shown: V4.1 or V4.2, with magnets or the temperature
+  adapter. For a magnet board the layout switches to the magnet one, and back for a board without,
+  as the original did. **Reconnect automatically** finds the same device again when the page opens
+  or it is plugged back in.
+- **live** (under play): the device shows the frame on screen. Stepping, playing (with each frame's
+  own time: the computer keeps the time), painting, drawing, undo, loading: all go straight to the
+  device. After connecting or reconnecting, live is off and everything on the device is off.
+  Switching live off, **Switch all off**, disconnecting and closing the page switch everything off
+  first. Keep the page in front while playing live: a hidden tab stops playback.
+- **feedback** (V4.2 boards): the device senses where droplets are; dark dots show them on the
+  board and the Device tab counts them.
+- **Temperatures** (temperature adapter): the three readings, and their targets (20–120 °C,
+  25 to start with, as the original), kept between visits.
+- **Sequence on the device:** **Send to device**, **Run** and **Stop** load the whole sequence,
+  with each frame's time, into the device and run it on its own clock, with progress. Today's
+  firmware can't do that: it only follows live frames, so these stay off and say so. The protocol a
+  new firmware would need is written up in `docs/device-protocol.md`, which also describes the
+  live protocol.
+- Without a device: open `index.html#sim` (or `#sim1`, which can also take a whole sequence) and
+  use **Simulated OpenDrop** in the Device tab.
 
 ## Kept between visits
 
@@ -290,7 +323,9 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
 - Dragging draws droplet paths (freehand or straight) that are added when you let go; the original
   drag is the **paint** tool. A click selects; paint switches single electrodes.
 - Undo and redo, templates, and frame times with a chart.
-- Works without a device. The live-control parts (connect, life, feedback, temperatures) are left out.
+- Works without a device too. Its "life" button is **live** here; connecting, feedback and
+  temperatures work as in the original, the temperatures in the Device tab. Connecting lines the
+  byte stream up first, and live, disconnecting and closing switch everything off.
 - Loading replaces the current project; the original merged the file into whatever was on screen.
 - Export doesn't add a second `.json` to the name.
 - Loading skips frames after 200 instead of crashing, and also reads files from controller 3.2.
@@ -307,7 +342,10 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
   how their droplets move,
   `js/model.js` the frames and their times, `js/jsonio.js` the OpenDrop file format, `js/view.js`
   the board, `js/chart.js` the timing chart, `js/timeline.js` the timeline and `js/app.js` the page
-  wiring. All but the last four run without a browser.
+  wiring. `js/device.js` talks to the OpenDrop (bytes, lining up, the session), `js/device-sim.js`
+  is a simulated OpenDrop, `js/serial.js` the Web Serial port and `js/devicepanel.js` the Device
+  tab; see `docs/device-protocol.md`. All but view, chart, timeline, serial, devicepanel and app
+  run without a browser.
 
 ## License
 

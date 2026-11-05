@@ -45,7 +45,7 @@
 
     <aside id="templates" aria-label="Actions and templates">
       <button type="button" id="templates-tab" class="side-tab" aria-expanded="false"
-              title="Show the panel">Properties · Templates</button>
+              title="Show the panel">Properties · Templates · Device</button>
       <div id="panel">
         <div class="panel-head">
           <div class="tabs" role="tablist" aria-label="Panel">
@@ -53,6 +53,8 @@
                     aria-controls="properties">Properties</button>
             <button type="button" role="tab" id="tab-templates" data-tab="templates" aria-selected="false"
                     aria-controls="library">Templates</button>
+            <button type="button" role="tab" id="tab-device" data-tab="device" aria-selected="false"
+                    aria-controls="device">Device <span id="tab-device-dot" class="dot off"></span></button>
           </div>
           <button type="button" id="templates-min" class="panel-toggle" aria-expanded="true"
                   title="Minimise the panel">›</button>
@@ -140,6 +142,64 @@
             <button type="button" id="template-import">Import…</button>
           </div>
         </div>
+
+        <div id="device" role="tabpanel" aria-labelledby="tab-device" hidden>
+          <p id="device-unsupported" class="hint" hidden>This browser can't reach USB devices. Open the
+            page in Chrome or Edge on a computer.</p>
+          <div class="device-head">
+            <span id="device-dot" class="dot off"></span>
+            <div>
+              <h3 id="device-state">Not connected</h3>
+              <p id="device-port" class="info"></p>
+            </div>
+          </div>
+          <div class="row">
+            <button type="button" id="device-connect" class="primary">Connect…</button>
+            <button type="button" id="device-disconnect" hidden>Disconnect</button>
+            <button type="button" id="device-sim" hidden
+                    title="A pretend OpenDrop in this page, for trying things without the device">Simulated OpenDrop</button>
+          </div>
+          <label class="check"><input type="checkbox" id="device-auto"> Reconnect automatically when the page
+            opens or the device is plugged in</label>
+
+          <section class="device-part" id="device-live-part">
+            <h4>Live</h4>
+            <label class="check"><input type="checkbox" id="device-live"> The device shows the frame on screen:
+              stepping, playing and editing go straight to it</label>
+            <div class="row">
+              <button type="button" id="device-alloff" title="Live off, and every electrode off on the device">Switch all off</button>
+            </div>
+          </section>
+
+          <section class="device-part" id="device-feedback-part" hidden>
+            <h4>Feedback</h4>
+            <label class="check"><input type="checkbox" id="device-feedback"> Show where the device senses
+              droplets (dots on the board)</label>
+            <p id="device-sensed" class="info"></p>
+          </section>
+
+          <section class="device-part" id="device-temps-part" hidden>
+            <h4>Temperatures</h4>
+            <table id="device-temps">
+              <thead><tr><th></th><th>Now</th><th>Target</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </section>
+
+          <section class="device-part">
+            <h4>Sequence on the device</h4>
+            <p id="device-seq" class="info"></p>
+            <div class="row">
+              <button type="button" id="device-load">Send to device</button>
+              <button type="button" id="device-run">Run</button>
+              <button type="button" id="device-stop">Stop</button>
+            </div>
+            <p id="device-run-state" class="info"></p>
+            <p id="device-seq-note" class="hint">To run on its own, with each frame's time, the device needs
+              firmware that takes a whole sequence (protocol 1, see docs/device-protocol.md). Today's
+              firmware only follows live frames: use live and play instead.</p>
+          </section>
+        </div>
       </div>
 
       <div id="maker" hidden>
@@ -198,9 +258,13 @@
   <script src="js/project.js"></script>
   <script src="js/editor.js"></script>
   <script src="js/jsonio.js"></script>
+  <script src="js/device.js"></script>
+  <script src="js/device-sim.js"></script>
+  <script src="js/serial.js"></script>
   <script src="js/view.js"></script>
   <script src="js/chart.js"></script>
   <script src="js/timeline.js"></script>
+  <script src="js/devicepanel.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -145,6 +145,8 @@
       this.electrodeLayer = el('g', { class: 'electrodes' }, svg);
       // Droplet paths as lines through their electrodes' centres, and the selected path's points.
       this.lineLayer = el('g', { class: 'lines' }, svg);
+      // Where the device senses a droplet (feedback), as dots.
+      this.sensedLayer = el('g', { class: 'sensed' }, svg);
       this.handleLayer = el('g', { class: 'handles' }, svg);
 
       // The path being drawn: a line through the electrodes' centres, a dot at its start and
@@ -172,6 +174,25 @@
       box(34, 10); // clear all
       this.reservoirButtons = el('g', {}, controls);
       for (const [u, v] of [[28, -6], [28, 4], [-30, -6], [-30, 4]]) box(u, v, this.reservoirButtons);
+
+      // The device, where OpenDropController had it: live and feedback under play (white when
+      // on; feedback only for boards that have it), connect at the bottom left, and a dot by the
+      // title: gray = not connected, amber = connecting, green = answering, red = not answering.
+      // A hover tip over a box and its label (w grid units wide).
+      const tip = (u, v, w, parent) => el('title', {}, el('rect', { class: 'hit', x: px(u), y: py(v), width: G.UNIT * w, height: G.UNIT * 2 }, parent));
+      this.liveBox = box(34, -6);
+      label('live', 37, -4.5, controls);
+      tip(34, -6, 6, controls).textContent = 'Live: the device shows the frame on screen, so stepping, playing and editing go straight to it';
+      this.feedbackGroup = el('g', {}, controls);
+      this.feedbackBox = box(34, -3, this.feedbackGroup);
+      label('feedback', 37, -1.5, this.feedbackGroup);
+      tip(34, -3, 9, this.feedbackGroup).textContent = 'Show where the device senses droplets';
+      this.connectBox = box(-43.5, 14.5);
+      this.connectLabel = label('connect', -41, 16, controls);
+      this.connectTip = tip(-43.5, 14.5, 12, controls);
+      this.deviceDot = el('circle', { class: 'device-dot', cx: px(-44.5), cy: py(-18.5), r: BOX / 4 }, controls);
+      this.deviceTip = el('title', {}, this.deviceDot);
+      this.deviceKey = '';
 
       // On the left: the drag tool switch (the chosen tool's box is white) and undo/redo, each
       // label right-aligned against its box.
@@ -239,7 +260,32 @@
       return flow(frames, this.graph).map((m) => [[px(m.from.x), py(m.from.y)], [px(m.to.x), py(m.to.y)], m.both]);
     }
 
-    render(ed, { numbers = false, lines = true } = {}) {
+    // device: { state ('off', 'connecting', 'on', 'silent'), live, feedback, canFeedback, name,
+    // sensed (electrodes) } or null.
+    renderDevice(device) {
+      const d = device || { state: 'off' };
+      const key = JSON.stringify([d.state, d.live, d.feedback, d.canFeedback, d.name, d.sensed]);
+      if (key === this.deviceKey) return;
+      this.deviceKey = key;
+      const on = d.state === 'on' || d.state === 'silent';
+      this.liveBox.setAttribute('fill', d.live ? COLOR.active : COLOR.button);
+      this.feedbackGroup.style.display = on && d.canFeedback ? '' : 'none';
+      this.feedbackBox.setAttribute('fill', d.feedback ? COLOR.active : COLOR.button);
+      this.connectBox.setAttribute('fill', on ? COLOR.active : COLOR.button);
+      this.connectLabel.textContent = d.state === 'connecting' ? 'connecting…' : on ? 'disconnect' : 'connect';
+      this.connectTip.textContent = on ? 'Disconnect the OpenDrop (everything is switched off first)' : 'Connect the OpenDrop over USB (Chrome or Edge)';
+      this.deviceDot.setAttribute('class', `device-dot ${d.state}`);
+      const states = { off: 'Not connected', connecting: 'Connecting…', on: d.name || 'Connected', silent: `${d.name || 'The device'} is not answering` };
+      this.deviceTip.textContent = states[d.state] || '';
+      this.sensedLayer.replaceChildren();
+      for (const e of d.sensed || []) {
+        const c = this.at(e);
+        if (c) el('circle', { cx: c[0], cy: c[1], r: 11 }, this.sensedLayer);
+      }
+    }
+
+    render(ed, { numbers = false, lines = true, device = null } = {}) {
+      this.renderDevice(device);
       const shown = ed.shown;
       const { seq } = shown;
       const { frame } = ed;

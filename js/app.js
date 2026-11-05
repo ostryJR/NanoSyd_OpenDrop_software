@@ -8,6 +8,7 @@
   const { BoardView, dropletColour } = root.OD.view;
   const { TimingChart, formatTime } = root.OD.chart;
   const { Timeline } = root.OD.timeline;
+  const { DevicePanel } = root.OD.devicePanel;
   const G = layout.GEOMETRY;
   const $ = (id) => document.getElementById(id);
 
@@ -27,20 +28,21 @@
     }
   }
 
-  // Layout, overlays, drag tool, minimised panels, panel tab and chart view are remembered
-  // between visits.
+  // Layout, overlays, drag tool, minimised panels, panel tab, chart view and the device settings
+  // (reconnecting, the port, temperature targets) are remembered between visits.
   const PREFS_KEY = 'opendrop-generator.prefs';
   const stored = readStored(PREFS_KEY, {});
   const prefs = {
     timingMin: false, templatesMin: false, chart: 'timeline', lines: true, tab: 'properties',
     ...(stored && typeof stored === 'object' ? stored : {}),
   };
+  if (!prefs.device || typeof prefs.device !== 'object' || Array.isArray(prefs.device)) prefs.device = {};
   const savePrefs = () => {
     try {
-      const { timingMin, templatesMin, chart: view, tab } = prefs;
+      const { timingMin, templatesMin, chart: view, tab, device: dev } = prefs;
       localStorage.setItem(
         PREFS_KEY,
-        JSON.stringify({ layout: current.id, numbers: showNumbers, lines: showLines, tool: ed.tool, timingMin, templatesMin, chart: view, tab })
+        JSON.stringify({ layout: current.id, numbers: showNumbers, lines: showLines, tool: ed.tool, timingMin, templatesMin, chart: view, tab, device: dev })
       );
     } catch {
       // storage unavailable: preferences just aren't kept
@@ -56,6 +58,7 @@
   ed.setTool(prefs.tool);
   const board = new BoardView(svg, 'assets/OpenDropFrame.png');
   board.setLayout(current);
+  let device = null; // the Device tab and the board's device boxes, set up at the end
 
   function setStatus(text, kind = 'info') {
     statusText.textContent = text;
@@ -105,11 +108,12 @@
   }
 
   function paint() {
-    board.render(ed, { numbers: showNumbers, lines: showLines });
+    board.render(ed, { numbers: showNumbers, lines: showLines, device: device && device.boardState() });
     if (ed.draft && ed.draft.moved) showDraft(ed.draft);
     showTiming();
     showProperties();
     if (ed.makingTemplate) showMakerInfo();
+    if (device) device.paint(); // live: the frame on screen goes to the device
     noteWork();
   }
 
@@ -140,7 +144,13 @@
     return { mx: (p.x - G.CX) / G.UNIT, my: (p.y - G.CY) / G.UNIT };
   }
 
-  const DIALOGS = { save: () => save(), load: () => fileInput.click(), export: () => exportFrames() };
+  // Actions that open a browser dialog (a file, or the USB port picker for connect).
+  const DIALOGS = {
+    save: () => save(),
+    load: () => fileInput.click(),
+    export: () => exportFrames(),
+    connect: () => device.action('connect'),
+  };
   let pendingDialog = null;
   const MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 
@@ -156,6 +166,8 @@
       // a touch only once the finger lifts.
       if (evt.pointerType === 'mouse') DIALOGS[action]();
       else pendingDialog = action;
+    } else if (action === 'live' || action === 'feedback') {
+      device.action(action);
     } else if (action === 'undo' || action === 'redo') {
       clearDraftStatus('');
     } else if (action && action.startsWith('tool')) {
@@ -1373,10 +1385,11 @@
 
   const tabButtons = [...document.querySelectorAll('#panel [role="tab"]')];
   function setTab(tab) {
-    prefs.tab = tab === 'templates' ? 'templates' : 'properties';
+    prefs.tab = ['templates', 'device'].includes(tab) ? tab : 'properties';
     for (const b of tabButtons) b.setAttribute('aria-selected', String(b.dataset.tab === prefs.tab));
     $('properties').hidden = prefs.tab !== 'properties';
     library.hidden = prefs.tab !== 'templates';
+    $('device').hidden = prefs.tab !== 'device';
     savePrefs();
   }
   for (const b of tabButtons) {
@@ -1543,11 +1556,29 @@
     if (document.visibilityState === 'hidden') keepWork();
   });
 
+  // --- the device --------------------------------------------------------------------------
+  // Connecting the OpenDrop over USB (Chrome, Edge): see js/devicepanel.js and js/device.js.
+
+  device = new DevicePanel({
+    editor: ed,
+    setStatus,
+    redraw,
+    prefs: prefs.device,
+    savePrefs,
+    layoutId: () => current.id,
+    useLayout: (id) => {
+      switchLayout(layout.getLayout(id));
+      redraw();
+    },
+    formatTime,
+  });
+  addEventListener('pagehide', () => device.leave());
+
   renderTemplates();
   restoreWork();
   applyPanels();
   setChartView(prefs.chart);
   setTab(prefs.tab);
-  root.OD.app = { editor: ed, board, chart, timeline, redraw, save, exportFrames, templates: () => myTemplates }; // for the console
+  root.OD.app = { editor: ed, board, chart, timeline, redraw, save, exportFrames, templates: () => myTemplates, device }; // for the console
   paint(); // the first picture straight away, not at the next animation frame
 })(globalThis);

@@ -40,6 +40,12 @@
     { action: 'reservoirRightBottom', x: 28, y: 4, w: 2, h: 2, reservoir: true },
     { action: 'reservoirLeftTop', x: -30, y: -6, w: 2, h: 2, reservoir: true },
     { action: 'reservoirLeftBottom', x: -30, y: 4, w: 2, h: 2, reservoir: true },
+    // The device, where OpenDropController had its buttons: live (its "life": the device shows
+    // the frame on screen), feedback (V4.2 boards) and connect (its "reconnect"). The page
+    // handles these; the editor only reports them.
+    { action: 'live', x: 34, y: -6, w: 6, h: 2, device: true },
+    { action: 'feedback', x: 34, y: -3, w: 9, h: 2, device: true },
+    { action: 'connect', x: -43.5, y: 14.5, w: 12, h: 2, device: true },
     // New on the left: what a drag does, and undo/redo. The label comes first and the box (at
     // box, y) sits on the side facing the array, mirroring the right-hand buttons. The label is
     // clickable too.

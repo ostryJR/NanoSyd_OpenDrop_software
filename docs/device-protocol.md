@@ -1,0 +1,166 @@
+# Talking to the OpenDrop over USB
+
+How OpenDrop Generator talks to an OpenDrop V4 from the browser (Web Serial, Chrome or Edge), and
+a proposal for firmware that can take a whole sequence. The first part is what today's firmware
+does: it was read from GaudiLabs' `OpenDropController4_25.pde` (`transmit()`) and
+`OpenDropV4/Software/OpenDropV42/OpenDropV42.ino` (`loop()`). Nothing in the firmware was changed.
+
+The code is in `js/device.js` (bytes, lining up, the session), `js/serial.js` (Web Serial) and
+`js/device-sim.js` (a simulated device that counts bytes the way the firmware does).
+
+## Today's protocol
+
+The OpenDrop is a USB serial device. The original controller opens it at **115200 baud**. There is
+no start marker, no command byte and no checksum: the firmware counts incoming bytes, and on every
+32nd byte it drives the electrodes and answers with 24 bytes. The PC drives the timing: the device
+holds what it was last sent until the next packet comes.
+
+### PC → device: 32 bytes
+
+| Byte | Meaning |
+|---|---|
+| 0–15 | Electrode columns 0–15: one byte per column, bit r = row r (electrode e = column × 8 + row) |
+| 16 | Control lines, electrodes 128–135. The V4.2 firmware reads bit 0x2 as magnet 1 (electrode 129) and 0x1 as magnet 2 (electrode 128) |
+| 17 | Electrodes 136–143 (not used by the V4.2 firmware) |
+| 18–23 | 0 |
+| 24 | Feedback: 1 = sense where droplets are (V4.2) |
+| 25 | 0 |
+| 26–28 | Temperature targets T1–T3 in °C, for the temperature adapter. The original sends 25 unless they are set (20–120) |
+| 29–31 | 0 |
+
+In the firmware, bytes 16–31 are `ControlBytesIn[0..15]`; the controller sends bytes 18–31 as
+`control_data_out[0..13]`.
+
+### Device → PC: 24 bytes
+
+| Byte | Meaning |
+|---|---|
+| 0–15 | Sensed electrodes per column (with feedback on): **bit b = row 7 − b** (the other way round from the PC's bytes) |
+| 16 | 0 (used for the protocol version below) |
+| 17–18 | T1 = byte 17 / 100 + byte 18 (°C); 150 or more means there is no sensor |
+| 19–20 | T2, the same way |
+| 21–22 | T3, the same way |
+| 23 | Board ID: high four bits the OpenDrop version (0 = V4.1, 1 = V4.2), low four bits the adapter (0 = none, 1 = magnet, 2 = magnet and temperature) |
+
+So the IDs the original controller knows are 0x00 (V4.1), 0x01 (V4.1, magnet), 0x10 (V4.2), 0x11 (V4.2,
+magnet) and 0x12 (V4.2, magnet and temperature adapter). It switches between the `electrodes` and
+`electrodes_magnet` layouts by it; so does this app (only between those two).
+
+### Start-up
+
+When the board starts, it prints its ID as a line of text, then after about two seconds
+"Welcome to OpenDrop", before it reads anything. Bytes that arrive meanwhile wait in its USB
+buffer. This app drops that text.
+
+### Lining the byte stream up
+
+Because the device only counts bytes, a packet cut short (a program closed while writing, a serial
+monitor) leaves it out of step: every later packet would be read from the wrong byte on, and the
+answers wouldn't show it, because they don't repeat the frame. So on connecting, this app:
+
+1. Sends 31 zero bytes and waits 150 ms. If the device answers, it was part-way through a packet,
+   which those bytes completed; it is now one byte nearer the start of a packet than before.
+   Repeat.
+2. If it doesn't answer, it was at the start of a packet and now needs one more byte. Send one
+   zero byte: it answers.
+3. Steps 1–2 must come out that way twice in a row, so an answer that came late can't fool it.
+4. If the device doesn't answer at all, it may still be starting: wait 2.5 s and try once more.
+
+The packets it completes are all zeros: everything off. A device that stops answering later (500 ms
+without an answer) is lined up again the same way.
+
+### What this app sends, and when
+
+- **On connecting:** live is off, so the device gets an all-off frame.
+- **Live on:** the frame on screen, whenever its bytes change (stepping, playing, painting,
+  editing, undo, loading). One packet is in flight at a time; while one waits for its answer, only
+  the newest frame waits behind it. Frame times are kept by the PC: playing holds each frame for
+  its own time.
+- **Live off, Switch all off, Disconnect:** an all-off frame first.
+- **Polling:** every second (every 300 ms with feedback on), it sends again what the device should
+  have: the frame on screen when live, all off otherwise. That keeps the temperatures, feedback and
+  connection state fresh.
+- **Closing or reloading the page:** an all-off frame, if there is time to send it.
+
+## Protocol 1 (proposed, for new firmware)
+
+Today's firmware can't run anything on its own: the PC sends every frame. Protocol 1 lets the PC
+load a whole sequence, with each frame's time, and the device run it on its own clock. It keeps
+today's framing, so the same app works with both.
+
+### Telling the versions apart
+
+Byte 16 of every answer is the **protocol version**: 0 for today's firmware, 1 for this. The
+browser only sends the commands below to a device that answered with 1 or more. Old firmware would
+take them for electrode data.
+
+### Commands
+
+A command is a 32-byte packet like a frame, with the **command in byte 31**: 0 = a frame to show
+(as today), 1 = load a sequence, 2 = run it, 3 = stop, 4 = status. For commands 1–4 the electrode
+bytes are ignored; feedback and the temperature targets (bytes 24–28) apply as for a frame.
+
+A frame (command 0) is answered with 24 bytes, as today. Commands 1–4 are answered with 32 bytes:
+the usual 24, then:
+
+| Byte | Meaning |
+|---|---|
+| 24 | Result: 0 ok, 1 bad checksum, 2 too long, 3 busy (running), 4 unknown command, 5 nothing loaded |
+| 25 | State: 0 idle, 1 running, 2 done |
+| 26 | The frame running now (1–200), 0 when not running |
+| 27 | Frames stored |
+| 28–29 | Checksum of the stored sequence (little-endian), 0 if none |
+| 30–31 | 0 |
+
+### Load (command 1)
+
+Straight after the command packet comes the sequence block. The device answers once it has all of
+it (or as soon as the header says it is too long):
+
+| Bytes | Meaning |
+|---|---|
+| 0–1 | "OD" (0x4F 0x44) |
+| 2 | Format: 1 |
+| 3 | N, the number of frames (1–200) |
+| 4 … | N frames of 22 bytes: the 18 electrode bytes of a packet (columns 0–17, bit r = row r), then the frame's time in ms (uint32, little-endian) |
+| last 2 | CRC-16/CCITT-FALSE (polynomial 0x1021, start 0xFFFF, no reflection) of everything before, little-endian |
+
+At most 4 + 200 × 22 + 2 = 4406 bytes. "123456789" gives the CRC 0x29B1. The device keeps the
+sequence (in RAM is enough: 4.4 kB) and answers with result 0, frames stored and the checksum. The
+browser checks both before it lets you run it.
+
+### Run (2), stop (3), status (4)
+
+- **Run:** shows frame 1 and holds it for its time, then frame 2, and so on, on the device's own
+  clock. After the last frame it switches everything off and its state is "done".
+- **While running:** frames (command 0) are ignored (answered as usual); load answers "busy".
+- **Stop:** ends a run and switches everything off.
+- **Status:** just the answer. The browser asks every 500 ms while a run goes on, to show "frame n
+  of N".
+
+### Firmware sketch
+
+On top of today's `loop()`:
+
+```text
+on the 32nd byte of a packet:
+  command = ControlBytesIn[15]
+  feedback, temperature targets as today
+  if command == 0: if not running: drive the frame as today. Answer 24 bytes (byte 16 = 1).
+  if command == 1: if running: answer busy; else the next bytes are a block: read 4, check
+                   "OD", format 1, N <= 200 (else answer "too long" and go back to packets);
+                   read the rest, check the CRC, keep it, answer.
+  if command == 2: if nothing loaded: answer "nothing loaded"; else start at frame 1, answer.
+  if command == 3: stop, drive all off, answer.
+  if command == 4: answer.
+while running: when the frame's time is up, drive the next one; after the last, all off, "done".
+```
+
+Use `millis()` for the timing rather than `delay()`, so packets keep being read during a run.
+
+## Trying it without the device
+
+Open `index.html#sim` (or `#sim1` for protocol 1): the Device tab then has **Simulated OpenDrop**.
+It counts bytes the way the firmware does, answers as a V4.2 board with magnets and the temperature
+adapter, reports the electrodes that are on as sensed, and with protocol 1 runs loaded sequences.
+`tests/device.test.js` uses it too.
