@@ -181,14 +181,24 @@ test('tidy: room above a loop for its outline and label, and below it', () => {
   assert.ok(top - above <= 70, 'but not much more');
 });
 
+test('tidy: Start and what follows it take the first column; a tile nothing leads to goes right', () => {
+  // B is added first and leads into the merge too, but only A comes from Start.
+  const { p, id } = build([['step', { name: 'B' }], ['start'], ['step', { name: 'A' }], ['merge'], ['end']], ['2>3', '3>4', '1>4', '4>5']);
+  P.tidy(p);
+  const t = (n) => P.tileById(p, id(n));
+  assert.deepEqual([2, 3, 4, 5].map((n) => t(n).x), [0, 0, 0, 0], 'Start, A, the merge and End in one column');
+  assert.ok(t(1).x > 0, 'B to the right');
+  assert.equal(t(1).y, t(3).y, 'B just above the merge, beside A, not up by Start');
+});
+
 test('tile sizes: Start and End small, a decision tall, parallel and Wait for all thin bars', () => {
   const sizes = Object.fromEntries(Object.keys(P.KINDS).map((k) => [k, P.sizeOf({ kind: k })]));
   assert.deepEqual(sizes.start, [120, 40]);
   assert.deepEqual(sizes.end, [120, 40]);
   assert.deepEqual(sizes.decision, [190, 84]);
   assert.deepEqual(sizes.repeat, [170, 52]);
-  assert.deepEqual(sizes.parallel, [230, 20]);
-  assert.deepEqual(sizes.join, [230, 20]);
+  assert.deepEqual(sizes.parallel, [230, 24]);
+  assert.deepEqual(sizes.join, [230, 24]);
   for (const k of ['step', 'dispense', 'move', 'mix', 'merge', 'split', 'wait', 'measure', 'ask']) assert.deepEqual(sizes[k], [210, 60], k);
 });
 

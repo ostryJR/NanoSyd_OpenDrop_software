@@ -1574,7 +1574,10 @@ body.dragging-template * {
   font-size: 11px;
 }
 
+/* Parallel and Wait for all: their name on the bar. */
 .pv-canvas .pv-bar-label {
+  fill: #fff;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -1715,6 +1718,16 @@ body.dragging-template * {
   fill: #1f6feb;
 }
 
+/* Small labels by lines (an output's name, a loop's condition): a halo of the background round
+   them, so a line or a frame edge going past doesn't run through the letters. */
+.pv-canvas .pv-port-label,
+.pv-canvas .pv-loop-label {
+  paint-order: stroke;
+  stroke: #fbfaf6;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
 .pv-canvas .pv-port-label {
   fill: #555;
   font-size: 11px;
@@ -1742,6 +1755,11 @@ body.dragging-template * {
   stroke: #1f6feb;
   stroke-dasharray: 5 4;
   stroke-width: 2;
+}
+
+.pv-rubber-tip {
+  fill: #1f6feb;
+  pointer-events: none;
 }
 
 .pv-ghost {

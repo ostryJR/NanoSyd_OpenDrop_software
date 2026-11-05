@@ -73,16 +73,27 @@
     return t;
   }
 
-  // Where a tile's output ports are, relative to its centre: at the bottom, except a decision's
-  // "no" and a repeat's "done", which go out on the right.
-  function portAt(t, port) {
+  // Where a tile's output ports are, relative to its centre: at the bottom, except a decision's or
+  // a repeat's `side` output (see sidePort), which goes out on the right.
+  function portAt(t, port, side = sidePort(t)) {
     const [w, h] = sizeOf(t);
-    if ((t.kind === 'decision' && port === 'no') || (t.kind === 'repeat' && port === 'done')) return [w / 2, 0];
-    const ports = P.portsOf(t).filter((p) => !((t.kind === 'decision' && p === 'no') || (t.kind === 'repeat' && p === 'done')));
+    if (side && port === side) return [w / 2, 0];
+    const ports = P.portsOf(t).filter((p) => p !== side);
     const i = ports.indexOf(port);
     const n = ports.length;
     const gap = Math.min(70, (w - 20) / Math.max(1, n));
     return [(i - (n - 1) / 2) * gap, h / 2];
+  }
+
+  // Which output of a decision or a repeat goes out on the right side, the other going out at the
+  // bottom: "no" or "done"; but "yes" or "again" when only that one goes back up (`back`: the keys
+  // of the arrows going back up), so a loop's arrow leaves on the side and the way on goes down.
+  function sidePort(t, links = null, back = null) {
+    if (t.kind !== 'decision' && t.kind !== 'repeat') return null;
+    const [first, second] = P.portsOf(t);
+    if (!links || !back) return second;
+    const up = (port) => links.some((l) => l.from === t.id && l.port === port && back.has(P.linkKey(l)));
+    return up(first) && !up(second) ? first : second;
   }
 
   // What a tile shows under its name.
@@ -135,6 +146,8 @@
       this.drag = null;
       this.renderKey = '';
       this.wires = []; // the arrows as drawn: [{ link, path }], to find the one under a dragged tile
+      this.back = new Set(); // as last drawn: the keys of the arrows going back up (loops)...
+      this.sides = new Map(); // ... and tile id -> its output going out on the right (see sidePort)
       this.space = false; // Space held: dragging pans
 
       this.palette = document.createElement('div');
@@ -292,32 +305,45 @@
       return this.selectedIds().includes(id);
     }
 
-    // Each tile's input points and which arrow ends at which: Map(id -> { n, pts, of: Map(arrow
-    // key -> point) }). Arrows take a tile's points left to right by where they come from; `extra`
-    // is an arrow being drawn, counted in for its target.
+    // Where output `port` of tile t is, relative to its centre, as drawn.
+    portOf(t, port) {
+      return portAt(t, port, this.sides.has(t.id) ? this.sides.get(t.id) : sidePort(t));
+    }
+
+    // Whether the arrow from tile t's output `port` to tile `to` goes back up: a loop's, or one
+    // into a tile placed higher than the output. It comes into the tile's side. (`drawn`: a new
+    // arrow being drawn from that output, not the one it has now.)
+    goesUp(t, port, to, drawn = false) {
+      if (!drawn && this.back.has(P.linkKey({ from: t.id, port }))) return true;
+      const [, sy] = this.posOf(t);
+      const [, ty] = this.posOf(to);
+      return ty - sizeOf(to)[1] / 2 < sy + this.portOf(t, port)[1] + 12;
+    }
+
+    // Each tile's input points on top and which arrow ends at which: Map(id -> { n, pts, of:
+    // Map(arrow key -> point) }). Arrows take a tile's points left to right by where they come
+    // from; arrows going back up come into its side instead. `extra` is an arrow being drawn,
+    // counted in for its target.
     inputLayouts(p, g, extra = null) {
       const out = new Map();
       for (const t of p.tiles) {
-        let ins = g.into.get(t.id);
-        let proc = p;
-        if (extra && extra.to === t.id) {
-          ins = [...ins.filter((l) => !(l.from === extra.from && l.port === extra.port)), extra];
-          proc = { ...p, links: [...p.links.filter((l) => !(l.from === extra.from && l.port === extra.port)), extra] };
-        }
-        out.set(t.id, this.inputLayout(t, ins, proc, g.byId));
+        let ins = g.into.get(t.id).filter((l) => !this.goesUp(g.byId.get(l.from), l.port, t));
+        if (extra && extra.to === t.id) ins = [...ins.filter((l) => !(l.from === extra.from && l.port === extra.port)), extra];
+        out.set(t.id, this.inputLayout(t, ins, g.byId));
       }
       return out;
     }
 
-    inputLayout(t, ins, proc, byId) {
-      const n = P.inputsOf(t, proc);
+    // One tile's input points (ins: the arrows coming in on top).
+    inputLayout(t, ins, byId) {
+      const n = P.inputsOf(t, { links: ins });
       const pts = Array.from({ length: n }, (_, i) => inAt(t, i, n));
       const of = new Map();
       const [tx] = this.posOf(t);
       const from = ins
         .map((l) => {
           const s = byId.get(l.from);
-          return { key: P.linkKey(l), x: this.posOf(s)[0] + portAt(s, l.port)[0], y: this.posOf(s)[1] };
+          return { key: P.linkKey(l), x: this.posOf(s)[0] + this.portOf(s, l.port)[0], y: this.posOf(s)[1] };
         })
         .sort((a, b) => a.x - b.x || a.y - b.y || (a.key < b.key ? -1 : 1));
       const k = from.length;
@@ -334,6 +360,51 @@
         prev = best;
       });
       return { n, pts, of };
+    }
+
+    // How the arrow from tile t's output `port` to tile `to` goes: { d, tip, dir, up, onSide, at },
+    // `at` being the input point it ends on, relative to the tile's centre. Going down it ends on
+    // its point on top (in `ins`, from inputLayouts). Going back up it goes round the right of the
+    // loop (`loops`: arrow key -> { right, left }, the x to go up at) into the tile's right side;
+    // round the left into its left side when the tile has an output on its right (a decision, a
+    // repeat), or when a tile is in its way and none is on the left. An arrow leaving on the right
+    // always goes round the right; into a tile with an output there too, over the top. (`drawn`:
+    // a new arrow being drawn, see goesUp.)
+    route(t, port, to, ins, loops, drawn = false) {
+      const [fx, fy] = this.posOf(t);
+      const [ox, oy] = this.portOf(t, port);
+      const sx = fx + ox;
+      const sy = fy + oy;
+      const side = ox !== 0 && oy === 0;
+      const [tx, ty] = this.posOf(to);
+      const [tw, th] = sizeOf(to);
+      const key = P.linkKey({ from: t.id, port });
+      if (!this.goesUp(t, port, to, drawn)) {
+        const lay = ins.get(to.id);
+        const [ix, iy] = (lay && lay.pts[lay.of.get(key)]) || [0, -th / 2];
+        return { ...downArrow(sx, sy, side, tx + ix, ty + iy), up: false, onSide: false, at: [ix, iy] };
+      }
+      const loop = loops.get(key);
+      const rightAt = Math.max(loop ? loop.right : -Infinity, sx + 30, tx + tw / 2 + 30);
+      const leftAt = Math.min(loop ? loop.left : Infinity, tx - tw / 2 - 24, sx - 40);
+      const sidePorted = to.kind === 'decision' || to.kind === 'repeat';
+      if (side && sidePorted) return { ...overArrow(sx, sy, tx, ty - th / 2, rightAt), up: true, onSide: false, at: [0, -th / 2] };
+      // Another tile in the way, on the tile's row between it and x0..x1.
+      const blocked = (x0, x1) =>
+        this.process.tiles.some((o) => {
+          if (o.id === to.id || o.id === t.id) return false;
+          const [ow, oh] = sizeOf(o);
+          const [cx, cy] = this.posOf(o);
+          return cx + ow / 2 > x0 && cx - ow / 2 < x1 && Math.abs(cy - ty) < oh / 2 + 8;
+        });
+      let left = !side && sidePorted;
+      if (!side) {
+        const rightFree = !blocked(tx + tw / 2, rightAt);
+        const leftFree = !blocked(leftAt, tx - tw / 2);
+        if (left ? !leftFree && rightFree : !rightFree && leftFree) left = !left;
+      }
+      const ex = left ? tx - tw / 2 : tx + tw / 2;
+      return { ...upArrow(sx, sy, side, ex, ty, left ? leftAt : rightAt, left), up: true, onSide: true, at: [ex - tx, 0] };
     }
 
     // --- drawing ----------------------------------------------------------------------------------
@@ -356,13 +427,14 @@
       this.svg.replaceChildren();
       const g = P.graph(p);
       const back = P.backLinks(p, g);
+      this.back = back;
+      this.sides = new Map(p.tiles.map((t) => [t.id, sidePort(t, p.links, back)]));
       const issues = P.check(p);
       const byId = g.byId;
 
       // Loops: a dashed frame round their tiles, the condition on top.
       const frames = el('g', { class: 'pv-loops' }, this.svg);
-      const loopRight = new Map(); // back link key -> x to go up at
-      const loopLeft = new Map(); // ... on the left, for a tile with an output on its right
+      const loops = new Map(); // key of the arrow going back up -> { right, left }: the x it goes up at
       for (const lp of P.loops(p, g, back)) {
         const box = this.bounds(lp.tiles.map((id) => byId.get(id)));
         const x = box.x - 18;
@@ -373,15 +445,15 @@
         // The label goes right of where the arrow comes into the loop, so the arrow doesn't cross it.
         const head = byId.get(lp.to);
         text(frames, Math.max(x + 14, this.posOf(head)[0] + 12), y + 22, `↻ ${lp.label}`, 'pv-loop-label');
-        loopRight.set(`${lp.from}|${lp.port}`, x + width - 20);
-        loopLeft.set(`${lp.from}|${lp.port}`, x + 9);
+        loops.set(P.linkKey(lp), { right: x + width - 20, left: x + 9 });
       }
 
-      // Input points: one per tile, or one per arrow coming in on a merge or join (with the arrow
-      // being drawn counted in when it needs a point more).
+      // Input points on top: one per tile, or one per arrow coming in on a merge or join. A new
+      // arrow being drawn that snaps to a tile's top is counted in, so they show where it goes.
       const d = this.drag;
       const wire = d && d.kind === 'wire' ? d : null;
-      const ins = this.inputLayouts(p, g, wire && wire.snap && wire.snap.extra ? { from: wire.from, port: wire.port, to: wire.snap.tile } : null);
+      const snap = wire ? wire.snap : null;
+      const ins = this.inputLayouts(p, g, snap && !snap.up ? { from: wire.from, port: wire.port, to: snap.tile } : null);
 
       // Arrows: from the middle of their output dot to their input dot, the arrowhead's tip on its
       // edge. Going down they end at their point on top; going back up they come into the tile's
@@ -392,42 +464,17 @@
       for (const t of p.tiles) {
         for (const l of g.out.get(t.id)) {
           const to = byId.get(l.to);
-          const [fx, fy] = this.posOf(t);
-          const [ox, oy] = portAt(t, l.port);
-          const [tx, ty] = this.posOf(to);
-          const [tw, th] = sizeOf(to);
-          const sx = fx + ox;
-          const sy = fy + oy;
-          const side = ox !== 0 && oy === 0; // leaves on the right
-          const up = back.has(P.linkKey(l)) || ty - th / 2 < sy + 12;
-          let arrow;
-          if (!up) {
-            // Into its own point on top: curve() ends at the top edge of a tile this wide and high.
-            const lay = ins.get(to.id);
-            const [ix, iy] = lay.pts[lay.of.get(P.linkKey(l))] || [0, -th / 2];
-            arrow = curve(sx, sy, side, [tx + ix, ty, tw, -2 * (iy - IN_R)], false);
-          } else {
-            const right = Math.max(loopRight.get(`${l.from}|${l.port}`) || -Infinity, sx + 30, tx + tw / 2 + 30);
-            // A tile with an output on its right side (a decision's "no", a repeat's "done") takes an
-            // arrow coming back up on its left instead.
-            const rightPort = P.portsOf(to).some((pt) => {
-              const [px, py] = portAt(to, pt);
-              return px !== 0 && py === 0;
-            });
-            const left = loopLeft.has(`${l.from}|${l.port}`) ? loopLeft.get(`${l.from}|${l.port}`) : null;
-            arrow = curve(sx, sy, side, [tx, ty, tw + 2 * IN_R, th + 2 * IN_R], true, right, rightPort, left);
-            const at = [arrow.tip[0] + arrow.dir[0] * IN_R - tx, arrow.tip[1] + arrow.dir[1] * IN_R - ty];
+          const r = this.route(t, l.port, to, ins, loops);
+          if (r.onSide) {
             if (!sideIns.has(to.id)) sideIns.set(to.id, []);
-            sideIns.get(to.id).push(at);
+            sideIns.get(to.id).push(r.at);
           }
-          const { d: path, tip, dir } = arrow;
           const sel = this.selected && this.selected.link && this.selected.link.from === l.from && this.selected.link.port === l.port;
           const drop = d && d.onLink && d.onLink.from === l.from && d.onLink.port === l.port;
-          const group = el('g', { class: `pv-link${sel ? ' selected' : ''}${up ? ' back' : ''}${drop ? ' drop' : ''}`, 'data-from': l.from, 'data-port': l.port }, links);
-          const wirePath = el('path', { d: path, class: 'pv-wire' }, group);
-          el('path', { d: path, class: 'pv-hit' }, group);
-          el('polygon', { points: arrowHead(tip[0], tip[1], dir[0], dir[1]), class: 'pv-tip' }, group);
-          if (P.portsOf(t).length > 1) text(group, sx + 6, sy + (side ? -6 : 14), P.portName(l.port), 'pv-port-label');
+          const group = el('g', { class: `pv-link${sel ? ' selected' : ''}${back.has(P.linkKey(l)) ? ' back' : ''}${drop ? ' drop' : ''}`, 'data-from': l.from, 'data-port': l.port }, links);
+          const wirePath = el('path', { d: r.d, class: 'pv-wire' }, group);
+          el('path', { d: r.d, class: 'pv-hit' }, group);
+          el('polygon', { points: arrowHead(r.tip[0], r.tip[1], r.dir[0], r.dir[1]), class: 'pv-tip' }, group);
           this.wires.push({ link: { from: l.from, port: l.port, to: l.to }, path: wirePath });
         }
       }
@@ -444,7 +491,7 @@
         const warns = [...mine.filter((i) => i.level !== 'error').map((i) => i.text), ...board];
         const cls = ['pv-tile', t.kind];
         if (this.isSelected(t.id)) cls.push('selected');
-        if (wire && wire.snap && wire.snap.tile === t.id) cls.push('target');
+        if (snap && snap.tile === t.id) cls.push('target');
         if (this.ed.scope && this.ed.scope.tile === t.id) cls.push('open');
         if (running.has(t.id) || (run && run.tile === t.id)) cls.push('running');
         if (P.hasWork(t) && info && info.tile.get(t.id) && !info.tile.get(t.id).placed) cls.push('unplaced');
@@ -453,8 +500,9 @@
         shape(group, t, w, hh);
         const name = t.kind === 'decision' ? '' : t.name || P.KINDS[t.kind].name;
         if (t.kind === 'parallel' || t.kind === 'join') {
-          text(group, w / 2 + 10, 5, `${GLYPH[t.kind]} ${P.KINDS[t.kind].name}`, 'pv-bar-label');
-          text(group, w / 2 + 10, 20, summary(t, info, p), 'pv-sub');
+          // On the bar itself, so nothing sticks out where arrows come in at its ends.
+          const what = t.kind === 'parallel' ? ` · ${P.lanesOf(t)} lanes` : '';
+          text(group, 0, 3.5, `${GLYPH[t.kind]} ${P.KINDS[t.kind].name}${what}`, 'pv-bar-label centre');
         } else if (t.kind === 'start' || t.kind === 'end') {
           text(group, 0, 5, `${GLYPH[t.kind]} ${name}`, 'pv-name centre');
         } else if (t.kind === 'decision') {
@@ -471,24 +519,31 @@
           el('title', {}, badge).textContent = [...errors, ...warns].join('\n');
         }
         el('title', {}, group).textContent = `${P.KINDS[t.kind].name}${t.name && t.kind !== 'decision' ? `: ${t.name}` : ''}${P.hasWork(t) ? ' (double-click to open on the board)' : ''}`;
-        for (const port of P.portsOf(t)) {
-          const [px, py] = portAt(t, port);
+        const ports = P.portsOf(t);
+        for (const port of ports) {
+          const [px, py] = this.portOf(t, port);
           el('circle', { cx: px, cy: py, r: 7, class: 'pv-port', 'data-port': port }, group);
+          // Which output is which, connected or not: by it, above one on the side, below one at the bottom.
+          if (ports.length > 1) text(group, px + 8, py + (py === 0 ? -8 : 17), P.portName(port), 'pv-port-label');
         }
-        const lay = ins.get(t.id);
-        lay.pts.forEach(([ix, iy], i) => {
-          const snapped = wire && wire.snap && wire.snap.tile === t.id && wire.snap.index === i;
+        ins.get(t.id).pts.forEach(([ix, iy], i) => {
+          const snapped = snap && !snap.up && snap.tile === t.id && snap.index === i;
           el('circle', { cx: ix, cy: iy, r: snapped ? 7 : IN_R, class: `pv-in${snapped ? ' snap' : ''}` }, group);
         });
         for (const [ix, iy] of sideIns.get(t.id) || []) el('circle', { cx: ix, cy: iy, r: IN_R, class: 'pv-in' }, group);
+        if (snap && snap.up && snap.tile === t.id) el('circle', { cx: snap.x - x, cy: snap.y - y, r: 7, class: 'pv-in snap' }, group);
       }
 
-      // A connection, a new tile or a selection box being dragged.
-      if (wire) {
-        const [ex, ey] = wire.snap ? [wire.snap.x, wire.snap.y] : [wire.x, wire.y];
-        const k = Math.max(20, Math.abs(ey - wire.sy) / 2);
-        const c1 = wire.side ? `${wire.sx + Math.max(30, Math.abs(ex - wire.sx) * 0.6)},${wire.sy}` : `${wire.sx},${wire.sy + k}`;
-        el('path', { d: `M${wire.sx},${wire.sy} C${c1} ${ex},${ey - k} ${ex},${ey}`, class: 'pv-rubber' }, this.svg);
+      // A connection, a new tile or a selection box being dragged. A connection snapped to a tile
+      // is drawn as the arrow it will be.
+      if (wire && snap) {
+        const r = this.route(byId.get(wire.from), wire.port, byId.get(snap.tile), ins, new Map(), true);
+        el('path', { d: r.d, class: 'pv-rubber' }, this.svg);
+        el('polygon', { points: arrowHead(r.tip[0], r.tip[1], r.dir[0], r.dir[1]), class: 'pv-rubber-tip' }, this.svg);
+      } else if (wire) {
+        const k = Math.max(20, Math.abs(wire.y - wire.sy) / 2);
+        const c1 = wire.side ? `${wire.sx + Math.max(30, Math.abs(wire.x - wire.sx) * 0.6)},${wire.sy}` : `${wire.sx},${wire.sy + k}`;
+        el('path', { d: `M${wire.sx},${wire.sy} C${c1} ${wire.x},${wire.y - k} ${wire.x},${wire.y}`, class: 'pv-rubber' }, this.svg);
       }
       if (d && d.kind === 'new' && d.over) {
         const [w, hh] = sizeOf({ kind: d.tileKind });
@@ -559,7 +614,7 @@
       }
       if (hit && hit.port) {
         const t = P.tileById(this.process, hit.tile);
-        const [ox, oy] = portAt(t, hit.port);
+        const [ox, oy] = this.portOf(t, hit.port);
         this.drag = { kind: 'wire', from: hit.tile, port: hit.port, sx: t.x + ox, sy: t.y + oy, side: ox !== 0 && oy === 0, x, y, snap: null };
       } else if (hit && hit.tile) {
         // On a tile of a selection of several, they all move; a click without moving keeps just it.
@@ -651,36 +706,37 @@
       this.render(true);
     }
 
-    // The input point a new arrow being dragged snaps to, with the pointer at x, y: the nearest
-    // one within SNAP_PX on screen, else the nearest free one of the tile under the pointer.
-    // { tile, index, x, y, extra } (extra: a merge or join shows one point more for it) or null.
+    // Where a new arrow being dragged would end, with the pointer at x, y: on the tile whose input
+    // point is nearest, within SNAP_PX on screen, else on the tile under the pointer. The point is
+    // the one the arrow will really take: its place among a merge's points on top (`extra`: a
+    // merge or join with every point taken gets one more), or one on the tile's side for an arrow
+    // going back up (`up`). { tile, index, x, y, up, extra } or null.
     snapTarget(d, x, y) {
       const p = this.process;
       const g = P.graph(p);
-      const mine = (l) => l.from === d.from && l.port === d.port; // the arrow this one replaces
-      const spots = (t) => {
-        if (t.id === d.from) return [];
-        const ins = g.into.get(t.id).filter((l) => !mine(l));
-        const links = p.links.filter((l) => !mine(l));
-        const now = this.inputLayout(t, ins, { ...p, links }, g.byId);
-        if (!now.n) return [];
-        const extra = { from: d.from, port: d.port, to: t.id };
-        const withIt = this.inputLayout(t, [...ins, extra], { ...p, links: [...links, extra] }, g.byId);
+      const from = g.byId.get(d.from);
+      const spot = (t) => {
+        if (t.id === d.from || !P.takesInput(t)) return null;
         const [tx, ty] = this.posOf(t);
-        const at = (lay, i, more) => ({ tile: t.id, index: i, x: tx + lay.pts[i][0], y: ty + lay.pts[i][1], extra: more });
-        // Every point taken on a merge or join: it gets one more, where the new arrow will go.
-        if (withIt.n > now.n) return [at(withIt, withIt.of.get(P.linkKey(extra)), true)];
-        const taken = new Set(now.of.values());
-        const free = now.pts.map((_, i) => i).filter((i) => !taken.has(i));
-        // A tile with one input point takes any number of arrows there.
-        return (free.length ? free : now.pts.map((_, i) => i)).map((i) => at(now, i, false));
+        if (this.goesUp(from, d.port, t, true)) {
+          const r = this.route(from, d.port, t, new Map(), new Map(), true);
+          return { tile: t.id, index: null, x: tx + r.at[0], y: ty + r.at[1], up: true, extra: false };
+        }
+        const link = { from: d.from, port: d.port, to: t.id };
+        const mine = (l) => l.from === d.from && l.port === d.port; // the arrow this one replaces
+        const ins = g.into.get(t.id).filter((l) => !mine(l) && !this.goesUp(g.byId.get(l.from), l.port, t));
+        const now = this.inputLayout(t, ins, g.byId);
+        const withIt = this.inputLayout(t, [...ins, link], g.byId);
+        const index = withIt.of.get(P.linkKey(link));
+        const [ix, iy] = withIt.pts[index];
+        return { tile: t.id, index, x: tx + ix, y: ty + iy, up: false, extra: withIt.n > now.n };
       };
+      const spots = p.tiles.map(spot).filter(Boolean);
       const dist = (s) => Math.hypot(s.x - x, s.y - y);
-      const nearest = (list) => list.reduce((best, s) => (!best || dist(s) < dist(best) ? s : best), null);
-      const close = nearest(p.tiles.flatMap(spots).filter((s) => dist(s) <= SNAP_PX / this.view.zoom));
-      if (close) return close;
+      const close = spots.filter((s) => dist(s) <= SNAP_PX / this.view.zoom).sort((a, b) => dist(a) - dist(b));
+      if (close.length) return close[0];
       const under = this.tileAt(x, y);
-      return under ? nearest(spots(under)) : null;
+      return (under && spots.find((s) => s.tile === under.id)) || null;
     }
 
     // While a loose tile (or a new one) is dragged: the arrow near the pointer, if any, in
@@ -702,7 +758,8 @@
     }
 
     // Puts a tile (make(p) gives it: a loose one, or a new one) at x, y on the arrow `link`:
-    // from --port--> tile --its first output--> where the arrow went. One undoable change.
+    // from --port--> tile --its first output--> where the arrow went, with room made for it. One
+    // undoable change.
     putOnLink(link, make, x, y) {
       let tile = null;
       let why = null;
@@ -710,7 +767,10 @@
         tile = make(p);
         P.moveTile(p, tile.id, x, y);
         why = P.link(p, link.from, link.port, tile.id);
-        if (!why && P.portsOf(tile).length) why = P.link(p, tile.id, P.portsOf(tile)[0], link.to);
+        if (!why && P.portsOf(tile).length) {
+          why = P.link(p, tile.id, P.portsOf(tile)[0], link.to);
+          if (!why) this.makeRoom(p, tile.id, link);
+        }
       });
       if (!tile) return;
       const p = this.process;
@@ -722,6 +782,25 @@
       else this.app.status(`Put ${name} after ${fromName}: it has no way out, so the arrow to ${toName} is gone`);
       this.select({ tile: tile.id });
       this.app.changed();
+    }
+
+    // Room for tile `id`, just put on an arrow going down (link: from --port--> to): it lines up
+    // under the tile the arrow came from (under the tile it went to, when it came from a side
+    // output or a lane), at least a gap below it; and when the tile the arrow went to is now too
+    // near under it, that tile and every tile as low or lower move down to make room.
+    makeRoom(p, id, link) {
+      const t = P.tileById(p, id);
+      const from = P.tileById(p, link.from);
+      const to = P.tileById(p, link.to);
+      if (!t || !from || !to) return;
+      const [px, py] = this.portOf(from, link.port);
+      const top = to.y - sizeOf(to)[1] / 2;
+      if (top < from.y + py + 12) return; // an arrow going back up or across: it stays where it was dropped
+      const [, h] = sizeOf(t);
+      t.x = px === 0 && from.kind !== 'parallel' ? from.x : to.x;
+      t.y = Math.round(Math.max(t.y, from.y + sizeOf(from)[1] / 2 + P.GAP_Y + h / 2));
+      const need = Math.round(t.y + h / 2 + P.GAP_Y - top);
+      if (need > 0) for (const o of p.tiles) if (o.id !== id && o.y >= top) o.y += need;
     }
 
     cancelDrag() {
@@ -945,46 +1024,41 @@
     }
   }
 
-  // An arrow's smooth curve from an output port at (sx, sy) to a tile [x, y, w, h] (its centre and
-  // size): it leaves the way its port faces (down; right for a decision's "no" and a repeat's
-  // "done") and comes into the tile from above. An arrow going back up bulges out to the right
-  // (half way along it reaches `right`, past the loop's tiles) and comes into the tile's right
-  // side; when an output sits on that side (`rightPort`), it goes up on the loop's left instead
-  // (at `left`) and comes into the tile's left side. The line stops just short of the tile; the
-  // arrowhead at `tip`, pointing along `dir`, covers the rest.
-  function curve(sx, sy, side, [tx, ty, tw, th], up, right, rightPort = false, left = null) {
-    if (up && rightPort && !side) {
-      const tip = [tx - tw / 2, ty];
-      const lx = Math.min(left === null ? Infinity : left, tip[0] - 24, sx - 40);
-      const by = sy + 16; // dips 12 below the port: inside the loop frame (16 below its tiles)
-      // Down from the port and round to the left, then up and round into the tile's left side.
-      const d = `M${sx},${sy} C${sx},${by} ${lx},${by} ${lx},${sy} C${lx},${(sy + ty) / 2} ${lx},${ty} ${tip[0] - 8},${ty}`;
-      return { d, tip, dir: [1, 0] };
-    }
-    let tip;
-    let c1;
-    let c2;
-    if (!up) {
-      tip = [tx, ty - th / 2];
-      const k = Math.max(20, (tip[1] - 8 - sy) / 2);
-      c1 = side ? [sx + Math.max(30, Math.abs(tx - sx) * 0.6), sy] : [sx, sy + k];
-      c2 = [tx, tip[1] - 8 - k];
-    } else if (!rightPort) {
-      tip = [tx + tw / 2, ty];
-      const ex = tip[0] + 8;
-      const k = Math.max(40, (8 * right - 4 * sx - 4 * ex) / (side ? 6 : 3));
-      c1 = side ? [sx + k, sy] : [sx, sy + 36];
-      c2 = [ex + k, ty];
-    } else {
-      // From an output on the right into a tile with one there too: in through its top.
-      tip = [tx + tw / 4, ty - th / 2];
-      c1 = [right + 30, sy];
-      c2 = [tip[0], tip[1] - 70];
-    }
-    const len = Math.hypot(tip[0] - c2[0], tip[1] - c2[1]) || 1;
-    const dir = [(tip[0] - c2[0]) / len, (tip[1] - c2[1]) / len];
-    const end = [tip[0] - dir[0] * 8, tip[1] - dir[1] * 8];
-    return { d: `M${sx},${sy} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${end[0]},${end[1]}`, tip, dir };
+  // Arrows are smooth curves. Each returns { d, tip, dir }: the path stops 8 short of the tip, and
+  // the arrowhead, its tip at `tip` pointing along `dir`, covers the rest.
+
+  // An arrow going down: from an output at (sx, sy) facing down (or right: `side`) into the input
+  // point at (px, py) on top of a tile, coming in from above; the tip touches the point.
+  function downArrow(sx, sy, side, px, py) {
+    const tip = [px, py - IN_R];
+    const end = tip[1] - 8;
+    const k = Math.max(20, (end - sy) / 2);
+    const c1 = side ? [sx + Math.max(30, Math.abs(px - sx) * 0.6), sy] : [sx, sy + k];
+    return { d: `M${sx},${sy} C${c1[0]},${c1[1]} ${px},${end - k} ${px},${end}`, tip, dir: [0, 1] };
+  }
+
+  // An arrow going back up, from an output at (sx, sy) facing down (or right: `side`), round the
+  // loop at x = `at` and into the input point at (ex, ey) on a tile's right side (or with `left`,
+  // its left side). A long quarter turn up to x = `at`, then a short one (at most 40 high) into
+  // the tile's row, so it never reaches past `at` and clears the tiles under that row; from an
+  // output facing down it first dips 12 below it (still inside the loop's frame).
+  function upArrow(sx, sy, side, ex, ey, at, left) {
+    const dir = left ? [1, 0] : [-1, 0];
+    const tip = [ex - dir[0] * IN_R, ey];
+    const end = tip[0] - dir[0] * 8;
+    const r = Math.min(40, Math.max(0, sy - ey) / 2);
+    const my = ey + r;
+    const out = side ? `C${sx + 0.55 * (at - sx)},${sy} ${at},${my + 0.55 * (sy - my)}` : `C${sx},${sy + 16} ${at},${sy + 16}`;
+    return { d: `M${sx},${sy} ${out} ${at},${my} C${at},${ey + 0.45 * r} ${end + 0.55 * (at - end)},${ey} ${end},${ey}`, tip, dir };
+  }
+
+  // An arrow going back up from an output on the right to a tile with one there too: round the
+  // right at x = `at`, then over the top into its input point at (px, py).
+  function overArrow(sx, sy, px, py, at) {
+    const tip = [px, py - IN_R];
+    const end = tip[1] - 8;
+    const my = (sy + end) / 2;
+    return { d: `M${sx},${sy} C${sx + 0.55 * (at - sx)},${sy} ${at},${my + 0.55 * (sy - my)} ${at},${my} C${at},${end - 40} ${px},${end - 40} ${px},${end}`, tip, dir: [0, 1] };
   }
 
   // An arrowhead with its tip at (x, y), pointing along the unit vector (ux, uy).

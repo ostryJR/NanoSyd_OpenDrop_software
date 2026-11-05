@@ -103,24 +103,40 @@ everything drawn so far.
 | Tile | What it is | In a run |
 |---|---|---|
 | Start, End | Where it begins and ends | |
-| Step, Dispense, Move, Mix, Merge, Split, Wait | A step with work on the board: anything (Step), a dispense from its reservoir, a path, a mixer (kind, size, rounds, direction), a merge, a split, a hold (seconds) | Plays on the board |
+| Step, Dispense, Move, Mix, Split, Wait | A step with work on the board: anything (Step), a dispense from its reservoir, a path, a mixer that keeps one droplet (kind, size, rounds, direction), a split, a hold (seconds) | Plays on the board |
+| Merge | Two droplets become one, on the board. It takes an arrow from each droplet's lane and waits for them, so it ends those lanes | Plays on the board |
 | Measure | A named value with a unit, e.g. `conc` in mM | Asks you for the value |
 | Ask | A question, answered yes/no or with a number | Asks you |
 | Decision | `value` compared with a number (or `value is yes`), with a yes and a no arrow | Takes the arrow that holds |
 | Repeat | Its "again" arrow goes to what is repeated, which leads back to it; "done" goes on | Goes round that many times |
-| Parallel, Join | Lanes that run at the same time, on one board; Join waits for all of them | |
+| Parallel, Wait for all | Lanes that run at the same time, on one board. Wait for all waits until every lane has finished, its droplets staying apart (lanes whose droplets go together end in a Merge instead) | |
 
 - **Building it:**
-  - Drag a tile from the palette on the left onto the canvas. Clicking one instead puts it under
-    the selected tile, in between it and what came after.
-  - Drag from a tile's dot at the bottom (its output) onto another tile to connect them. Dragging
-    into empty space offers a tile to add there.
-  - Drag tiles to move them, click to select, **Delete** to remove (a tile's work on the board goes
-    with it; undo brings it back), arrows to nudge.
-  - **Tidy** lays it out top-down, **Fit** shows all of it. Ctrl/⌘ + wheel zooms, the wheel or a
-    drag on empty space pans.
-- **Loops** are arrows going back up. Their tiles get a dashed outline with the condition on top:
-  "repeat until conc < 5 mM" from the decision that leads out, or "repeat 3×".
+  - The palette on the left groups the tiles: on the board, measure and decide, lanes, start and
+    end. Hover one for what it does.
+  - Drag a tile onto the canvas. Clicking one instead puts it under the selected tile, in between it
+    and what came after.
+  - Drag a tile onto an arrow to put it there: the arrow lights up with "Drop to put it here". The
+    tile goes in between, under the tile the arrow came from, and the tiles below move down to make
+    room. A tile with no arrows yet can be moved onto an arrow the same way.
+  - Drag from a tile's dot at the bottom (its output) onto another tile to connect them. Near a tile
+    the arrow snaps to the input point it will use: the point grows, the tile gets an outline, and
+    the arrow shows as it will be drawn. A Merge or Wait for all has an input point for each arrow
+    coming in (at least two); with all of them taken it shows one more. Dragging into empty space
+    offers a tile to add there.
+  - Drag tiles to move them. There is no grid: they go where you drop them. Click to select,
+    **Delete** to remove (a tile's work on the board goes with it; undo brings it back), arrow keys
+    to nudge (with Shift, further).
+  - **Several tiles:** drag a box round them on empty space (with Shift it adds to the selection),
+    or Shift+click to add or remove one. Dragging one of them moves them all; arrow keys and
+    **Delete** work on all of them.
+  - **Tidy** lays it out top-down and compact: each row and column as big as its tiles, short arrows
+    between them, room round loops, loose tiles to the right. **Fit** shows all of it.
+  - Ctrl/⌘ + wheel zooms. The wheel, Space + drag, a middle-button drag or ⌥/Alt + drag pans.
+- **Arrows** are curves from an output to an input point. **Loops** are arrows going back up, in
+  purple, round the side of the loop. On a decision or a repeat, the output that goes back up leaves
+  on its right side and the way on goes straight down. A loop's tiles get a dashed outline with the
+  condition on top: "repeat until conc < 5 mM" from the decision that leads out, or "repeat 3×".
 - **Properties** (with a tile selected) show its settings, where its work is on the board, and its
   problems: an arrow going nowhere, a value used before it is measured, a decision inside parallel
   lanes, lanes that don't join, a step not placed yet, steps out of order on the board, droplets
@@ -344,7 +360,9 @@ What **save** writes and **load** opens. JSON, one field per line:
   - `tiles`: `{ id, kind, name, x, y, … }` with the kind's settings: `reservoir` (dispense),
     `params` (mix), `seconds` (wait), `value` and `unit` (measure), `question`, `answer` and
     `value` (ask), `value`, `op` (`<`, `<=`, `>`, `>=`, `=`, `!=`, `is`) and `than` (decision),
-    `times` (repeat), `lanes` (parallel).
+    `times` (repeat), `lanes` (parallel). The kinds are `start`, `end`, `step`, `dispense`,
+    `move`, `mix`, `merge`, `split`, `wait`, `measure`, `ask`, `decision`, `repeat`, `parallel`
+    and `join` (shown as Wait for all).
   - `links`: `{ from, port, to }`. The ports are `next`; `yes`/`no` for a decision; `again`/`done`
     for a repeat; `lane1`… for a parallel tile.
 - Room for later: action types and fields this version doesn't know are kept when a file is opened

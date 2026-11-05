@@ -45,7 +45,7 @@
   const MAX_LANES = 6;
 
   // A tile's size on the canvas, [width, height] in units; x and y are its centre.
-  const SIZE = { start: [120, 40], end: [120, 40], decision: [190, 84], repeat: [170, 52], parallel: [230, 20], join: [230, 20] };
+  const SIZE = { start: [120, 40], end: [120, 40], decision: [190, 84], repeat: [170, 52], parallel: [230, 24], join: [230, 24] };
   const sizeOf = (t) => (SIZE[t.kind] || [210, 60]).slice();
 
   const isTile = (t) => Boolean(t && typeof t === 'object' && KINDS[t.kind] && typeof t.id === 'string');
@@ -486,8 +486,16 @@
       const ins = g.into.get(id).filter((l) => !back.has(linkKey(l)));
       row.set(id, ins.length ? Math.max(...ins.map((l) => (row.get(l.from) || 0) + 1)) : 0);
     }
+    // A tile nothing leads to (besides Start) goes just above the first tile it leads to, not up
+    // at the top with its arrow running past the tiles in between.
+    for (const id of order) {
+      if (g.byId.get(id).kind === 'start' || g.into.get(id).some((l) => !back.has(linkKey(l)))) continue;
+      const outs = g.out.get(id).filter((l) => !back.has(linkKey(l)));
+      if (outs.length) row.set(id, Math.max(0, Math.min(...outs.map((l) => row.get(l.to))) - 1));
+    }
     // Columns: walk down from Start; the first output keeps the column, the others take new
-    // columns to the right of everything placed so far in the rows below.
+    // columns to the right of everything placed so far in the rows below. Tiles nothing leads to
+    // (besides Start) start columns of their own to the right.
     const col = new Map();
     let right = 0;
     const place = (id, c) => {
@@ -499,7 +507,10 @@
         place(l.to, i === 0 ? c : right + 1);
       });
     };
-    for (const id of order) if (!g.into.get(id).filter((l) => !back.has(linkKey(l))).length) place(id, col.size ? right + 1 : 0);
+    const roots = order.filter((id) => !g.into.get(id).filter((l) => !back.has(linkKey(l))).length);
+    const isStart = (id) => (g.byId.get(id).kind === 'start' ? 1 : 0);
+    roots.sort((a, b) => isStart(b) - isStart(a));
+    for (const id of roots) place(id, col.size ? right + 1 : 0);
     for (const id of order) place(id, right + 1);
 
     // Sizes: the tallest tile of each row, the widest of each column.
