@@ -9,6 +9,11 @@
   const { TimingChart, formatTime } = root.OD.chart;
   const { Timeline } = root.OD.timeline;
   const { DevicePanel } = root.OD.devicePanel;
+  const P = root.OD.process;
+  const { ProcessView } = root.OD.processView;
+  const { ProcessPanel, ask: askRun, renderLog } = root.OD.processPanel;
+  const { Runner } = root.OD.runner;
+  const { TabSync } = root.OD.sync;
   const G = layout.GEOMETRY;
   const $ = (id) => document.getElementById(id);
 
@@ -39,10 +44,10 @@
   if (!prefs.device || typeof prefs.device !== 'object' || Array.isArray(prefs.device)) prefs.device = {};
   const savePrefs = () => {
     try {
-      const { timingMin, templatesMin, chart: view, tab, device: dev } = prefs;
+      const { timingMin, templatesMin, chart: chartView, tab, device: dev, view: shown } = prefs;
       localStorage.setItem(
         PREFS_KEY,
-        JSON.stringify({ layout: current.id, numbers: showNumbers, lines: showLines, tool: ed.tool, timingMin, templatesMin, chart: view, tab, device: dev })
+        JSON.stringify({ layout: current.id, numbers: showNumbers, lines: showLines, tool: ed.tool, timingMin, templatesMin, chart: chartView, tab, device: dev, view: shown })
       );
     } catch {
       // storage unavailable: preferences just aren't kept
@@ -59,6 +64,31 @@
   const board = new BoardView(svg, 'assets/OpenDropFrame.png');
   board.setLayout(current);
   let device = null; // the Device tab and the board's device boxes, set up at the end
+
+  // The process view (tiles of the process, in the board's place), its side panel, runs, and a
+  // second tab kept in step: set up at the end.
+  let view = /process/.test(location.hash) ? 'process' : /board/.test(location.hash) ? 'board' : prefs.view === 'process' ? 'process' : 'board';
+  let processView = null;
+  let processPanel = null;
+  let runner = null;
+  let sync = null;
+  let syncRev = -1;
+  let remoteRun = null; // a run going on in another tab: { tile, stretch, frame, frames, done }
+  let pendingRemote = null; // a change from another tab, waiting for a drag or run to end
+  let placingTile = null; // a tile whose template is being placed from its Properties
+  let selectedTile = null;
+  let analysisRev = -1;
+  let analysisCache = null;
+  // The process on the board: stretches, droplets coming in, each tile's frames (worked out again
+  // after each change).
+  const analysis = () => {
+    if (!ed.doc.process) return null;
+    if (analysisRev !== ed.revision) {
+      analysisCache = ed.analyze();
+      analysisRev = ed.revision;
+    }
+    return analysisCache;
+  };
 
   function setStatus(text, kind = 'info') {
     statusText.textContent = text;
@@ -108,13 +138,59 @@
   }
 
   function paint() {
-    board.render(ed, { numbers: showNumbers, lines: showLines, device: device && device.boardState() });
+    if (pendingRemote && !ed.makingTemplate && ed.applyRemote(pendingRemote)) {
+      pendingRemote = null;
+      if (sync) sync.settle(ed.doc);
+      syncRev = ed.revision;
+    }
+    if (view === 'board') {
+      board.setCutoutTitle(ed.makingTemplate ? 'Making a template' : openTileName() || 'Path Generator');
+      board.render(ed, { numbers: showNumbers, lines: showLines, device: device && device.boardState(), rings: rings() });
+    } else if (processView) processView.render();
     if (ed.draft && ed.draft.moved) showDraft(ed.draft);
     showTiming();
     showProperties();
     if (ed.makingTemplate) showMakerInfo();
     if (device) device.paint(); // live: the frame on screen goes to the device
+    showViewbar();
     noteWork();
+    shareWork();
+  }
+
+  // A change here goes to the other tabs (also from a timer: a tab that isn't in front doesn't
+  // paint).
+  function shareWork() {
+    if (sync && syncRev !== ed.revision && !ed.makingTemplate && !ed.dragging) {
+      syncRev = ed.revision;
+      sync.changed(ed.doc);
+    }
+  }
+
+  const openTile = () => (ed.doc.process && ed.scope && ed.scope.tile ? P.tileById(ed.doc.process, ed.scope.tile) : null);
+  const openTileName = () => {
+    const t = openTile();
+    return t ? t.name || P.KINDS[t.kind].name : '';
+  };
+
+  // Rings where a droplet waits on an electrode that isn't switched on in the frame on screen: left
+  // there by an action, or coming in from the step before.
+  function rings() {
+    const c = ed.shown;
+    const f = ed.frame;
+    const byId = new Map([...ed.arrive, ...ed.project.actions].map((a) => [a.id, a]));
+    const out = [];
+    const seen = new Set();
+    const add = (id, cells) => {
+      const a = byId.get(id);
+      for (const e of cells) {
+        if (e >= 128 || c.seq.get(e, f) || seen.has(e)) continue;
+        seen.add(e);
+        out.push({ e, colour: dropletColour(a ? a.droplet : '') });
+      }
+    };
+    for (const r of c.resting) if (r.from <= f && f <= r.to) add(r.id, r.cells);
+    if (f === 1) for (const a of ed.arrive) add(a.id, a.cells);
+    return out;
   }
 
   function setTool(tool) {
@@ -160,6 +236,17 @@
     evt.preventDefault();
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const { mx, my } = toGrid(evt);
+    if (placingTile && ed.placement && !carried) {
+      // A tile's template, placed from its Properties: a click drops it where it shows.
+      ed.hoverPlacement(mx, my);
+      const spot = ed.placement && ed.placement.spot;
+      const added = ed.dropPlacement();
+      placingTile = null;
+      if (added) setStatus(`Placed: frames ${added.from} to ${added.to}`);
+      else setStatus(spot && spot.reason ? `It can't go there: ${spot.reason}` : "It doesn't fit there: place it again from the tile's Properties", 'warn');
+      redraw();
+      return;
+    }
     const action = ed.pointerDown(mx, my, { shift: evt.shiftKey, alt: evt.altKey, now: performance.now() });
     if (DIALOGS[action]) {
       // Browsers only open file dialogs during a user gesture: a mouse press counts,
@@ -218,6 +305,11 @@
   svg.addEventListener('pointermove', (evt) => {
     if (!evt.isPrimary) return;
     const { mx, my } = toGrid(evt);
+    if (placingTile && ed.placement && !carried) {
+      ed.hoverPlacement(mx, my);
+      redraw();
+      return;
+    }
     if (ed.dragging) {
       ed.pointerMove(mx, my);
       showNotice();
@@ -258,6 +350,18 @@
   window.addEventListener('keydown', (evt) => {
     if (evt.target instanceof HTMLInputElement || evt.target instanceof HTMLSelectElement) return;
     const key = evt.key.length === 1 ? evt.key.toLowerCase() : evt.key;
+    if (placingTile && ed.placement) {
+      // Placing a tile's template: R turns it, Esc stops.
+      if (key === 'r' && !evt.repeat) ed.rotatePlacement();
+      if (key === 'Escape') {
+        ed.cancel();
+        placingTile = null;
+        setStatus('Cancelled');
+      }
+      evt.preventDefault();
+      redraw();
+      return;
+    }
     if (carried) {
       // Dragging a template: R turns it, Esc drops it back; nothing else while it's in hand.
       if (key === 'r' && !evt.repeat) ed.rotatePlacement();
@@ -277,6 +381,14 @@
       else if (evt.code === 'KeyS' || key === 's') save();
       else return;
       evt.preventDefault();
+      return;
+    }
+    if (view === 'process') {
+      // The process view has keys of its own: Delete, Enter, Esc, arrows.
+      if (processView && processView.key(evt)) {
+        evt.preventDefault();
+        redraw();
+      }
       return;
     }
     if (evt.altKey && !evt.metaKey && !evt.ctrlKey && NUDGE[key]) {
@@ -397,10 +509,11 @@
   // template.
   async function save() {
     const suggested = withProject(ed.makingTemplate ? nameInput.value.trim() || 'template' : baseName || 'opendrop-project');
-    const name = await saveText(projects.serialize(ed.project), suggested, 'OpenDrop Generator project', withProject);
+    ed.flush();
+    const name = await saveText(projects.serialize(ed.doc), suggested, 'OpenDrop Generator project', withProject);
     if (!name) return;
     if (!ed.makingTemplate) baseName = baseOf(name);
-    setStatus(`Saved ${name} (${plural(ed.project.actions.length, 'action')})`);
+    setStatus(`Saved ${name} (${plural(ed.doc.actions.length, 'action')}${ed.doc.process ? `, ${plural(ed.doc.process.tiles.length, 'tile')}` : ''})`);
   }
 
   // Export writes the frames for the OpenDrop controller. If some actions won't come out as
@@ -418,7 +531,8 @@
     exportWarnedAt = null;
     const base = ed.makingTemplate ? nameInput.value.trim() || 'template' : baseName || 'opendrop-sequence';
     const name = await saveText(jsonio.encode(ed.seq), withJson(base), 'OpenDrop sequence');
-    if (name) setStatus(`Exported ${name} (${plural(ed.seq.lastFrame(), 'frame')}) for the OpenDrop controller`);
+    const part = ed.doc.process && openTile() ? `: “${openTileName()}” and what runs with it on its board (a process with decisions can't be one file; run it from here instead)` : '';
+    if (name) setStatus(`Exported ${name} (${plural(ed.seq.lastFrame(), 'frame')}) for the OpenDrop controller${part}`);
   }
 
   function switchLayout(lay) {
@@ -659,12 +773,20 @@
       } else showNotice();
       redraw();
     },
+    onTile(id) {
+      if (ed.dragging || ed.frozen) return;
+      if (ed.openTile(id)) setStatus(`On the board: ${openTileName()}`);
+      selectedTile = id;
+      if (processPanel) processPanel.show(id);
+      redraw();
+    },
   });
 
   function showTimeline() {
     const { compiled, project } = ed;
     const preds = (a) => (a.after === undefined ? [] : Array.isArray(a.after) ? a.after : [a.after]);
     const clips = [];
+    const opened = ed.scope && ed.scope.tile;
     for (const a of project.actions) {
       // An action that can't run still gets a clip, one frame long where it would start, so it
       // can be found and fixed.
@@ -693,10 +815,21 @@
         handIn: preds(a).some((id) => compiled.spans.get(id) && compiled.spans.get(id).to === span.from),
         handOut: followers.some((b) => compiled.spans.get(b.id) && compiled.spans.get(b.id).from === span.to),
         preds: preds(a),
+        dim: Boolean(opened && a.tile !== opened),
       });
     }
+    // With a process: a band per tile of the stretch on screen, over its frames.
+    const bands = [];
+    if (ed.doc.process && ed.scope) {
+      for (const t of ed.doc.process.tiles) {
+        if (!ed.scope.tiles.has(t.id) || !P.hasWork(t)) continue;
+        const spans = project.actions.filter((a) => a.tile === t.id).map((a) => compiled.spans.get(a.id)).filter(Boolean);
+        if (!spans.length) continue;
+        bands.push({ id: t.id, name: t.name || P.KINDS[t.kind].name, from: Math.min(...spans.map((x) => x.from)), to: Math.max(...spans.map((x) => x.to)), open: t.id === opened });
+      }
+    }
     const last = clips.reduce((m, c) => Math.max(m, c.to), 0);
-    timeline.update({ frames: Math.min(200, Math.max(30, last + 10, ed.frame + 5)), frame: ed.frame, selection: ed.selection, clips });
+    timeline.update({ frames: Math.min(200, Math.max(30, last + 10, ed.frame + 5)), frame: ed.frame, selection: ed.selection, clips, bands });
   }
 
   // --- properties ------------------------------------------------------------------------
@@ -735,7 +868,20 @@
     if (document.activeElement !== input) input.value = value;
   };
 
+  let shownView = null;
   function showProperties() {
+    const inProcess = view === 'process' && Boolean(ed.doc.process) && Boolean(processPanel);
+    $('tile-props').hidden = !inProcess;
+    if (shownView !== inProcess) {
+      shownView = inProcess;
+      propsKey = '';
+    }
+    if (inProcess) {
+      propsNone.hidden = true;
+      props.hidden = true;
+      processPanel.render();
+      return;
+    }
     const a = ed.selected;
     if ((a && a.id) !== propsFor) {
       propsFor = a && a.id;
@@ -1542,7 +1688,7 @@
       makerTitle.textContent = typeof m.title === 'string' && m.title ? m.title : 'New template';
       showMaker();
     }
-    const main = ed.saved ? ed.saved.project : ed.project;
+    const main = ed.saved ? ed.saved.project : ed.doc;
     const n = main.actions.length;
     if (!n && !ed.makingTemplate && !ed.canUndo) return;
     const what = ed.makingTemplate ? 'the template you were making, and the project behind it,' : `your work from last time (${plural(n, 'action')})`;
@@ -1554,6 +1700,27 @@
   addEventListener('pagehide', () => keepWork());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') keepWork();
+  });
+
+  // --- a second tab --------------------------------------------------------------------------
+  // The process in one tab and the board in another (or two of either): every change goes to the
+  // other tab, which takes it in as an undo step of its own.
+
+  sync = new TabSync({
+    doc(shared) {
+      if (ed.makingTemplate || !ed.applyRemote(shared)) {
+        pendingRemote = shared;
+        return;
+      }
+      syncRev = ed.revision;
+      setStatus('Changed in the other tab');
+      redraw();
+    },
+    run(state) {
+      remoteRun = state;
+      redraw();
+    },
+    holdsDevice: () => Boolean(device && device.session.connected),
   });
 
   // --- the device --------------------------------------------------------------------------
@@ -1571,14 +1738,185 @@
       redraw();
     },
     formatTime,
+    deviceElsewhere: () => sync.deviceElsewhere(),
   });
   addEventListener('pagehide', () => device.leave());
 
+  // --- the process view ----------------------------------------------------------------------
+  // The process as tiles (in the board's place), Properties for its tiles, running it.
+
+  const processHost = $('process-view');
+  const stageArea = $('stage-area');
+  const runLog = $('run-log');
+  const switchButtons = [...document.querySelectorAll('#viewbar [data-view]')];
+
+  // Opens tile id on the board (stops have nothing there).
+  function openOnBoard(id) {
+    const t = ed.doc.process && P.tileById(ed.doc.process, id);
+    if (!t) return;
+    if (!P.hasWork(t)) {
+      setStatus(`${t.name || P.KINDS[t.kind].name} is a stop of the process: it has nothing on the board`);
+      return;
+    }
+    if (ed.frozen) {
+      setStatus(ed.frozen, 'warn');
+      return;
+    }
+    if (ed.openTile(id)) {
+      selectedTile = id;
+      setView('board');
+      const arriving = ed.arrive.map((a) => a.droplet);
+      setStatus(`On the board: ${openTileName()}${arriving.length ? `; coming in: ${arriving.join(', ')} (rings)` : ''}`);
+    }
+  }
+
+  // Opens tile id on the board and puts its operation there.
+  function placeOnBoard(id) {
+    if (!ed.openTile(id)) return;
+    selectedTile = id;
+    setView('board');
+    const done = ed.placeTile();
+    if (!done) showNotice();
+    else {
+      setStatus(done.text);
+      if (done.kind === 'placing') placingTile = id;
+    }
+    redraw();
+  }
+
+  processView = new ProcessView(processHost, {
+    editor: ed,
+    analysis,
+    select(id) {
+      selectedTile = id;
+      const t = id && P.tileById(ed.doc.process, id);
+      if (t && P.hasWork(t) && !ed.frozen && !(ed.scope && ed.scope.tile === id)) ed.openTile(id);
+      processPanel.show(id);
+      redraw();
+    },
+    open: openOnBoard,
+    status: setStatus,
+    changed() {
+      processPanel.key = '';
+      redraw();
+    },
+    running: () => (runner && runner.running ? { tile: runner.state.tile, stretch: runner.state.stretch } : remoteRun && !remoteRun.done ? remoteRun : null),
+  });
+  processPanel = new ProcessPanel($('tile-props'), { editor: ed, analysis, status: setStatus, changed: () => redraw(), open: openOnBoard, place: placeOnBoard });
+
+  function setView(next) {
+    if (next === 'process' && !ed.doc.process) {
+      if (ed.makingTemplate) {
+        setStatus('Save or cancel the template first', 'warn');
+        return;
+      }
+      ed.makeProcess();
+      setStatus('This project now has a process: what was drawn is in “Step 1”. Add tiles from the left, connect them, and double-click a step to draw it on the board');
+    }
+    view = next;
+    prefs.view = next;
+    savePrefs();
+    svg.style.display = view === 'board' ? '' : 'none';
+    processHost.hidden = view !== 'process';
+    for (const b of switchButtons) b.setAttribute('aria-pressed', String(b.dataset.view === view));
+    if (view === 'process') {
+      if (!selectedTile && ed.scope && ed.scope.tile) selectedTile = ed.scope.tile;
+      processPanel.show(selectedTile);
+      setTab('properties');
+    }
+    redraw();
+  }
+  for (const b of switchButtons) {
+    b.addEventListener('click', () => {
+      b.blur();
+      if (view !== b.dataset.view) setView(b.dataset.view);
+    });
+  }
+
+  $('open-tab').addEventListener('click', (evt) => {
+    evt.currentTarget.blur();
+    keepWork(); // the new tab starts from what is here now
+    root.open(`${location.href.split('#')[0]}#${view === 'process' ? 'board' : 'process'}`, '_blank');
+  });
+
+  // The bar over the stage: where the board is in the process, and the run.
+  const mmss = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
+  function showViewbar() {
+    const where = $('viewbar-where');
+    const t = openTile();
+    if (ed.makingTemplate) where.textContent = 'Making a template';
+    else if (view === 'board' && t) where.textContent = `On the board: ${t.name || P.KINDS[t.kind].name}${ed.scope.tiles.size > 1 ? ` · with ${ed.scope.tiles.size - 1} more step${ed.scope.tiles.size === 2 ? '' : 's'} of the process` : ''}`;
+    else if (view === 'board' && ed.doc.process) where.textContent = 'Open a step of the process to draw it';
+    else where.textContent = '';
+    $('run-controls').hidden = !ed.doc.process || ed.makingTemplate;
+    const running = runner && runner.running;
+    $('run-start').hidden = running;
+    $('run-pause').hidden = !running;
+    $('run-stop').hidden = !running;
+    if (running) $('run-pause').textContent = runner.state.paused ? '▶ Go on' : '⏸ Pause';
+    const connected = Boolean(device && device.session.connected);
+    $('run-device').disabled = !connected || running;
+    $('run-device-label').classList.toggle('off', !connected);
+    const state = $('run-state');
+    if (running) {
+      const s = runner.state;
+      const tile = s.tile && P.tileById(ed.doc.process, s.tile);
+      const name = tile ? (tile.kind === 'decision' ? P.conditionText(tile, ed.doc.process) : tile.name || P.KINDS[tile.kind].name) : '';
+      state.textContent = `${s.paused ? 'Paused' : 'Running'}: ${name}${s.stretch ? ` · frame ${s.frame} of ${s.frames}` : ''} · ${mmss(Date.now() - s.started)}`;
+    } else if (remoteRun && !remoteRun.done) state.textContent = `Running in the other tab: frame ${remoteRun.frame || 0}`;
+    else state.textContent = '';
+    $('open-tab').textContent = view === 'process' ? 'Board in a new tab ↗' : 'Process in a new tab ↗';
+    renderLog(runLog, view === 'process' && runner ? runner.state : null);
+  }
+
+  runner = new Runner({
+    editor: ed,
+    ask: (step) => askRun(stageArea, step, ed.doc.process),
+    changed() {
+      const s = runner.state;
+      if (s) sync.run({ tile: s.tile, stretch: s.stretch, frame: s.frame, frames: s.frames, done: s.done });
+      redraw();
+    },
+  });
+  $('run-start').addEventListener('click', async (evt) => {
+    evt.currentTarget.blur();
+    const errors = P.check(ed.doc.process).filter((i) => i.level === 'error');
+    if (errors.length) {
+      setStatus(`The process can't run yet: ${errors[0].text}`, 'warn');
+      return;
+    }
+    if (ed.dragging || ed.placement) ed.cancel();
+    const onDevice = $('run-device').checked && device.session.connected;
+    if (onDevice) device.setLive(true);
+    setStatus(`Running${onDevice ? ' on the OpenDrop' : ''}: each step plays on the board; you are asked at Measure and Ask tiles`);
+    const ended = await runner.start();
+    if (onDevice) device.allOff();
+    if (ended === 'end') setStatus(`The run is done (${mmss(Date.now() - runner.state.started)})`);
+    else if (ended === 'stuck') setStatus(`The run stopped: ${runner.state.text}`, 'warn');
+    else if (ended === 'stopped') setStatus(`The run was stopped${onDevice ? ': everything on the OpenDrop is switched off' : ''}`, 'warn');
+    redraw();
+  });
+  $('run-pause').addEventListener('click', (evt) => {
+    evt.currentTarget.blur();
+    runner.pause();
+  });
+  $('run-stop').addEventListener('click', (evt) => {
+    evt.currentTarget.blur();
+    runner.stop();
+  });
+
   renderTemplates();
   restoreWork();
+  sync.settle(ed.doc);
+  syncRev = ed.revision;
+  setInterval(() => {
+    shareWork();
+    if (pendingRemote) redraw();
+  }, 400);
   applyPanels();
   setChartView(prefs.chart);
   setTab(prefs.tab);
-  root.OD.app = { editor: ed, board, chart, timeline, redraw, save, exportFrames, templates: () => myTemplates, device }; // for the console
+  setView(view);
+  root.OD.app = { editor: ed, board, chart, timeline, redraw, save, exportFrames, templates: () => myTemplates, device, processView, runner, setView }; // for the console
   paint(); // the first picture straight away, not at the next animation frame
 })(globalThis);

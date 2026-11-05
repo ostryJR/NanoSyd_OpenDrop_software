@@ -9,6 +9,7 @@
   const LANE = 26; // px per row of clips
   const CLIP = 20; // px: a clip's height
   const ARROW = 7; // px: an arrowhead's length
+  const BANDS = 20; // px: the row of the process's tiles
   const RULER = 22;
   const MIN_PX = 6; // px per frame
   const MAX_PX = 60;
@@ -95,10 +96,11 @@
     }
 
     // data: { frames, frame, selection, clips: [{ id, name, type, track, trackName, trackShort,
-    //   colour, from, to, problem, broken, split, handIn, handOut, preds }] } (trackShort: the
-    //   droplet's short name, D1 ...; broken: it can't run; shown where it would start)
+    //   colour, from, to, problem, broken, split, handIn, handOut, preds, dim }], bands } (trackShort:
+    //   the droplet's short name, D1 ...; broken: it can't run; shown where it would start; dim:
+    //   another tile's; bands: [{ id, name, from, to, open }] the process's tiles on this board)
     update(data) {
-      const key = JSON.stringify([data.frames, data.selection, data.clips]);
+      const key = JSON.stringify([data.frames, data.selection, data.clips, data.bands]);
       this.data = data;
       if (key !== this.key) {
         this.key = key;
@@ -166,6 +168,23 @@
       this.body.replaceChildren();
       this.layout.clear();
       let y = 0;
+      // The process's tiles on this board: a band over each one's frames; a click opens it.
+      if (this.data.bands && this.data.bands.length) {
+        const row = div('tl-bands', this.body);
+        row.style.height = `${BANDS}px`;
+        div('tl-head tl-bands-head', row, 'Steps');
+        for (const b of this.data.bands) {
+          const band = div(`tl-band${b.open ? ' open' : ''}`, row, b.name);
+          band.style.left = `${this.xOf(b.from)}px`;
+          band.style.width = `${Math.max(14, (b.to - b.from + 1) * this.px - 2)}px`;
+          band.title = `${b.name}: frames ${b.from}–${b.to}${b.open ? '' : ' (click to open it)'}`;
+          band.addEventListener('pointerdown', (evt) => {
+            evt.stopPropagation();
+            if (!b.open && this.cb.onTile) this.cb.onTile(b.id);
+          });
+        }
+        y += BANDS;
+      }
       for (const t of this.tracks()) {
         const height = Math.max(1, t.rows.length) * LANE;
         const track = div('tl-track', this.body);
@@ -186,6 +205,7 @@
           clip.classList.toggle('problem', Boolean(c.problem));
           clip.classList.toggle('broken', Boolean(c.broken));
           clip.classList.toggle('split', Boolean(c.split));
+          clip.classList.toggle('dim', Boolean(c.dim));
           clip.style.setProperty('--c', c.colour);
           clip.style.left = `${x0}px`;
           clip.style.width = `${Math.max(4, x1 - x0 - 1)}px`;

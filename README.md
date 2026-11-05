@@ -46,6 +46,7 @@ file name and download the file instead of showing a save dialog.
 | Dispense a droplet from a reservoir | The four buttons beside the reservoirs (6 frames) |
 | Save / open a project | **save** (⌘S / Ctrl+S) / **load**, top right. **load** also opens OpenDrop `.json` files |
 | Export for the OpenDrop controller | **export**, top right |
+| Design the process: steps, decisions, loops, lanes | **Process** at the top (see "The process"); **Board** goes back. **▶ Run** runs it |
 | Connect the OpenDrop (Chrome, Edge) | **connect**, bottom left, or **Connect…** in the Device tab, then pick its port. The dot by the title is green while it answers |
 | Send what is on screen to the device | **live** under play (white when on). Stepping, playing and editing then go straight to the device; live off switches everything on it off |
 | See where the device senses droplets | **feedback** under live (OpenDrop V4.2): dark dots on the board |
@@ -92,6 +93,64 @@ On the board, each path is a line with small arrows the way its droplet goes, an
 drawn as lines between the places its droplets go, with arrows: round a square for a circle mix,
 both ways along a back-and-forth, out of a split and into a merge. A template being dragged over
 the board shows them too. **Lines** (`L`) in the bottom bar hides all but the selected one.
+
+## The process
+
+**Process** (the switch at the top) shows the process as a top-down tree of tiles, in the board's
+place; **Board** goes back. The first time, the project gets Start → "Step 1" → End, Step 1 holding
+everything drawn so far.
+
+| Tile | What it is | In a run |
+|---|---|---|
+| Start, End | Where it begins and ends | |
+| Step, Dispense, Move, Mix, Merge, Split, Wait | A step with work on the board: anything (Step), a dispense from its reservoir, a path, a mixer (kind, size, rounds, direction), a merge, a split, a hold (seconds) | Plays on the board |
+| Measure | A named value with a unit, e.g. `conc` in mM | Asks you for the value |
+| Ask | A question, answered yes/no or with a number | Asks you |
+| Decision | `value` compared with a number (or `value is yes`), with a yes and a no arrow | Takes the arrow that holds |
+| Repeat | Its "again" arrow goes to what is repeated, which leads back to it; "done" goes on | Goes round that many times |
+| Parallel, Join | Lanes that run at the same time, on one board; Join waits for all of them | |
+
+- **Building it:**
+  - Drag a tile from the palette on the left onto the canvas. Clicking one instead puts it under
+    the selected tile, in between it and what came after.
+  - Drag from a tile's dot at the bottom (its output) onto another tile to connect them. Dragging
+    into empty space offers a tile to add there.
+  - Drag tiles to move them, click to select, **Delete** to remove (a tile's work on the board goes
+    with it; undo brings it back), arrows to nudge.
+  - **Tidy** lays it out top-down, **Fit** shows all of it. Ctrl/⌘ + wheel zooms, the wheel or a
+    drag on empty space pans.
+- **Loops** are arrows going back up. Their tiles get a dashed outline with the condition on top:
+  "repeat until conc < 5 mM" from the decision that leads out, or "repeat 3×".
+- **Properties** (with a tile selected) show its settings, where its work is on the board, and its
+  problems: an arrow going nowhere, a value used before it is measured, a decision inside parallel
+  lanes, lanes that don't join, a step not placed yet, steps out of order on the board, droplets
+  arriving at different places by two ways in.
+- **On the board:**
+  - Double-click a step, or **Open on the board**, to draw its work.
+  - The board shows that step with the steps that run with it up to the next stop (a decision,
+    Measure, Ask, Repeat or End). Its own clips are bright in the timeline and the others dim; a band
+    above the tracks shows each step's frames (click one to open it).
+  - The droplets coming in from the step before wait where it left them, shown as dashed rings. You
+    draw from them as from any droplet.
+  - What you draw goes into the open step, after the steps before it.
+  - **Place on the board** does a typed tile's job: it adds a dispense or a hold, starts placing
+    the mixer, merge or split (click where the droplet is, R turns it), or picks freehand for a
+    move.
+- **Run** (at the top) goes through the process from Start:
+  - Each stretch plays on the board with its frame times, and the running tile glows. With
+    **on the OpenDrop** ticked and the device connected, the device follows live and is switched
+    all off at the end.
+  - Measure and Ask tiles ask you. Decisions and Repeat choose the way.
+  - The log at the bottom right lists the values, decisions and times; **Pause** and **Stop** are
+    at the top.
+  - Nothing can be edited while it runs. Keep the page in front: a hidden tab runs slowly.
+- **Two tabs:**
+  - **Board in a new tab** (or **Process in a new tab**) opens the other view in a second browser
+    tab, e.g. the process on one screen and the board on the other.
+  - A change in one shows in the other within a moment, as an undo step there too.
+  - A run happens in one tab; the other follows it.
+- **Export** with a process writes the open step's board only. A process with decisions can't be one
+  OpenDrop file; run it from here instead.
 
 ## Droplets mustn't touch
 
@@ -279,11 +338,18 @@ What **save** writes and **load** opens. JSON, one field per line:
   `reservoirRightBottom`.
 - `pattern`: `frames` lists the electrodes on in each of its frames, control lines (128–143)
   included; they don't move when the pattern does.
+- `wait`: a hold of `duration` ms where nothing is switched on; the other actions keep moving.
+- `tile` (on any action): the process tile it belongs to.
+- `process` (top level, optional):
+  - `tiles`: `{ id, kind, name, x, y, … }` with the kind's settings: `reservoir` (dispense),
+    `params` (mix), `seconds` (wait), `value` and `unit` (measure), `question`, `answer` and
+    `value` (ask), `value`, `op` (`<`, `<=`, `>`, `>=`, `=`, `!=`, `is`) and `than` (decision),
+    `times` (repeat), `lanes` (parallel).
+  - `links`: `{ from, port, to }`. The ports are `next`; `yes`/`no` for a decision; `again`/`done`
+    for a repeat; `lane1`… for a parallel tile.
 - Room for later: action types and fields this version doesn't know are kept when a file is opened
-  and written back when it is saved (the list shows them as not supported). Reserved for logic and
-  conditions: `measure` (a value from an external instrument), `prompt` (ask the operator), `loop`
-  (`children`, `until`, `max`), `branch` (`if`/`then`/`else`), `when` on links, and a top-level
-  `inputs`.
+  and written back when it is saved. Not built yet: functions (a sub-process used in several
+  places), reading a measuring instrument directly (Measure asks you for now).
 
 ## Exported files (OpenDrop `.json`)
 
@@ -344,8 +410,12 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
   the board, `js/chart.js` the timing chart, `js/timeline.js` the timeline and `js/app.js` the page
   wiring. `js/device.js` talks to the OpenDrop (bytes, lining up, the session), `js/device-sim.js`
   is a simulated OpenDrop, `js/serial.js` the Web Serial port and `js/devicepanel.js` the Device
-  tab; see `docs/device-protocol.md`. All but view, chart, timeline, serial, devicepanel and app
-  run without a browser.
+  tab; see `docs/device-protocol.md`. `js/process.js` is the process (tiles, arrows, stretches,
+  loops, checks, layout, a run's way through it), `js/stretch.js` puts it on the board (droplets
+  coming in, each tile's frames), `js/runner.js` runs it, `js/processview.js` and
+  `js/processpanel.js` are the process view and its Properties, and `js/sync.js` keeps two tabs in
+  step. The view, chart, timeline, serial, device panel, process view and panel, sync and app run
+  in the browser; the rest runs in node too.
 
 ## License
 
