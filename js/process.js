@@ -26,6 +26,8 @@
     merge: { name: 'Merge', about: 'Two droplets become one: their lanes end here.', ports: ['next'], work: true },
     split: { name: 'Split', about: 'One droplet becomes two.', ports: ['next'], work: true },
     wait: { name: 'Wait', about: 'Holds the droplets where they are for a set time.', ports: ['next'], work: true },
+    temperature: { name: 'Temperature', about: 'Sets the heaters (T1–T3); it can wait until they get there.', ports: ['next'], work: true },
+    magnet: { name: 'Magnet', about: 'Switches a magnet on or off; it stays that way until another Magnet tile.', ports: ['next'], work: true },
     measure: { name: 'Measure', about: 'The run stops and asks you for a measured value.', ports: ['next'], stop: true },
     ask: { name: 'Ask', about: 'The run stops and asks you a question: yes or no, or a number.', ports: ['next'], stop: true },
     decision: { name: 'Decision', about: 'Goes the yes or the no way, by a measured or asked value.', ports: ['yes', 'no'], stop: true },
@@ -36,6 +38,7 @@
   // How they are listed in the palette, in groups.
   const PALETTE_GROUPS = [
     { name: 'On the board', kinds: ['step', 'dispense', 'move', 'mix', 'merge', 'split', 'wait'] },
+    { name: 'Heat and magnets', kinds: ['temperature', 'magnet'] },
     { name: 'Measure and decide', kinds: ['measure', 'ask', 'decision', 'repeat'] },
     { name: 'Lanes', kinds: ['parallel', 'join'] },
     { name: 'Start and end', kinds: ['start', 'end'] },
@@ -96,6 +99,10 @@
         return { name: 'Mix', params: { kind: 'circle', size: 2, rounds: 3 } };
       case 'wait':
         return { name: 'Wait', seconds: 60 };
+      case 'temperature':
+        return { name: 'Temperature', targets: [60, null, null], wait: true, tolerance: 1 };
+      case 'magnet':
+        return { name: 'Magnet', magnet: 1, on: true };
       case 'measure': {
         const used = new Set(process.tiles.map((t) => t.value));
         let value = 'conc';

@@ -4,11 +4,11 @@
  * version doesn't know are kept as they are and written back. No DOM here. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./model.js'), require('./templates.js'), require('./compile.js'), require('./process.js'));
+    module.exports = factory(require('./model.js'), require('./templates.js'), require('./compile.js'), require('./process.js'), require('./heat.js'));
   } else {
-    (root.OD = root.OD || {}).project = factory(root.OD.model, root.OD.templates, root.OD.compile, root.OD.process);
+    (root.OD = root.OD || {}).project = factory(root.OD.model, root.OD.templates, root.OD.compile, root.OD.process, root.OD.heat);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, templates, compiler, processes) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, templates, compiler, processes, heat) {
   'use strict';
 
   const { CELLS, MAX_FRAMES, DEFAULT_FRAME_TIME, clampTime } = model;
@@ -17,11 +17,11 @@
   const TAG = 'openDropGeneratorProject';
   const VERSION = 1;
   const EXTENSION = '.odproj.json';
-  const TYPE_NAMES = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait' };
+  const TYPE_NAMES = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet' };
   const MAX_WAIT = 24 * 3600 * 1000; // a wait (hold) may last up to a day
   // Key order in saved files; other keys follow in the order they came.
   const KEY_ORDER = ['id', 'type', 'name', 'droplet', 'tile', 'start', 'after', 'delay', 'points', 'template', 'at', 'turns',
-    'reservoir', 'frames', 'duration', 'stepTime', 'times', 'split'];
+    'reservoir', 'frames', 'duration', 'targets', 'wait', 'tolerance', 'magnet', 'on', 'stepTime', 'times', 'split'];
   const TILE_ORDER = ['id', 'kind', 'name', 'x', 'y'];
 
   function newProject({ layout = 'electrodes', frameTime = DEFAULT_FRAME_TIME } = {}) {
@@ -127,6 +127,24 @@
         }
         a.duration = Math.min(MAX_WAIT, Math.round(a.duration));
         break;
+      case 'temp':
+        a.targets = heat.cleanTargets(a.targets);
+        if (!a.targets.some((t) => t !== null)) {
+          warn(`the temperature “${a.name}” sets nothing and was left out`);
+          return null;
+        }
+        if (a.wait === true) a.tolerance = heat.cleanTolerance(a.tolerance);
+        else {
+          delete a.wait;
+          delete a.tolerance;
+        }
+        a.droplet = '';
+        break;
+      case 'magnet':
+        a.magnet = a.magnet === 2 ? 2 : 1;
+        a.on = a.on !== false;
+        a.droplet = '';
+        break;
       default:
         break; // kept as it is: a later version may know it
     }
@@ -191,6 +209,7 @@
     const project = { ...data, [TAG]: Math.max(version, VERSION) };
     project.layout = typeof data.layout === 'string' ? data.layout : 'electrodes';
     project.frameTime = goodTime(data.frameTime) ? clampTime(data.frameTime) : DEFAULT_FRAME_TIME;
+    if (data.heatRates !== undefined) project.heatRates = heat.cleanRates(data.heatRates);
 
     project.templates = {};
     if (data.templates && typeof data.templates === 'object' && !Array.isArray(data.templates)) {

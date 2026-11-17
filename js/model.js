@@ -29,6 +29,24 @@
       // what undo restores.
       this.times = new Uint32Array(ORIGINAL_FRAMES + 1);
       this.frameTime = DEFAULT_FRAME_TIME;
+      // Heater targets and magnets per frame ({ targets: [°C or null ×3], magnets: [bool, bool] }),
+      // for frames where the project sets them; sparse. Magnets are also on as electrodes 128/129.
+      this.controls = [];
+      // Frames where playing waits until the heaters reach targets: frame -> { targets, tolerance }.
+      this.holds = new Map();
+      // The last frame something runs in, even with nothing on (a wait for the heaters at the end):
+      // lastFrame() is at least this.
+      this.end = 0;
+    }
+
+    // Frame f's heater targets and magnets, or null if the project doesn't set them.
+    controlsAt(f) {
+      return this.controls[f] || null;
+    }
+
+    // Whether any frame has a heater target set.
+    get heated() {
+      return this.controls.some((c) => c && c.targets.some((t) => t !== null));
     }
 
     // Frames in the table (1..length-1); later ones are empty.
@@ -88,6 +106,9 @@
     clearAll() {
       for (const frame of this.frames) frame.fill(0);
       this.times.fill(0);
+      this.controls = [];
+      this.holds.clear();
+      this.end = 0;
     }
 
     copyFrame(from, to) {
@@ -100,10 +121,10 @@
       return f >= this.frames.length || !this.frames[f].includes(1);
     }
 
-    // Last frame with any electrode on, or 1 (the original's frameMax()).
+    // Last frame with any electrode on, or 1 (the original's frameMax()); at least `end`.
     lastFrame() {
-      for (let f = this.frames.length - 1; f > 1; f--) if (!this.isEmpty(f)) return f;
-      return 1;
+      for (let f = this.frames.length - 1; f > Math.max(1, this.end); f--) if (!this.isEmpty(f)) return f;
+      return Math.max(1, this.end);
     }
 
     // Electrodes (144 bytes a frame) and frame times, for undo.

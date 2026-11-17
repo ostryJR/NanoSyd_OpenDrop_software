@@ -57,12 +57,30 @@
             <span class="segmented" role="group" aria-label="View">
               <button type="button" data-view="timeline" aria-pressed="true">Timeline</button>
               <button type="button" data-view="step" aria-pressed="false">Step time</button>
+              <button type="button" data-view="temp" aria-pressed="false">Temperature</button>
             </span>
           </span>
         </div>
         <div id="timeline"></div>
         <!-- The legend sits inside the chart, so switching views never changes the bar above. -->
         <div id="chart" hidden><span id="chart-legend"><i class="swatch plain"></i>default time<i class="swatch own"></i>own time</span></div>
+        <div id="temp-box" hidden>
+          <div class="temp-bar">
+            <span class="segmented" role="group" aria-label="Heater a click sets">
+              <button type="button" data-heater="0" aria-pressed="true"><i class="swatch t1"></i>T1</button>
+              <button type="button" data-heater="1" aria-pressed="false"><i class="swatch t2"></i>T2</button>
+              <button type="button" data-heater="2" aria-pressed="false"><i class="swatch t3"></i>T3</button>
+            </span>
+            <span class="temp-key"><i class="key solid"></i>target <i class="key dashed"></i>estimate
+              <i class="key dot"></i>measured <i class="key diamond"></i>waits</span>
+            <span class="spacer"></span>
+            <label title="How fast the heaters are assumed to warm up, for estimating waits without a device">Warms
+              <input type="number" id="rate-up" min="0.1" max="600" step="any"> °C/min</label>
+            <label title="How fast they are assumed to cool down">cools
+              <input type="number" id="rate-down" min="0.1" max="600" step="any"> °C/min</label>
+          </div>
+          <div id="temp-chart"></div>
+        </div>
       </section>
     </div>
 
@@ -142,6 +160,24 @@
               <span class="hint">Right-click the line where the droplet should wait<span class="mac-only"> (or
                 Ctrl+click)</span>.</span>
             </div>
+            <div class="field" id="prop-temps-row">Heaters
+              <span class="temp-inputs">
+                <label><i class="swatch t1"></i>T1 <input type="number" id="prop-t1" min="20" max="120" step="1" placeholder="—"> °C</label>
+                <label><i class="swatch t2"></i>T2 <input type="number" id="prop-t2" min="20" max="120" step="1" placeholder="—"> °C</label>
+                <label><i class="swatch t3"></i>T3 <input type="number" id="prop-t3" min="20" max="120" step="1" placeholder="—"> °C</label>
+              </span>
+              <span class="hint">Empty: that heater stays as it was.</span>
+            </div>
+            <label class="check" id="prop-heatwait-row"><input type="checkbox" id="prop-heatwait"> Wait until the heaters
+              get there</label>
+            <label class="field" id="prop-tolerance-row">Close enough within
+              <span class="with-unit"><input type="number" id="prop-tolerance" min="0.1" max="20" step="any"> °C</span></label>
+            <div class="field" id="prop-magnet-row">Magnet
+              <span class="row">
+                <select id="prop-magnet"><option value="1">Magnet 1</option><option value="2">Magnet 2</option></select>
+                <select id="prop-magnet-on"><option value="on">on</option><option value="off">off</option></select>
+              </span>
+            </div>
             <datalist id="droplet-names"></datalist>
             <p id="prop-info" class="info"></p>
             <div class="maker-buttons">
@@ -184,6 +220,7 @@
             <button type="button" id="device-sim" hidden
                     title="A pretend OpenDrop in this page, for trying things without the device">Simulated OpenDrop</button>
           </div>
+          <p id="device-pick-hint" class="hint">In the list the browser shows, look for the <b>Feather M0</b> device.</p>
           <label class="check"><input type="checkbox" id="device-auto"> Reconnect automatically when the page
             opens or the device is plugged in</label>
 
@@ -276,6 +313,7 @@
   <script src="js/layouts-data.js"></script>
   <script src="js/layout.js"></script>
   <script src="js/model.js"></script>
+  <script src="js/heat.js"></script>
   <script src="js/paths.js"></script>
   <script src="js/templates.js"></script>
   <script src="js/lines.js"></script>
@@ -291,6 +329,7 @@
   <script src="js/serial.js"></script>
   <script src="js/view.js"></script>
   <script src="js/chart.js"></script>
+  <script src="js/tempchart.js"></script>
   <script src="js/timeline.js"></script>
   <script src="js/processview.js"></script>
   <script src="js/processpanel.js"></script>

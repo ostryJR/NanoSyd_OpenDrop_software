@@ -54,10 +54,45 @@
   }
 
   const linkName = (t) => (t ? t.name || P.KINDS[t.kind].name : '?');
-  const GLYPH = {
-    start: '▶', end: '■', step: '□', dispense: '⬚', move: '→', mix: '↻', merge: '∨', split: '∧', wait: '⧗',
-    measure: '⌖', ask: '?', decision: '◇', repeat: '↺', parallel: '⇉', join: '⇊',
+  // Each kind of tile's icon: line drawings on a 24 × 24 grid, all drawn the same way (one stroke
+  // width, round ends, the text's colour), so they look alike at any size; `fill` parts are solid.
+  const ICONS = {
+    start: [{ d: 'M7 4.5 19 12 7 19.5Z', fill: true }],
+    end: [{ d: 'M6 6h12v12H6Z', fill: true }],
+    step: [{ d: 'M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z' }],
+    dispense: [{ d: 'M12 3c-2.5 3.6-6 7.6-6 11a6 6 0 0 0 12 0c0-3.4-3.5-7.4-6-11Z' }],
+    move: [{ d: 'M4 12h15M13 6l6 6-6 6' }],
+    mix: [{ d: 'M20 12a8 8 0 1 1-2.34-5.66L20 8.5M20 3.5v5h-5' }],
+    merge: [{ d: 'M5 4l7 7 7-7M12 11v9' }],
+    split: [{ d: 'M12 4v9M12 13l-7 7M12 13l7 7' }],
+    wait: [{ d: 'M6 3h12M6 21h12M8 3c0 5 8 4 8 9s-8 4-8 9M16 3c0 5-8 4-8 9s8 4 8 9' }],
+    temperature: [{ d: 'M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0ZM12 14v3' }],
+    magnet: [{ d: 'M5 4v8a7 7 0 0 0 14 0V4h-4v8a3 3 0 0 1-6 0V4ZM5 8h4M15 8h4' }],
+    measure: [{ d: 'M3.5 17a8.5 8.5 0 0 1 17 0M12 17l4.5-5.5' }],
+    ask: [{ d: 'M9 9a3 3 0 1 1 4.2 2.75c-.75.35-1.2 1.1-1.2 1.95V15M12 19v.01' }],
+    decision: [{ d: 'M12 3l9 9-9 9-9-9Z' }],
+    repeat: [{ d: 'M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4' }],
+    parallel: [{ d: 'M4 8h14M15 5l3 3-3 3M4 16h14M15 13l3 3-3 3' }],
+    join: [{ d: 'M8 4v11M5 12l3 3 3-3M16 4v11M13 12l3 3 3-3M4 20h16' }],
   };
+
+  // A kind's icon as an <svg> (in a tile at x, y; or for HTML when no parent is given).
+  function icon(kind, size = 16, parent = null, x = 0, y = 0) {
+    const svg = el('svg', { class: 'pv-icon', viewBox: '0 0 24 24', width: size, height: size, 'aria-hidden': 'true' }, parent);
+    if (parent) {
+      svg.setAttribute('x', x);
+      svg.setAttribute('y', y);
+    }
+    for (const part of ICONS[kind] || ICONS.step) el('path', { d: part.d, class: part.fill ? 'solid' : '' }, svg);
+    return svg;
+  }
+
+  // An icon and a label centred on (0, y) in a tile: `chars` wide at `charW` px a character.
+  function centredLabel(group, kind, y, value, cls, size, charW) {
+    const width = size + 5 + value.length * charW;
+    icon(kind, size, group, -width / 2, y - size * 0.82);
+    return text(group, -width / 2 + size + 5, y, value, cls);
+  }
   const RESERVOIRS = { reservoirLeftTop: 'left top', reservoirLeftBottom: 'left bottom', reservoirRightTop: 'right top', reservoirRightBottom: 'right bottom' };
 
   function el(tag, attrs = {}, parent = null) {
@@ -122,6 +157,8 @@
           bits.push(p.kind === 'backforth' ? `back & forth ×${p.rounds || 2}` : p.kind === 'splitmerge' ? `split & merge ×${p.rounds || 2}` : `circle ${p.size || 2}×${p.size || 2}${p.dir === 'ccw' ? ' ↺' : ''} ×${p.rounds || 3}`);
         }
         if (t.kind === 'wait') bits.push(`${t.seconds || 0} s`);
+        if (t.kind === 'temperature') bits.push(`${OD.heat.targetsText(OD.heat.cleanTargets(t.targets))}${t.wait ? ', waits' : ''}`);
+        if (t.kind === 'magnet') bits.push(`magnet ${t.magnet === 2 ? 2 : 1} ${t.on === false ? 'off' : 'on'}`);
         const me = info && info.tile.get(t.id);
         if (me && me.placed && me.to) bits.push(`frames ${me.from}–${me.to} · ${seconds(me.ms)}`);
         else if (P.hasWork(t)) bits.push('not placed yet');
@@ -170,10 +207,7 @@
           b.className = `pv-kind ${kind}`;
           const about = P.KINDS[kind].about;
           b.title = `${P.KINDS[kind].name}${about ? `: ${about}` : ''}\nDrag it onto the process (or onto an arrow), or click to add it under the selected tile`;
-          const g = document.createElement('span');
-          g.className = 'pv-glyph';
-          g.textContent = GLYPH[kind] || '□';
-          b.append(g, P.KINDS[kind].name);
+          b.append(icon(kind), P.KINDS[kind].name);
           b.addEventListener('pointerdown', (evt) => this.paletteDown(evt, kind));
           box.appendChild(b);
         }
@@ -502,14 +536,15 @@
         if (t.kind === 'parallel' || t.kind === 'join') {
           // On the bar itself, so nothing sticks out where arrows come in at its ends.
           const what = t.kind === 'parallel' ? ` · ${P.lanesOf(t)} lanes` : '';
-          text(group, 0, 3.5, `${GLYPH[t.kind]} ${P.KINDS[t.kind].name}${what}`, 'pv-bar-label centre');
+          centredLabel(group, t.kind, 3.5, `${P.KINDS[t.kind].name}${what}`, 'pv-bar-label', 11, 6.3);
         } else if (t.kind === 'start' || t.kind === 'end') {
-          text(group, 0, 5, `${GLYPH[t.kind]} ${name}`, 'pv-name centre');
+          centredLabel(group, t.kind, 5, name, 'pv-name', 13, 7.6);
         } else if (t.kind === 'decision') {
-          text(group, 0, -4, '◇ if', 'pv-sub centre');
+          centredLabel(group, 'decision', -4, 'if', 'pv-sub', 11, 6);
           text(group, 0, 14, summary(t, info, p), 'pv-name centre');
         } else {
-          const head = text(group, -w / 2 + 14, -6, `${GLYPH[t.kind]} ${name}`, 'pv-name');
+          icon(t.kind, 14, group, -w / 2 + 14, -6 - 11.5);
+          const head = text(group, -w / 2 + 33, -6, name, 'pv-name');
           // The droplets it works on, by their short names, after its name where they fit.
           const me = info && info.tile.get(t.id);
           const drops = me && me.droplets ? [...new Set(me.droplets.map((n) => OD.project.shortDroplet(n)))].join(', ') : '';
@@ -832,7 +867,7 @@
       for (const kind of kinds.filter((k) => k !== 'start' && P.KINDS[k])) {
         const b = document.createElement('button');
         b.type = 'button';
-        b.textContent = `${GLYPH[kind] || '□'} ${P.KINDS[kind].name}`;
+        b.append(icon(kind), P.KINDS[kind].name);
         if (P.KINDS[kind].about) b.title = P.KINDS[kind].about;
         b.addEventListener('click', () => {
           this.menu.hidden = true;
@@ -1103,5 +1138,5 @@
     return value.length > max ? `${value.slice(0, max - 1)}…` : value;
   }
 
-  OD.processView = { ProcessView, GLYPH, summary, RESERVOIRS };
+  OD.processView = { ProcessView, icon, summary, RESERVOIRS };
 })(globalThis);

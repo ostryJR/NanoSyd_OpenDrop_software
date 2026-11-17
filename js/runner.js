@@ -4,16 +4,19 @@
  * End. Nothing in the project changes; while it runs, the board can't be edited. No DOM here:
  * the page passes in how to ask and is told when anything changed. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./process.js'));
-  else (root.OD = root.OD || {}).runner = factory(root.OD.process);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (P) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./process.js'), require('./heat.js'));
+  else (root.OD = root.OD || {}).runner = factory(root.OD.process, root.OD.heat);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (P, heat) {
   'use strict';
 
   class Runner {
     // hooks: { editor, ask(step) -> Promise of the value, or null to stop the run, changed(),
-    //   timers ({ setTimeout, clearTimeout }), now() -> ms, speed (1 = real time) }
+    //   timers ({ setTimeout, clearTimeout }), now() -> ms, speed (1 = real time),
+    //   readings() -> the heaters' temperatures (°C or null ×3) when a live device measures
+    //   them, otherwise null: a frame that waits for the heaters then lasts until they get
+    //   there, instead of its estimated time }
     constructor(hooks) {
-      this.hooks = { changed() {}, timers: globalThis, now: () => Date.now(), speed: 1, ...hooks };
+      this.hooks = { changed() {}, timers: globalThis, now: () => Date.now(), speed: 1, readings: () => null, ...hooks };
       this.ed = hooks.editor;
       this.state = null; // { tile, stretch, frame, frames, log, values, paused, done, text, started }
       this.stopping = false;
@@ -45,6 +48,7 @@
       ed.frozen = 'A run is going: stop it to change things';
       const walk = new P.Walk(JSON.parse(JSON.stringify(process)));
       let droplets = [];
+      let controls = null; // the heaters and magnets as the stretches before left them
       const name = (t) => (t.kind === 'decision' ? P.conditionText(t, process) : t.name || P.KINDS[t.kind].name);
       let ended = 'end';
       let seen = 0;
@@ -82,7 +86,7 @@
           }
           // A stretch: show it with the droplets as they are, and play it.
           const s = step.stretch;
-          ed.showStretch(s.id, droplets);
+          ed.showStretch(s.id, droplets, controls);
           const tile = P.tileById(process, s.start);
           this.state.stretch = s.id;
           this.state.tile = s.start;
@@ -95,7 +99,9 @@
               ed.frame = f;
               this.state.frame = f;
               this.hooks.changed();
-              await this.sleep(ed.seq.timeOf(f));
+              const hold = ed.seq.holds.get(f);
+              if (hold && this.hooks.readings()) await this.heatUp(hold, f);
+              else await this.sleep(ed.seq.timeOf(f));
             }
           }
           if (this.stopping) {
@@ -103,6 +109,7 @@
             break;
           }
           droplets = ed.compiled.left;
+          controls = ed.compiled.controls;
           walk.go();
         }
       } finally {
@@ -115,6 +122,23 @@
         this.hooks.changed();
       }
       return ended;
+    }
+
+    // Waits in frame f until the device's heaters reach `hold`'s targets (or the run stops).
+    async heatUp(hold, f) {
+      const from = this.hooks.now();
+      this.state.heating = { frame: f, targets: hold.targets, tolerance: hold.tolerance };
+      this.note(`Waiting for the heaters: ${heat.targetsText(hold.targets)}`);
+      for (;;) {
+        const temps = this.hooks.readings();
+        if (!temps || heat.reached(temps, hold.targets, hold.tolerance) || this.stopping) break;
+        await this.sleep(250 * this.hooks.speed);
+      }
+      this.state.heating = null;
+      if (!this.stopping) {
+        const s = Math.round((this.hooks.now() - from) / 1000);
+        this.note(`The heaters got there (${s >= 60 ? `${Math.floor(s / 60)} min ${s % 60} s` : `${s} s`})`);
+      }
     }
 
     // Waits `ms` of run time (longer while paused, shorter at a higher speed).

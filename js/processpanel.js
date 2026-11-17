@@ -6,7 +6,7 @@
 
   const OD = root.OD;
   const P = OD.process;
-  const { GLYPH, RESERVOIRS } = OD.processView;
+  const { icon, RESERVOIRS } = OD.processView;
   const OPS = [['<', '<'], ['<=', '≤'], ['>', '>'], ['>=', '≥'], ['=', '='], ['!=', '≠']];
   const seconds = (ms) => (ms >= 60000 ? `${Math.floor(ms / 60000)} min ${Math.round((ms % 60000) / 1000)} s` : `${Math.round(ms / 100) / 10} s`);
 
@@ -90,7 +90,7 @@
         return;
       }
       const kind = P.KINDS[t.kind];
-      this.host.append(node('h3', { text: `${GLYPH[t.kind]} ${kind.name}` }));
+      this.host.append(node('h3', { class: 'with-icon' }, icon(t.kind), kind.name));
       this.host.append(node('p', { class: 'hint about', text: kind.about }));
       if (!['start', 'end', 'parallel', 'join', 'decision'].includes(t.kind)) {
         this.host.append(this.field('Name', this.text(t.name, { maxlength: 60 }), (v) => this.set({ name: String(v).trim() || kind.name }, 'Renamed')));
@@ -174,6 +174,41 @@
             if (s > 0) this.set({ seconds: s }, `${t.name}: ${s} s`);
           }));
           break;
+        case 'temperature': {
+          const H = OD.heat;
+          const targets = H.cleanTargets(t.targets);
+          targets.forEach((v, i) => {
+            const input = this.number(v === null ? '' : v, { min: H.TEMP_RANGE[0], max: H.TEMP_RANGE[1], step: 1, placeholder: '—' });
+            h.append(this.field(`T${i + 1} (°C)`, input, (x) => {
+              const next = targets.slice();
+              next[i] = String(x).trim() === '' ? null : H.clampTemp(Number(x));
+              if (!next.some((y) => y !== null)) {
+                this.app.status('Set at least one heater', 'warn');
+                return;
+              }
+              this.set({ targets: next }, `${t.name}: ${H.targetsText(next)}`);
+            }));
+          });
+          const wait = node('input', { type: 'checkbox' });
+          wait.checked = Boolean(t.wait);
+          // Only the box and its words switch it, not the empty space beside them.
+          wait.addEventListener('change', () => {
+            this.set({ wait: wait.checked }, wait.checked ? `${t.name} waits until the heaters get there` : `${t.name} doesn't wait`);
+            this.key = '';
+            this.app.changed();
+          });
+          h.append(node('label', { class: 'check' }, wait, 'Wait until the heaters get there'));
+          if (t.wait) h.append(this.field('Close enough within (°C)', this.number(t.tolerance || H.DEFAULT_TOLERANCE, { min: 0.1, max: 20, step: 'any' }), (x) => {
+            if (Number(x) > 0) this.set({ tolerance: H.cleanTolerance(Number(x)) }, `${t.name}: within ${H.cleanTolerance(Number(x))} °C`);
+          }));
+          h.append(node('p', { class: 'hint', text: 'Empty heaters stay as they were. Waiting, a run on the OpenDrop goes on once the readings get there; without one, the wait is estimated from the heating rates in the Temperature view.' }));
+          break;
+        }
+        case 'magnet':
+          h.append(this.field('Magnet', this.select([['1', 'Magnet 1'], ['2', 'Magnet 2']], String(t.magnet === 2 ? 2 : 1)), (v) => this.set({ magnet: Number(v) }, `${t.name}: magnet ${v}`)));
+          h.append(this.field('Switch it', this.select([['on', 'on'], ['off', 'off']], t.on === false ? 'off' : 'on'), (v) => this.set({ on: v === 'on' }, `${t.name}: ${v}`)));
+          h.append(node('p', { class: 'hint', text: 'It stays that way through the steps after it, until another Magnet tile.' }));
+          break;
         case 'measure':
           h.append(this.field('Value', this.text(t.value, { maxlength: 30 }), (v) => this.set({ value: clean(v) || t.value }, `${t.name} gives ${clean(v) || t.value}`)));
           h.append(this.field('Unit', this.text(t.unit, { maxlength: 12 }), (v) => this.set({ unit: String(v).trim() }, 'Unit set')));
@@ -232,7 +267,7 @@
       };
       const name = step.missing || t.value;
       const unit = (process.tiles.find((x) => x.kind === 'measure' && x.value === name) || {}).unit || '';
-      box.append(node('h3', { text: t.kind === 'decision' ? `${name}?` : `${GLYPH[t.kind]} ${t.name || P.KINDS[t.kind].name}` }));
+      box.append(t.kind === 'decision' ? node('h3', { text: `${name}?` }) : node('h3', { class: 'with-icon' }, icon(t.kind), t.name || P.KINDS[t.kind].name));
       if (t.kind === 'ask' && t.answer !== 'number') {
         box.append(node('p', { text: t.question || 'Go on?' }));
         box.append(node('div', { class: 'row' },

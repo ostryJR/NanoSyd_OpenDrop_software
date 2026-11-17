@@ -23,7 +23,7 @@
     return node;
   }
 
-  const TYPE_MARK = { path: '→', template: '◎', dispense: '⬚', pattern: '▦' };
+  const TYPE_MARK = { path: '→', template: '◎', dispense: '⬚', pattern: '▦', wait: '⧗', temp: '°', magnet: '⊓' };
 
   class Timeline {
     // onSelect(id or null), onFrame(frame), onPreview(id, frame) -> { valid, reason, from, to },
