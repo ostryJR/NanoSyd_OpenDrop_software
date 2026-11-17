@@ -212,7 +212,9 @@ touching droplets shows them as problems.
   them can't come along (it would leave the array, or touch another droplet), the drag is refused.
   ⌥/Alt + arrow keys move only the path; Shift+drag moves it with everything that follows.
 - The selected path can be reshaped with any tool. To draw a new path over it, press **Esc** first.
-- Paths stop at frame 200.
+- There is no 200-frame limit: sequences can run as long as you need when played live (a guard
+  stops them at frame 100,000). Exported files and *upload for later* still matter to the original
+  200: see [Exported files](#exported-files-opendrop-json).
 
 ## Frame times and the chart
 
@@ -248,7 +250,7 @@ touching droplets shows them as problems.
   attached to it stay as they are.
 - A template is dropped by its first frame's leftmost electrode (the top one if there are several),
   starting in the frame on screen. Like a path, it is added on top of what those frames hold, then
-  the view moves to its last frame. Where it doesn't fit (off the array, or past frame 200) it
+  the view moves to its last frame. Where it doesn't fit (off the array) it
   shows red and nothing is added.
 - **+ New** sets the project aside and gives you a blank board: draw the operation from frame 1
   with any tool (own frame times are kept), name it and save it. The project comes back as it was.
@@ -352,7 +354,7 @@ What **save** writes and **load** opens. JSON, one field per line:
 - `openDropGeneratorProject` is the format version; `layout` the cartridge layout; `frameTime`
   the default frame time in ms; `templates` copies of the templates the actions use.
 - Every action has an `id`, a `type`, a `name` and a `droplet` name, and **either** `start` (its
-  first frame, 1–200) **or** `after` (the id of the action it follows, or a list of ids: it starts in
+  first frame, from 1) **or** `after` (the id of the action it follows, or a list of ids: it starts in
   the last frame of the one that ends last) with an optional `delay` in frames.
 - Optional on every action: `stepTime` (ms per step; default `frameTime`), `times` (own ms per step,
   0 = default; templates, dispenses and patterns), and `split: true` (long steps stretch over frames
@@ -402,7 +404,9 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
 ]
 ```
 
-- One object per frame, from frame 1 to the last frame with any electrode on (at most 200).
+- One object per frame, from frame 1 to the last frame with any electrode on (any number of them).
+  The original controller reads only the first 200, so exporting a longer sequence warns about
+  that; *upload for later* (protocol 1) refuses one: play it live instead.
 - `"yR"` is row R (0 = top). Character k of it is column k, `1` = on. Electrode ID = column × 8 + row.
 - Columns 0 and 15 are the left and right reservoirs, 1–14 the 14 × 8 grid, and 16–17 control
   lines (16 drives the magnets in the magnet layout).
@@ -426,7 +430,7 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
   byte stream up first, and live, disconnecting and closing switch everything off.
 - Loading replaces the current project; the original merged the file into whatever was on screen.
 - Export doesn't add a second `.json` to the name.
-- Loading skips frames after 200 instead of crashing, and also reads files from controller 3.2.
+- Loading keeps frames after 200 (the original skipped or crashed on them), and also reads files from controller 3.2.
 - A fast paint drag paints every electrode along the way.
 
 ## Development

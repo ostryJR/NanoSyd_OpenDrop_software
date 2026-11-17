@@ -156,7 +156,7 @@ test('split: a wait can overrun by up to one frame; split actions alone take tur
   assert.deepEqual(alone.spans.get('long'), { from: 1, to: 2 });
 });
 
-test('problems: off the array, past frame 200, missing or broken links, unknown kinds', () => {
+test('problems: off the array, past the frame guard, missing or broken links, unknown kinds', () => {
   const r = compile(project([
     path('off', { start: 1 }, [E(1, 0), E(5, 4)]),
     path('late', { start: MAX_FRAMES - 1 }, [E(1, 0), E(5, 0)]),
@@ -167,8 +167,20 @@ test('problems: off the array, past frame 200, missing or broken links, unknown 
   const kinds = Object.fromEntries(r.issues.map((i) => [i.id, i.kind]));
   assert.deepEqual(kinds, { off: 'invalid', late: 'cut', orphan: 'link', afterOff: 'link', future: 'unknown' });
   assert.deepEqual(r.spans.get('late'), { from: MAX_FRAMES - 1, to: MAX_FRAMES, cut: true });
-  assert.ok(r.seq.get(E(2, 0), MAX_FRAMES), 'the part before frame 200 is still there');
+  assert.ok(r.seq.get(E(2, 0), MAX_FRAMES), 'the part before the guard is still there');
   assert.match(r.issues.find((i) => i.id === 'future').text, /kept in the file/);
+});
+
+test('actions run past frame 200, and followers start after them', () => {
+  const r = compile(project([
+    path('far', { start: 250 }, [E(1, 0), E(4, 0)]),
+    path('next', { after: 'far', delay: 100 }, [E(4, 0), E(4, 2)]),
+  ]), rects);
+  assert.deepEqual(r.issues.filter((i) => i.kind === 'cut' || i.kind === 'link'), []);
+  assert.deepEqual(r.spans.get('far'), { from: 250, to: 253 });
+  assert.deepEqual(r.spans.get('next'), { from: 353, to: 355 });
+  assert.equal(r.seq.lastFrame(), 355);
+  assert.ok(r.seq.get(E(4, 2), 355));
 });
 
 test('a cycle of links never starts', () => {

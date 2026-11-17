@@ -124,7 +124,8 @@
   }
 
   // Where a template lands with its anchor on electrode `anchor` in frame `frame`: the electrodes
-  // of each frame, and whether it fits on the array (`fits`) and before frame 200 (`inTime`).
+  // of each frame, and whether it fits on the array (`fits`) and before the MAX_FRAMES guard
+  // (`inTime`).
   function place(template, quarterTurns, anchor, frame, rects) {
     const { centres } = electrodeGraph(rects);
     const c0 = Math.floor(anchor / ROWS);
@@ -202,7 +203,7 @@
     return out;
   }
 
-  const dropletFrame = (seq, f) => seq.frames[f].subarray(0, DROPLET_CELLS).includes(1);
+  const dropletFrame = (seq, f) => seq.cells(f).subarray(0, DROPLET_CELLS).includes(1);
 
   // The template drawn in a sequence: the frames from the first to the last with a droplet
   // electrode on, as offsets from the first frame's first electrode (leftmost column, then the
@@ -211,13 +212,13 @@
   function fromSequence(seq) {
     let first = 0;
     let last = 0;
-    for (let f = 1; f <= MAX_FRAMES; f++) {
+    for (let f = 1; f <= seq.lastFrame(); f++) {
       if (!dropletFrame(seq, f)) continue;
       if (!first) first = f;
       last = f;
     }
     if (!first) return null;
-    const anchor = seq.frames[first].indexOf(1);
+    const anchor = seq.cells(first).indexOf(1);
     const c0 = Math.floor(anchor / ROWS);
     const r0 = anchor % ROWS;
     const frames = [];
@@ -226,7 +227,7 @@
       for (let e = 0; e < DROPLET_CELLS; e++) if (seq.get(e, f)) cells.push([Math.floor(e / ROWS) - c0, (e % ROWS) - r0]);
       frames.push(cells);
     }
-    const times = Array.from(seq.times.subarray(first, last + 1));
+    const times = Array.from({ length: last - first + 1 }, (_, i) => seq.times[first + i] || 0);
     return times.some(Boolean) ? { frames, times } : { frames };
   }
 

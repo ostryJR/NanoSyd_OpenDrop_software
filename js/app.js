@@ -110,7 +110,7 @@
   // While a path is being drawn, the status line counts its steps.
   let draftInStatus = false;
   function showDraft(draft) {
-    const limit = draft.limited ? ' (stopped at frame 200)' : '';
+    const limit = draft.limited ? ` (stopped at frame ${OD.model.MAX_FRAMES})` : '';
     setStatus(
       draft.steps === 0
         ? 'Back on the start electrode: letting go adds nothing'
@@ -532,7 +532,16 @@
     const base = ed.makingTemplate ? nameInput.value.trim() || 'template' : baseName || 'opendrop-sequence';
     const name = await saveText(jsonio.encode(ed.seq), withJson(base), 'OpenDrop sequence');
     const part = ed.doc.process && openTile() ? `: “${openTileName()}” and what runs with it on its board (a process with decisions can't be one file; run it from here instead)` : '';
-    if (name) setStatus(`Exported ${name} (${plural(ed.seq.lastFrame(), 'frame')}) for the OpenDrop controller${part}`);
+    const n = ed.seq.lastFrame();
+    const long = n > OD.model.ORIGINAL_FRAMES;
+    if (name) {
+      setStatus(
+        long
+          ? `Exported ${name} (${plural(n, 'frame')}). The original OpenDrop controller and “upload for later” read only the first ${OD.model.ORIGINAL_FRAMES}; play it live from here to use them all${part}`
+          : `Exported ${name} (${plural(n, 'frame')}) for the OpenDrop controller${part}`,
+        long ? 'warn' : undefined
+      );
+    }
   }
 
   function switchLayout(lay) {
@@ -795,7 +804,7 @@
       if (broken) {
         const ends = preds(a).map((id) => compiled.spans.get(id)).filter(Boolean).map((s) => s.to);
         const from = a.start || (ends.length ? Math.max(...ends) + (a.delay || 0) : 1);
-        span = { from: Math.min(200, from), to: Math.min(200, from) };
+        span = { from: Math.min(OD.model.MAX_FRAMES, from), to: Math.min(OD.model.MAX_FRAMES, from) };
       }
       const followers = project.actions.filter((b) => preds(b).includes(a.id));
       const problem = compiled.issues.filter((i) => i.id === a.id && i.kind !== 'waits').map((i) => i.text).join('; ');
@@ -830,7 +839,7 @@
       }
     }
     const last = clips.reduce((m, c) => Math.max(m, c.to), 0);
-    timeline.update({ frames: Math.min(200, Math.max(30, last + 10, ed.frame + 5)), frame: ed.frame, selection: ed.selection, clips, bands });
+    timeline.update({ frames: Math.min(OD.model.MAX_FRAMES, Math.max(30, last + 10, ed.frame + 5)), frame: ed.frame, selection: ed.selection, clips, bands });
   }
 
   // --- properties ------------------------------------------------------------------------
@@ -1409,7 +1418,7 @@
         spot.reason
           ? `“${t.name}” can't go there: ${spot.reason}`
           : spot.fits
-            ? `“${t.name}” would run past frame 200 if it started in frame ${spot.frame}`
+            ? `“${t.name}” would run past frame ${OD.model.MAX_FRAMES} if it started in frame ${spot.frame}`
             : `“${t.name}” doesn't fit there: part of it would be off the array`,
         'warn'
       );

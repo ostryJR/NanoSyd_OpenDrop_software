@@ -85,7 +85,7 @@ test('anything malformed is cleaned up or left out; no project at all is refused
   data.project.actions.push({ id: 'a9', type: 'path', name: 'Broken', points: [] });
   const fresh = new Editor(lay);
   const warnings = fresh.resume(data);
-  assert.equal(fresh.frame, 200);
+  assert.equal(fresh.frame, 999);
   assert.equal(fresh.selection, null);
   assert.equal(fresh.undoStack.length, ed.undoStack.length, 'the broken undo steps are left out');
   assert.equal(fresh.project.actions.length, 2);

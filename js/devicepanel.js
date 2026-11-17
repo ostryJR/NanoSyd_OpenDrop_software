@@ -5,7 +5,7 @@
   'use strict';
 
   const OD = root.OD;
-  const { Session, encodeSequence, cellsIn, TEMP_RANGE } = OD.device;
+  const { Session, encodeSequence, cellsIn, TEMP_RANGE, MAX_FRAMES } = OD.device;
   const serial = OD.serial;
   const { SimulatedOpenDrop } = OD.deviceSim;
   const $ = (id) => document.getElementById(id);
@@ -294,6 +294,10 @@
     async load() {
       const seq = this.ed.seq;
       const n = seq.lastFrame();
+      if (n > MAX_FRAMES) {
+        this.app.setStatus(`Not sent: the device holds at most ${MAX_FRAMES} frames and this sequence has ${n}. Play it live instead (Device tab, Live), which has no limit.`, 'warn');
+        return;
+      }
       const result = await this.session.load(encodeSequence(seq, n));
       if (result.ok) this.app.setStatus(`Sent ${plural(result.frames, 'frame')} (${this.app.formatTime(seq.elapsed(n))}) to the device: Run starts it`);
       else this.app.setStatus(`Not sent: ${result.reason}`, 'warn');

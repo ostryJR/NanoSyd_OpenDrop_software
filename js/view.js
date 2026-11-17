@@ -349,7 +349,7 @@
           // After a step up or down the badge goes beside the end, after a step sideways above
           // it, so it never hides the path's last step.
           badge = {
-            text: bad ? draft.check.reason : plural(draft.steps, 'step') + (draft.limited ? ' · frame 200 limit' : ''),
+            text: bad ? draft.check.reason : plural(draft.steps, 'step') + (draft.limited ? ` · frame ${OD.model.MAX_FRAMES} limit` : ''),
             bad,
             end: draft.end,
             beside: Math.abs(a.y - b.y) > Math.abs(a.x - b.x),
@@ -360,7 +360,7 @@
         for (const e of spot.frames.flat()) cls.set(e, bad ? 'bad' : 'path');
         cls.set(spot.anchor, bad ? 'bad-end' : 'path-end');
         badge = {
-          text: spot.valid ? plural(spot.steps, 'step') : spot.reason || (spot.fits ? 'runs past frame 200' : "doesn't fit here"),
+          text: spot.valid ? plural(spot.steps, 'step') : spot.reason || (spot.fits ? `runs past frame ${OD.model.MAX_FRAMES}` : "doesn't fit here"),
           bad,
           cells: [...spot.frames.flat(), spot.anchor],
         };

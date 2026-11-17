@@ -81,7 +81,7 @@
 
   // The frames of a project for a layout's rectangles:
   //   seq      the frames and frame times (a Sequence, as saved in OpenDrop files)
-  //   spans    action id -> { from, to } frames (cut: it ran past frame 200)
+  //   spans    action id -> { from, to } frames (cut: it ran past the MAX_FRAMES guard)
   //   active   active[f] = [{ id, step }] for the actions running in frame f
   //   expanded action id -> what expand() returned
   //   resting  [{ id, cells, from, to }]: droplets left where an action ended, until picked up
@@ -102,7 +102,7 @@
     seq.frameTime = frameTime;
     const issues = [];
     const spans = new Map();
-    const active = Array.from({ length: MAX_FRAMES + 1 }, () => []);
+    const active = [[]]; // grows with the frames
     const expanded = new Map();
     const actions = arrive.length ? [...arrive, ...project.actions] : project.actions;
     const coming = (a) => a.type === 'arrive';
@@ -151,7 +151,11 @@
       return r;
     };
 
+    // Frames run until nothing is running or waiting to start (or the guard is reached).
+    const lastStart = Math.max(0, ...starts.keys());
     for (let f = 1; f <= MAX_FRAMES; f++) {
+      if (!running.length && f > lastStart && ![...scheduled.keys()].some((k) => k >= f)) break;
+      active[f] = [];
       for (const a of starts.get(f) || []) begin(a, f);
       for (const a of scheduled.get(f) || []) begin(a, f);
       if (!running.length) continue;

@@ -241,15 +241,28 @@ test('accepts trailing commas, as Processing does', () => {
   assert.ok(seq.get(8, 1));
 });
 
-test('frames after 200 and columns after 17 are skipped with a warning', () => {
+test('frames past the guard and columns after 17 are skipped with a warning', () => {
   const rows = (y0) => `"y0": "${y0}", "y1": "0", "y2": "0", "y3": "0", "y4": "0", "y5": "0", "y6": "0", "y7": "0"`;
-  const text = `[{${rows('1' + '0'.repeat(17) + '1')}, "frame": 1}, {${rows('1')}, "frame": 201}]`;
+  const text = `[{${rows('1' + '0'.repeat(17) + '1')}, "frame": 1}, {${rows('1')}, "frame": ${MAX_FRAMES + 1}}]`;
   const { seq, frames, warnings } = decode(text);
   assert.ok(seq.get(0, 1));
   assert.equal(frames, 1);
   assert.equal(warnings.length, 2);
-  assert.match(warnings.join(' '), /after frame 200/);
+  assert.match(warnings.join(' '), new RegExp(`after frame ${MAX_FRAMES}`));
   assert.match(warnings.join(' '), /after column 17/);
+});
+
+test('frames after 200 are kept, saved and read back', () => {
+  const seq = new Sequence();
+  seq.set(3, 1, true);
+  seq.set(9, 450, true);
+  seq.setTime(450, 1234);
+  const back = decode(encode(seq));
+  assert.equal(back.frames, 450);
+  assert.deepEqual(back.warnings, []);
+  assert.ok(back.seq.get(9, 450));
+  assert.equal(back.seq.timeOf(450), 1234);
+  assert.equal(back.seq.lastFrame(), 450);
 });
 
 test('rejects text that is not a list of frames', () => {

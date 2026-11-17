@@ -77,7 +77,7 @@ test('broken parts are cleaned or left out, with warnings', () => {
     actions: [
       'junk',
       { type: 'path', name: 'No points', points: [] },
-      { id: 'p', type: 'path', name: 'Ok', start: 999, points: [9, { e: 17, wait: -1 }, { e: 'x' }], stepTime: 0, split: 'yes', times: 'no' },
+      { id: 'p', type: 'path', name: 'Ok', start: 999999, points: [9, { e: 17, wait: -1 }, { e: 'x' }], stepTime: 0, split: 'yes', times: 'no' },
       { id: 'p', type: 'pattern', frames: [[1, 1, 900, 2]], delay: 3 },
       { id: 't', type: 'template', name: 'T', template: 'good', at: 44, turns: 7, after: 'p' },
       { id: 'd', type: 'dispense', reservoir: 'nowhere' },

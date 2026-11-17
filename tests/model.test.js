@@ -1,12 +1,14 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { Sequence, MAX_FRAMES, CELLS, DEFAULT_FRAME_TIME, MIN_TIME, MAX_TIME } = require('../js/model.js');
+const { Sequence, MAX_FRAMES, CELLS, DEFAULT_FRAME_TIME, MIN_TIME, MAX_TIME, sameSnapshot } = require('../js/model.js');
 
 test('a new sequence is empty and its last frame is 1', () => {
   const seq = new Sequence();
-  assert.equal(seq.frames.length, MAX_FRAMES + 1);
   assert.equal(seq.frames[1].length, CELLS);
+  assert.equal(seq.cells(5000).length, CELLS);
+  assert.ok(seq.isEmpty(5000));
+  assert.ok(!seq.get(0, 5000));
   assert.ok(seq.isEmpty(1));
   assert.equal(seq.lastFrame(), 1);
 });
@@ -20,6 +22,26 @@ test('lastFrame() is the last frame with any electrode on', () => {
   assert.equal(seq.lastFrame(), MAX_FRAMES);
   seq.set(143, MAX_FRAMES, false);
   assert.equal(seq.lastFrame(), 7);
+  assert.throws(() => seq.set(0, MAX_FRAMES + 1, true), RangeError);
+});
+
+test('the table grows past frame 200 and undo snapshots follow it', () => {
+  const seq = new Sequence();
+  const before = seq.snapshot();
+  seq.set(4, 1000, true);
+  seq.setTime(1000, 2000);
+  assert.equal(seq.lastFrame(), 1000);
+  assert.equal(seq.timeOf(1000), 2000);
+  assert.ok(!sameSnapshot(before, seq.snapshot()));
+  const after = seq.snapshot();
+  seq.restore(before);
+  assert.equal(seq.lastFrame(), 1);
+  assert.equal(seq.timeOf(1000), DEFAULT_FRAME_TIME);
+  seq.restore(after);
+  assert.ok(seq.get(4, 1000));
+  seq.set(4, 1000, false);
+  seq.setTime(1000, 0);
+  assert.ok(sameSnapshot(before, seq.snapshot()), 'empty extra frames are no change');
 });
 
 test('copy, clear frame and clear all', () => {
