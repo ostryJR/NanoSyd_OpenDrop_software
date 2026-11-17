@@ -158,7 +158,7 @@
 
       // Ruler: frame numbers at round intervals that don't crowd.
       this.ruler.replaceChildren();
-      const every = [1, 2, 5, 10, 20, 25, 50].find((n) => n * this.px >= 28) || 50;
+      const every = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000].find((n) => n * this.px >= 28) || 1000;
       for (let f = 1; f <= frames; f++) {
         if (f !== 1 && f % every) continue;
         const tick = div('tl-tick', this.ruler, String(f));

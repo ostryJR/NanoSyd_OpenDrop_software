@@ -17,7 +17,7 @@
   const COLUMNS = 18; // 16 electrode columns, then 2 columns of control lines (electrodes 128-143)
   const CELLS = COLUMNS * 8;
   const DROPLET_CELLS = 128;
-  const MAX_FRAMES = 200;
+  const MAX_FRAMES = 200; // protocol 1's limit (a sequence loaded on the device); live frames have none
   const DEFAULT_TEMP = 25; // the original controller's starting targets, sent to every board
   const TEMP_RANGE = [20, 120];
   const NO_SENSOR = 150;

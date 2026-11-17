@@ -422,13 +422,13 @@ test('paths are added on top of what their frames already hold', () => {
   assert.deepEqual(onIn(ed, 2), [16, 120]);
 });
 
-test('paths stop at frame 200', () => {
+test('paths stop at the MAX_FRAMES guard', () => {
   const ed = standard();
   ed.frame = MAX_FRAMES - 2;
   drag(ed, 8, 48); // five steps wanted, two fit
   assert.equal(ed.draft.steps, 2);
   assert.ok(ed.draft.limited);
-  assert.deepEqual(ed.pointerUp(), { kind: 'path', from: 198, to: 200, steps: 2, extended: false });
+  assert.deepEqual(ed.pointerUp(), { kind: 'path', from: MAX_FRAMES - 2, to: MAX_FRAMES, steps: 2, extended: false });
   assert.deepEqual(onIn(ed, MAX_FRAMES), [24]);
 
   ed.setTool('straight');

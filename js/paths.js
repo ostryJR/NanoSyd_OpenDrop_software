@@ -162,7 +162,7 @@
       this.frame = frame;
       this.cells = [start];
       this.maxSteps = MAX_FRAMES - frame;
-      this.limited = false; // the path was cut short at frame 200
+      this.limited = false; // the path was cut short at the MAX_FRAMES guard
       this.moved = false; // the pointer has been over another electrode
       this.axis = null; // straight tool: direction of the first line, from the drag's start
       this.point = point; // last pointer position, { mx, my }

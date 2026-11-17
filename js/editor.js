@@ -570,7 +570,7 @@
     }
 
     // --- checking changes ---------------------------------------------------------------------
-    // Nothing may make droplets of different actions touch, or run past frame 200, that didn't
+    // Nothing may make droplets of different actions touch, or run past the frame guard, that didn't
     // before. Taking things away (deleting, clearing) is always allowed.
 
     // Why compile result `next` (of a project with `actions`) can't be kept, compared with the
@@ -1969,7 +1969,7 @@
     }
 
     // Makes a change (fn edits the project) and keeps it for undo. Unless `check` is off, a
-    // change that makes droplets touch, or runs something past frame 200, that didn't before is
+    // change that makes droplets touch, or runs something past the frame guard, that didn't before is
     // taken back and `notice` says why. Returns whether anything changed.
     change(fn, { check = true } = {}) {
       const before = this.checkpoint();
@@ -2190,7 +2190,7 @@
     clearFrame(f) {
       const others = [];
       this.change(() => {
-        for (const { id, step } of this.compiled.active[f]) {
+        for (const { id, step } of this.compiled.active[f] || []) {
           const a = this.action(id);
           if (a.type !== 'pattern') {
             others.push(a);

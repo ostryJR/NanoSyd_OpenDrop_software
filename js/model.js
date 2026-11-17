@@ -1,4 +1,5 @@
-/* Frame data: the same 200 x 144 on/off table as the original's fluxels[fluxel][frame]. */
+/* Frame data: the original's fluxels[fluxel][frame] on/off table (144 electrodes), but with as many
+ * frames as are used: the table grows when a later frame is written. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else (root.OD = root.OD || {}).model = factory();
@@ -8,7 +9,10 @@
   const ROWS = 8;
   const COLS = 18; // 16 electrode columns + 2 control columns (column 16 = magnets)
   const CELLS = COLS * ROWS; // electrode ID e = column * 8 + row
-  const MAX_FRAMES = 200;
+  // The original controller (and its .json files, and protocol 1's upload) stops at frame 200.
+  // Here a sequence can run longer, for live use; MAX_FRAMES only guards against runaway growth.
+  const ORIGINAL_FRAMES = 200;
+  const MAX_FRAMES = 100000;
 
   // How long each frame lasts, in milliseconds. The default is the original's 120 frames/min.
   const DEFAULT_FRAME_TIME = 500;
@@ -18,13 +22,29 @@
 
   class Sequence {
     constructor() {
-      // Frames are numbered 1..200. Index 0 is never written: it is the empty
-      // "previous frame" of frame 1, as in the original.
-      this.frames = Array.from({ length: MAX_FRAMES + 1 }, () => new Uint8Array(CELLS));
+      // Frames are numbered from 1. Index 0 is never written: it is the empty "previous frame" of
+      // frame 1, as in the original. Frames past the end of the table are empty.
+      this.frames = Array.from({ length: ORIGINAL_FRAMES + 1 }, () => new Uint8Array(CELLS));
       // A frame's own time in ms, or 0 for the default. The default is a setting, not part of
       // what undo restores.
-      this.times = new Uint32Array(MAX_FRAMES + 1);
+      this.times = new Uint32Array(ORIGINAL_FRAMES + 1);
       this.frameTime = DEFAULT_FRAME_TIME;
+    }
+
+    // Frames in the table (1..length-1); later ones are empty.
+    get length() {
+      return this.frames.length - 1;
+    }
+
+    // Makes room for frame f (up to MAX_FRAMES).
+    grow(f) {
+      if (f < this.frames.length) return;
+      if (f > MAX_FRAMES) throw new RangeError(`frame ${f} is past the ${MAX_FRAMES}-frame guard`);
+      const size = Math.min(MAX_FRAMES + 1, Math.max(f + 1, this.frames.length * 2));
+      while (this.frames.length < size) this.frames.push(new Uint8Array(CELLS));
+      const times = new Uint32Array(size);
+      times.set(this.times);
+      this.times = times;
     }
 
     timeOf(f) {
@@ -33,6 +53,8 @@
 
     // ms = 0 (or null) goes back to the default.
     setTime(f, ms) {
+      if (!ms && f >= this.times.length) return;
+      this.grow(f);
       this.times[f] = ms ? clampTime(ms) : 0;
     }
 
@@ -44,15 +66,23 @@
     }
 
     get(e, f) {
-      return this.frames[f][e] === 1;
+      const frame = this.frames[f];
+      return frame !== undefined && frame[e] === 1;
     }
 
     set(e, f, on) {
+      if (!on && f >= this.frames.length) return;
+      this.grow(f);
       this.frames[f][e] = on ? 1 : 0;
     }
 
+    // Frame f's electrodes (a 144-byte view; all off past the end of the table). Don't write to it.
+    cells(f) {
+      return this.frames[f] || EMPTY;
+    }
+
     clearFrame(f) {
-      this.frames[f].fill(0);
+      if (f < this.frames.length) this.frames[f].fill(0);
     }
 
     clearAll() {
@@ -61,20 +91,22 @@
     }
 
     copyFrame(from, to) {
-      this.frames[to].set(this.frames[from]);
+      if (to >= this.frames.length && this.isEmpty(from)) return;
+      this.grow(to);
+      this.frames[to].set(this.cells(from));
     }
 
     isEmpty(f) {
-      return !this.frames[f].includes(1);
+      return f >= this.frames.length || !this.frames[f].includes(1);
     }
 
     // Last frame with any electrode on, or 1 (the original's frameMax()).
     lastFrame() {
-      for (let f = MAX_FRAMES; f > 1; f--) if (!this.isEmpty(f)) return f;
+      for (let f = this.frames.length - 1; f > 1; f--) if (!this.isEmpty(f)) return f;
       return 1;
     }
 
-    // Electrodes (29 KB) and frame times, for undo.
+    // Electrodes (144 bytes a frame) and frame times, for undo.
     snapshot() {
       const cells = new Uint8Array(this.frames.length * CELLS);
       this.frames.forEach((frame, f) => cells.set(frame, f * CELLS));
@@ -82,18 +114,28 @@
     }
 
     restore(snapshot) {
-      this.frames.forEach((frame, f) => frame.set(snapshot.cells.subarray(f * CELLS, (f + 1) * CELLS)));
-      this.times.set(snapshot.times);
+      const n = snapshot.cells.length / CELLS;
+      if (n > this.frames.length) this.grow(n - 1);
+      this.frames.length = Math.max(n, ORIGINAL_FRAMES + 1);
+      this.frames.forEach((frame, f) => (f < n ? frame.set(snapshot.cells.subarray(f * CELLS, (f + 1) * CELLS)) : frame.fill(0)));
+      this.times = new Uint32Array(this.frames.length);
+      this.times.set(snapshot.times.subarray(0, this.frames.length));
     }
   }
 
+  const EMPTY = new Uint8Array(CELLS);
+
+  // Snapshots of tables of different lengths are the same if the longer one's extra frames are
+  // empty.
   const sameSnapshot = (a, b) => {
-    for (let i = 0; i < a.cells.length; i++) if (a.cells[i] !== b.cells[i]) return false;
-    for (let i = 0; i < a.times.length; i++) if (a.times[i] !== b.times[i]) return false;
-    return true;
+    const same = (x, y) => {
+      for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return false;
+      return true;
+    };
+    return same(a.cells, b.cells) && same(a.times, b.times);
   };
 
   return {
-    ROWS, COLS, CELLS, MAX_FRAMES, DEFAULT_FRAME_TIME, MIN_TIME, MAX_TIME, clampTime, sameSnapshot, Sequence,
+    ROWS, COLS, CELLS, ORIGINAL_FRAMES, MAX_FRAMES, DEFAULT_FRAME_TIME, MIN_TIME, MAX_TIME, clampTime, sameSnapshot, Sequence,
   };
 });
