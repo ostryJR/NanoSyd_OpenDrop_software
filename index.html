@@ -10,11 +10,34 @@
   <div id="main">
     <div id="work">
       <div id="stage">
-        <svg id="board" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"
-             role="img" aria-label="OpenDrop electrode array"></svg>
+        <div id="viewbar">
+          <span class="segmented" role="group" aria-label="View">
+            <button type="button" data-view="process" aria-pressed="false"
+                    title="The process: tiles for each step, decisions and loops">Process</button>
+            <button type="button" data-view="board" aria-pressed="true" title="The electrode board">Board</button>
+          </span>
+          <span id="viewbar-where"></span>
+          <span class="spacer"></span>
+          <span id="run-controls" hidden>
+            <button type="button" id="run-start" title="Run the process from Start: each step plays on the board, and you are asked at Measure and Ask tiles">▶ Run</button>
+            <button type="button" id="run-pause" hidden>⏸ Pause</button>
+            <button type="button" id="run-stop" hidden>■ Stop</button>
+            <label class="inline" id="run-device-label" title="The OpenDrop follows the run (connect it first)"><input type="checkbox" id="run-device"> on the OpenDrop</label>
+            <span id="run-state"></span>
+          </span>
+          <button type="button" id="open-tab" title="The other view in a second browser tab; both stay in step">Board in a new tab ↗</button>
+        </div>
+        <div id="stage-area">
+          <svg id="board" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"
+               role="img" aria-label="OpenDrop electrode array"></svg>
+          <div id="process-view" hidden></div>
+          <div id="run-log" class="run-log" hidden></div>
+        </div>
       </div>
 
       <section id="timing" aria-label="Frame timing">
+        <div id="timing-resize" role="separator" aria-orientation="horizontal" aria-label="Timeline height"
+             title="Drag to make the timeline taller or shorter; double-click for the usual height"></div>
         <div class="timing-bar">
           <button type="button" id="timing-toggle" class="panel-toggle" aria-expanded="true"
                   title="Minimise the timeline panel"><span class="arrow">▾</span> Timeline</button>
@@ -61,12 +84,14 @@
         </div>
 
         <div id="properties" role="tabpanel" aria-labelledby="tab-properties">
+          <div id="tile-props" hidden></div>
           <div id="props-none">
             <p class="hint">Click something on the board or in the timeline to see and change it here.</p>
             <p id="props-summary" class="info"></p>
           </div>
           <div id="props" hidden>
             <h3 id="prop-kind">Selected</h3>
+            <p id="prop-tile" class="hint" hidden></p>
             <label class="field">Name <input type="text" id="prop-name" maxlength="80" autocomplete="off"></label>
             <label class="field"><span>Droplet <span id="prop-droplet-short" class="short-name"
                      title="Its short name, used when droplets merge"></span></span>
@@ -255,8 +280,11 @@
   <script src="js/templates.js"></script>
   <script src="js/lines.js"></script>
   <script src="js/compile.js"></script>
+  <script src="js/process.js"></script>
+  <script src="js/stretch.js"></script>
   <script src="js/project.js"></script>
   <script src="js/editor.js"></script>
+  <script src="js/runner.js"></script>
   <script src="js/jsonio.js"></script>
   <script src="js/device.js"></script>
   <script src="js/device-sim.js"></script>
@@ -264,6 +292,9 @@
   <script src="js/view.js"></script>
   <script src="js/chart.js"></script>
   <script src="js/timeline.js"></script>
+  <script src="js/processview.js"></script>
+  <script src="js/processpanel.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/devicepanel.js"></script>
   <script src="js/app.js"></script>
 </body>

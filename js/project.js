@@ -1,13 +1,14 @@
 /* The project file (*.odproj.json): what was drawn, kept as named actions, plus the layout, the
- * default frame time and copies of the templates the actions use. Reading checks and cleans a
- * file; parts this version doesn't know are kept as they are and written back. No DOM here. */
+ * default frame time, copies of the templates the actions use, and the process (tiles and
+ * arrows; each action names the tile it belongs to). Reading checks and cleans a file; parts this
+ * version doesn't know are kept as they are and written back. No DOM here. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./model.js'), require('./templates.js'), require('./compile.js'));
+    module.exports = factory(require('./model.js'), require('./templates.js'), require('./compile.js'), require('./process.js'));
   } else {
-    (root.OD = root.OD || {}).project = factory(root.OD.model, root.OD.templates, root.OD.compile);
+    (root.OD = root.OD || {}).project = factory(root.OD.model, root.OD.templates, root.OD.compile, root.OD.process);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, templates, compiler) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, templates, compiler, processes) {
   'use strict';
 
   const { CELLS, MAX_FRAMES, DEFAULT_FRAME_TIME, clampTime } = model;
@@ -16,10 +17,12 @@
   const TAG = 'openDropGeneratorProject';
   const VERSION = 1;
   const EXTENSION = '.odproj.json';
-  const TYPE_NAMES = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern' };
+  const TYPE_NAMES = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait' };
+  const MAX_WAIT = 24 * 3600 * 1000; // a wait (hold) may last up to a day
   // Key order in saved files; other keys follow in the order they came.
-  const KEY_ORDER = ['id', 'type', 'name', 'droplet', 'start', 'after', 'delay', 'points', 'template', 'at', 'turns',
-    'reservoir', 'frames', 'stepTime', 'times', 'split'];
+  const KEY_ORDER = ['id', 'type', 'name', 'droplet', 'tile', 'start', 'after', 'delay', 'points', 'template', 'at', 'turns',
+    'reservoir', 'frames', 'duration', 'stepTime', 'times', 'split'];
+  const TILE_ORDER = ['id', 'kind', 'name', 'x', 'y'];
 
   function newProject({ layout = 'electrodes', frameTime = DEFAULT_FRAME_TIME } = {}) {
     return { [TAG]: VERSION, layout, frameTime, templates: {}, actions: [] };
@@ -52,6 +55,7 @@
     a.id = typeof a.id === 'string' ? a.id.trim() : typeof a.id === 'number' ? String(a.id) : '';
     a.name = typeof a.name === 'string' && a.name.trim() ? a.name.trim().slice(0, 80) : TYPE_NAMES[a.type] || a.type;
     a.droplet = typeof a.droplet === 'string' ? a.droplet.trim().slice(0, 60) : '';
+    if (typeof a.tile !== 'string' || !a.tile) delete a.tile;
 
     if (Array.isArray(a.after)) {
       const list = [...new Set(a.after.map((id) => (typeof id === 'number' ? String(id) : id)).filter((id) => typeof id === 'string' && id))];
@@ -116,10 +120,62 @@
         a.frames = frames;
         break;
       }
+      case 'wait':
+        if (!goodTime(a.duration)) {
+          warn(`the wait “${a.name}” has no time and was left out`);
+          return null;
+        }
+        a.duration = Math.min(MAX_WAIT, Math.round(a.duration));
+        break;
       default:
         break; // kept as it is: a later version may know it
     }
     return a;
+  }
+
+  // The process from a file, checked: tiles of known kinds with ids of their own, and arrows
+  // between them from ports their tiles have (one per port). Undefined if there is none.
+  function cleanProcess(raw, warn) {
+    if (raw === undefined) return undefined;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      warn('its process is unusable and was left out');
+      return undefined;
+    }
+    const out = { ...raw, tiles: [], links: [] };
+    const ids = new Set();
+    for (const t of Array.isArray(raw.tiles) ? raw.tiles : []) {
+      if (!t || typeof t !== 'object' || !processes.KINDS[t.kind] || typeof t.id !== 'string' || !t.id || ids.has(t.id)) {
+        warn(`a tile of the process${t && t.kind ? ` (${t.kind})` : ''} is unusable and was left out`);
+        continue;
+      }
+      ids.add(t.id);
+      const tile = { ...t, x: Number.isFinite(t.x) ? Math.round(t.x) : 0, y: Number.isFinite(t.y) ? Math.round(t.y) : 0 };
+      if (typeof tile.name !== 'string') delete tile.name;
+      // The droplet a Dispense tile makes.
+      if (tile.droplet !== undefined) {
+        const ok = tile.kind === 'dispense' && typeof tile.droplet === 'string' && tile.droplet.trim();
+        if (ok) tile.droplet = tile.droplet.trim().slice(0, 60);
+        else {
+          warn(`the droplet name of the tile “${tile.name || tile.id}” is unusable and was left out`);
+          delete tile.droplet;
+        }
+      }
+      out.tiles.push(tile);
+    }
+    const byId = new Map(out.tiles.map((t) => [t.id, t]));
+    const used = new Set();
+    for (const l of Array.isArray(raw.links) ? raw.links : []) {
+      const from = l && byId.get(l.from);
+      const to = l && byId.get(l.to);
+      const port = l && (l.port || 'next');
+      if (!from || !to || !processes.portsOf(from).includes(port) || !processes.takesInput(to) || used.has(`${l.from}|${port}`)) {
+        warn('an arrow of the process is unusable and was left out');
+        continue;
+      }
+      used.add(`${l.from}|${port}`);
+      out.links.push({ from: l.from, port, to: l.to });
+    }
+    return out;
   }
 
   // Reads a project from its text (or parsed JSON). Returns { project, warnings }; throws if it
@@ -144,6 +200,10 @@
         else warn(`the template ${key} in the file is unusable and was left out`);
       }
     }
+
+    const flow = cleanProcess(data.process, warn);
+    if (flow) project.process = flow;
+    else delete project.process;
 
     const list = Array.isArray(data.actions) ? data.actions : [];
     project.actions = list.map((raw, i) => cleanAction(raw, i + 1, warn)).filter(Boolean);
@@ -202,6 +262,18 @@
           return `    {\n${fields.join(',\n')}\n    }`;
         });
         return `  ${q(key)}: ${block('[', ']', items)}`;
+      }
+      if (key === 'process' && value && Array.isArray(value.tiles)) {
+        const tile = (t) => {
+          const o = {};
+          for (const k of TILE_ORDER) if (t[k] !== undefined) o[k] = t[k];
+          for (const k of Object.keys(t)) if (!(k in o) && t[k] !== undefined) o[k] = t[k];
+          return `      ${q(o)}`;
+        };
+        const parts = [`    "tiles": ${block('[', ']', value.tiles.map(tile)).replace(/\n {2}]$/, '\n    ]')}`];
+        parts.push(`    "links": ${block('[', ']', (value.links || []).map((l) => `      ${q(l)}`)).replace(/\n {2}]$/, '\n    ]')}`);
+        for (const k of Object.keys(value)) if (k !== 'tiles' && k !== 'links') parts.push(`    ${q(k)}: ${q(value[k])}`);
+        return `  ${q(key)}: {\n${parts.join(',\n')}\n  }`;
       }
       return `  ${q(key)}: ${q(value)}`;
     });

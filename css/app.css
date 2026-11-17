@@ -52,6 +52,77 @@ body {
 }
 
 #stage {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The bar over the stage: Process | Board, where the board is in the process, the run. */
+#viewbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+#viewbar .spacer {
+  flex: 1;
+}
+
+#viewbar button {
+  padding: 2px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+#viewbar .segmented button {
+  border: 0;
+  border-radius: 0;
+}
+
+#viewbar .segmented button + button {
+  border-left: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+#viewbar .segmented button[aria-pressed="true"] {
+  background: #3d3d3a;
+  color: #fff;
+}
+
+#viewbar-where {
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+
+#run-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#run-start {
+  border-color: #1e7d32 !important;
+  background: #1e7d32 !important;
+  color: #fff;
+}
+
+#run-device-label.off {
+  opacity: 0.5;
+}
+
+#run-state {
+  color: #1e7d32;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+#stage-area {
   position: relative;
   flex: 1 1 0;
   min-height: 0;
@@ -304,9 +375,44 @@ kbd {
 /* ---- Timing strip ------------------------------------------------------------------------ */
 
 #timing {
+  --timeline-h: 168px; /* the timeline's and the chart's height: drag the edge above to change it */
+  position: relative;
   flex: 0 0 auto;
   padding: 6px 14px 10px;
   border-top: 1px solid var(--line);
+}
+
+/* The timeline's top edge: drag it up or down. */
+#timing-resize {
+  position: absolute;
+  top: -5px;
+  right: 0;
+  left: 0;
+  z-index: 6;
+  height: 9px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+#timing-resize::after {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 44px;
+  height: 3px;
+  margin-left: -22px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.18);
+  content: "";
+}
+
+#timing-resize:hover::after,
+#timing-resize.dragging::after {
+  background: var(--accent);
+}
+
+#timing.minimised #timing-resize {
+  display: none;
 }
 
 .timing-bar {
@@ -439,7 +545,7 @@ kbd {
 
 #chart {
   position: relative;
-  height: 168px; /* the same as the timeline, so switching views moves nothing */
+  height: var(--timeline-h); /* the same as the timeline, so switching views moves nothing */
   margin-top: 6px;
   overflow: hidden;
   border: 1px solid rgba(11, 11, 11, 0.1);
@@ -449,7 +555,7 @@ kbd {
 
 #timeline {
   position: relative;
-  height: 168px;
+  height: var(--timeline-h);
   margin-top: 6px;
   overflow: hidden;
   border: 1px solid rgba(11, 11, 11, 0.1);
@@ -1326,4 +1432,580 @@ body.dragging-template * {
   width: 4.5em;
   padding: 2px 4px;
   font: inherit;
+}
+
+/* --- the process view ------------------------------------------------------------------------ */
+
+#process-view {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  background-color: #fbfaf6;
+}
+
+.pv-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pv-palette {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 116px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.pv-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  font-size: 12px;
+  text-align: left;
+  cursor: grab;
+  touch-action: none;
+}
+
+.pv-kind:hover {
+  border-color: rgba(0, 0, 0, 0.15);
+  background: #fff;
+}
+
+.pv-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pv-group + .pv-group {
+  margin-top: 4px;
+}
+
+.pv-group-name {
+  padding: 2px 6px 1px;
+  color: #777;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pv-glyph {
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+}
+
+.pv-tools {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.pv-tools button,
+.pv-menu button {
+  padding: 3px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pv-menu {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+}
+
+.pv-menu button {
+  border-color: transparent;
+  text-align: left;
+}
+
+.pv-menu button:hover {
+  background: #f0f0ec;
+}
+
+.pv-canvas text {
+  fill: #222;
+  font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  pointer-events: none;
+}
+
+.pv-canvas text.centre {
+  text-anchor: middle;
+}
+
+.pv-canvas .pv-name {
+  font-weight: 650;
+}
+
+.pv-canvas .pv-sub {
+  fill: #666;
+  font-size: 11px;
+}
+
+/* The droplets a tile works on, after its name. */
+.pv-canvas .pv-drops {
+  fill: #8a6d1f;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Parallel and Wait for all: their name on the bar. */
+.pv-canvas .pv-bar-label {
+  fill: #fff;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.pv-tile {
+  cursor: grab;
+}
+
+.pv-shape {
+  fill: #fff;
+  stroke: #6c86c9;
+  stroke-width: 1.5;
+}
+
+.pv-tile.unplaced .pv-shape {
+  stroke: #c98a00;
+  stroke-dasharray: 6 4;
+}
+
+.pv-tile.start .pv-shape,
+.pv-tile.end .pv-shape {
+  fill: #3d3d3a;
+  stroke: #3d3d3a;
+}
+
+.pv-tile.start text,
+.pv-tile.end text {
+  fill: #fff;
+}
+
+.pv-tile.measure .pv-shape,
+.pv-tile.ask .pv-shape {
+  fill: #fff8e1;
+  stroke: #c99a00;
+}
+
+.pv-tile.decision .pv-shape {
+  fill: #f6edfb;
+  stroke: #8e44ad;
+}
+
+.pv-tile.repeat .pv-shape {
+  fill: #e6f5f2;
+  stroke: #00897b;
+}
+
+.pv-tile.parallel .pv-shape,
+.pv-tile.join .pv-shape {
+  fill: #5a5955;
+  stroke: #5a5955;
+}
+
+.pv-tile.open .pv-shape {
+  stroke: #1f6feb;
+  stroke-width: 2.5;
+}
+
+.pv-tile.selected .pv-shape {
+  stroke: #1f6feb;
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 4px rgba(31, 111, 235, 0.45));
+}
+
+.pv-tile.running .pv-shape {
+  fill: #e3f6e5;
+  stroke: #1e7d32;
+  stroke-width: 3.5;
+  animation: pv-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pv-pulse {
+  50% {
+    stroke-opacity: 0.35;
+  }
+}
+
+.pv-port {
+  fill: #fff;
+  stroke: #555;
+  stroke-width: 1.5;
+  cursor: crosshair;
+}
+
+.pv-port:hover {
+  fill: #1f6feb;
+  stroke: #1f6feb;
+}
+
+.pv-in {
+  fill: #bbb;
+  pointer-events: none;
+}
+
+.pv-badge circle {
+  fill: #e09a00;
+}
+
+.pv-badge.error circle {
+  fill: #d0021b;
+}
+
+.pv-canvas .pv-badge text {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pv-wire {
+  fill: none;
+  stroke: #6b6a65;
+  stroke-width: 2;
+}
+
+.pv-link.back .pv-wire {
+  stroke: #8e44ad;
+}
+
+.pv-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  cursor: pointer;
+}
+
+.pv-tip {
+  fill: #6b6a65;
+}
+
+.pv-link.back .pv-tip {
+  fill: #8e44ad;
+}
+
+.pv-link.selected .pv-wire {
+  stroke: #1f6feb;
+  stroke-width: 3;
+}
+
+.pv-link.selected .pv-tip {
+  fill: #1f6feb;
+}
+
+/* Small labels by lines (an output's name, a loop's condition): a halo of the background round
+   them, so a line or a frame edge going past doesn't run through the letters. */
+.pv-canvas .pv-port-label,
+.pv-canvas .pv-loop-label {
+  paint-order: stroke;
+  stroke: #fbfaf6;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.pv-canvas .pv-port-label {
+  fill: #555;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pv-loop {
+  fill: rgba(142, 68, 173, 0.04);
+  stroke: #8e44ad;
+  stroke-dasharray: 7 5;
+  stroke-width: 1.5;
+}
+
+.pv-loop.bad {
+  stroke: #d0021b;
+}
+
+.pv-canvas .pv-loop-label {
+  fill: #6c2d87;
+  font-weight: 700;
+}
+
+.pv-rubber {
+  fill: none;
+  stroke: #1f6feb;
+  stroke-dasharray: 5 4;
+  stroke-width: 2;
+}
+
+.pv-rubber-tip {
+  fill: #1f6feb;
+  pointer-events: none;
+}
+
+.pv-ghost {
+  fill: rgba(31, 111, 235, 0.08);
+  stroke: #1f6feb;
+  stroke-dasharray: 5 4;
+}
+
+/* The input point a new arrow snaps to, and the tile it goes into. */
+.pv-in.snap {
+  fill: #1f6feb;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.pv-target {
+  fill: rgba(31, 111, 235, 0.06);
+  stroke: #1f6feb;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+}
+
+/* The arrow a dragged tile would go on, and the hint by it. */
+.pv-link.drop .pv-wire {
+  stroke: #1f6feb;
+  stroke-width: 4;
+}
+
+.pv-link.drop .pv-tip {
+  fill: #1f6feb;
+}
+
+.pv-hint {
+  pointer-events: none;
+}
+
+.pv-hint rect {
+  fill: #1f6feb;
+}
+
+.pv-canvas .pv-hint text {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Selecting with a box; panning with Space held. */
+.pv-box {
+  fill: rgba(31, 111, 235, 0.07);
+  stroke: #1f6feb;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+#process-view.pv-space .pv-canvas,
+#process-view.pv-space .pv-tile {
+  cursor: grab;
+}
+
+#process-view.pv-panning .pv-canvas,
+#process-view.pv-panning .pv-tile {
+  cursor: grabbing;
+}
+
+/* The run log, bottom right of the process view. */
+.run-log {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
+  width: 290px;
+  max-height: 45%;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-size: 12px;
+}
+
+.run-log h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.run-log ol {
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.run-log .when {
+  display: inline-block;
+  width: 3em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The question a run asks (a Measure or Ask tile). */
+.run-ask {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 10;
+  width: 340px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  transform: translate(-50%, -50%);
+}
+
+.run-ask h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.run-ask .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.run-ask .row.end {
+  justify-content: flex-end;
+}
+
+.run-ask input {
+  width: 7em;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.run-ask button {
+  padding: 4px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.run-ask button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Properties of a tile. */
+#tile-props h3 {
+  margin: 12px 0 4px;
+  color: var(--ink-primary);
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#tile-props .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#tile-props .info.ok {
+  color: #1e7d32;
+}
+
+#tile-props .problems {
+  margin: 8px 0;
+  padding-left: 18px;
+  color: #b00020;
+  font-size: 12px;
+}
+
+#tile-props .field {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+#tile-props .field input,
+#tile-props .field select {
+  padding: 4px 6px;
+  font: inherit;
+}
+
+/* The process's tiles over the timeline's tracks. */
+.tl-bands {
+  position: relative;
+  border-bottom: 1px solid var(--chart-grid);
+}
+
+.tl-bands-head {
+  font-weight: 600;
+}
+
+.tl-band {
+  position: absolute;
+  top: 2px;
+  height: 15px;
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #dfe3ec;
+  color: #333;
+  font-size: 10.5px;
+  line-height: 15px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tl-band.open {
+  background: #1f6feb;
+  color: #fff;
+  cursor: default;
+}
+
+.tl-clip.dim {
+  opacity: 0.45;
+}
+
+/* A droplet waiting on an electrode that isn't on. */
+#board .rings {
+  pointer-events: none;
+}
+
+#board .rings circle {
+  fill: none;
+  stroke-width: 5;
+  stroke-dasharray: 9 6;
+  opacity: 0.9;
 }

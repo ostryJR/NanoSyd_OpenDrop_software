@@ -7,13 +7,13 @@
   if (typeof module === 'object' && module.exports) {
     module.exports = factory(
       require('./model.js'), require('./layout.js'), require('./paths.js'), require('./templates.js'),
-      require('./lines.js'), require('./compile.js'), require('./project.js')
+      require('./lines.js'), require('./compile.js'), require('./project.js'), require('./process.js'), require('./stretch.js')
     );
   } else {
     const OD = root.OD;
-    (root.OD = root.OD || {}).editor = factory(OD.model, OD.layout, OD.paths, OD.templates, OD.lines, OD.compile, OD.project);
+    (root.OD = root.OD || {}).editor = factory(OD.model, OD.layout, OD.paths, OD.templates, OD.lines, OD.compile, OD.project, OD.process, OD.stretch);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, layout, paths, templates, lines, compiler, projects) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, layout, paths, templates, lines, compiler, projects, processes, stretches) {
   'use strict';
 
   const { CELLS, MAX_FRAMES, clampTime } = model;
@@ -68,6 +68,18 @@
   const PITCH = 2; // grid units from one standard electrode to the next
 
   const quote = (a) => `“${a.name}”`;
+  // With a process, the actions of a tile that does one kind of thing (a dispense, a move, a
+  // mix...) are called by the tile's name; a Step tile's actions keep names of their own.
+  const namedByTile = (t) => Boolean(t) && processes.hasWork(t) && t.kind !== 'step';
+  const tileName = (t) => t.name || processes.KINDS[t.kind].name;
+  // A merged droplet's name is its droplets' short names ("D1 + D2"): with droplet `from`
+  // renamed `to`, the name it becomes, or null if `from` isn't one of its parts.
+  const mergedRenamed = (name, from, to) => {
+    const parts = name.split(' + ');
+    const was = projects.shortDroplet(from);
+    if (parts.length < 2 || !from || !to || !parts.includes(was)) return null;
+    return parts.map((p) => (p === was ? projects.shortDroplet(to) : p)).join(' + ');
+  };
   const pairKey = (x, y) => (x < y ? `${x}|${y}` : `${y}|${x}`);
   const extrasOf = ({ e, ...extra }) => extra;
 
@@ -75,7 +87,13 @@
     constructor(lay, project = projects.newProject({ layout: lay.id })) {
       this.layout = lay;
       this.ctx = lines.context(lay.rects);
+      // The whole project is `doc`; `project` is what the board shows: all of it, or with a
+      // process, the stretch of the open tile (written back into `doc` on every recompile).
       this.project = project;
+      this.doc = project;
+      this.scope = null; // with a process: { tile, stretch, tiles: Set of tile ids }
+      this.arrive = []; // the droplets coming into that stretch (actions of type 'arrive')
+      this.frozen = null; // why nothing can be changed now (a run is going), or null
       this.project.layout = lay.id;
       this.frame = 1;
       this.playing = false;
@@ -101,9 +119,345 @@
     // --- the project and its frames -----------------------------------------------------------
 
     recompile() {
+      this.flush();
+      this.syncNames();
       this.revision = (this.revision || 0) + 1; // goes up with every change, for keeping the work
-      this.compiled = compile(this.project, this.layout.rects);
+      this.compiled = compile(this.project, this.layout.rects, { arrive: this.arrive });
       if (this.playing) this.playLast = this.compiled.seq.lastFrame();
+    }
+
+    // --- the process ------------------------------------------------------------------------------
+    // With a process, the board shows one stretch (the steps between two stops) of it, with the
+    // droplets coming in where the stretch before leaves them. Actions belong to tiles.
+
+    // Writes what the board shows back into the whole project.
+    flush() {
+      if (!this.scope || this.project === this.doc) {
+        this.doc = this.project;
+        return;
+      }
+      const inside = (a) => this.scope.tiles.has(a.tile);
+      const out = [];
+      let put = false;
+      for (const a of this.doc.actions) {
+        if (!inside(a)) out.push(a);
+        else if (!put) {
+          out.push(...this.project.actions);
+          put = true;
+        }
+      }
+      if (!put) out.push(...this.project.actions);
+      this.doc.actions = out;
+      this.doc.templates = this.project.templates;
+      this.doc.frameTime = this.project.frameTime;
+    }
+
+    // One name per step: an action of a tile that does one kind of thing is called by the tile's
+    // name, the others of the same tile "Name · 2", "Name · 3"... A Step tile's actions keep their
+    // own. It follows from the rest, so doing it again changes nothing (undo stays right).
+    syncNames() {
+      const p = this.doc.process;
+      if (!p) return;
+      const byId = new Map(p.tiles.map((t) => [t.id, t]));
+      const count = new Map();
+      for (const a of this.doc.actions) {
+        const t = a.tile && byId.get(a.tile);
+        if (!namedByTile(t)) continue;
+        const n = (count.get(t.id) || 0) + 1;
+        count.set(t.id, n);
+        const name = n > 1 ? `${tileName(t)} · ${n}` : tileName(t);
+        if (a.name !== name) a.name = name;
+      }
+    }
+
+    // The process tile action a belongs to, or null.
+    tileOf(a) {
+      return a && a.tile && this.doc.process ? processes.tileById(this.doc.process, a.tile) : null;
+    }
+
+    // Whether action a is called by its tile's name (see syncNames).
+    namedByTile(a) {
+      return namedByTile(this.tileOf(a));
+    }
+
+    // The next free droplet name, "Droplet N", besides those on the board and those the Dispense
+    // tiles will make.
+    freeDroplet() {
+      const tiles = this.doc.process ? this.doc.process.tiles.filter((t) => t.kind === 'dispense' && t.droplet).map((t) => ({ droplet: t.droplet })) : [];
+      return projects.nextDroplet({ actions: [...this.doc.actions, ...this.project.actions, ...this.arrive, ...tiles] });
+    }
+
+    workingProject() {
+      const { process, ...rest } = this.doc;
+      void process;
+      return { ...rest, actions: this.doc.actions.filter((a) => this.scope.tiles.has(a.tile)) };
+    }
+
+    get hasProcess() {
+      return Boolean(this.doc.process);
+    }
+
+    // Why the board can't be changed now, or null: a run is going, or with a process no tile is
+    // open.
+    get locked() {
+      if (this.frozen) return this.frozen;
+      if (this.doc.process && !(this.scope && this.scope.tile)) return 'Open a step of the process first: double-click it in the process view';
+      return null;
+    }
+
+    // Everything about the process on the board (stretches, droplets coming in, each tile's frames).
+    analyze() {
+      this.flush();
+      return stretches.analyze(this.doc, this.layout.rects);
+    }
+
+    // Opens tile id's stretch on the board, the droplets coming in where the stretch before leaves
+    // them (or as `state` says, in a run). False if it is a stop (nothing on the board).
+    openTile(id, { state = null } = {}) {
+      if (!this.doc.process) return false;
+      this.cancel();
+      const info = this.analyze();
+      const sid = info.st.of.get(id);
+      if (!sid) return false;
+      const s = info.stretch.get(sid);
+      this.scope = { tile: id, stretch: sid, tiles: new Set(s.tiles) };
+      this.arrive = stretches.arrivals(state || s.state);
+      this.project = this.workingProject();
+      if (this.selection && !this.action(this.selection)) this.selection = null;
+      this.recompile();
+      if (this.frame > Math.max(1, this.seq.lastFrame())) this.frame = 1;
+      return true;
+    }
+
+    // After the process or the whole project changed (undo, a process edit, another tab): the
+    // board shows the open tile's stretch again, or the first one if that tile is gone.
+    rescope() {
+      if (!this.doc.process) {
+        if (this.scope) {
+          this.scope = null;
+          this.arrive = [];
+          this.project = this.doc;
+          this.recompile();
+        }
+        return;
+      }
+      const want = this.scope && this.scope.tile;
+      if (want && this.openTile(want)) return;
+      const st = processes.stretches(this.doc.process);
+      if (st.list.length && this.openTile(st.list[0].start)) return;
+      this.scope = { tile: null, stretch: null, tiles: new Set() };
+      this.arrive = [];
+      this.project = this.workingProject();
+      this.recompile();
+    }
+
+    // A run shows stretch `sid` with the droplets as they really are.
+    showStretch(sid, state) {
+      this.flush();
+      const s = processes.stretches(this.doc.process).list.find((x) => x.id === sid);
+      if (!s) return false;
+      this.cancel();
+      this.scope = { tile: s.start, stretch: sid, tiles: new Set(s.tiles) };
+      this.arrive = stretches.arrivals(state);
+      this.project = this.workingProject();
+      this.selection = null;
+      this.recompile();
+      return true;
+    }
+
+    // Gives the project a process: Start, one step holding everything drawn so far, End; and
+    // opens that step on the board.
+    makeProcess() {
+      if (this.doc.process || this.saved) return false;
+      this.cancel();
+      this.flush();
+      const p = processes.emptyProcess();
+      const start = processes.addTile(p, 'start', 0, 0);
+      const step = processes.addTile(p, 'step', 0, processes.ROW, { name: 'Step 1' });
+      const end = processes.addTile(p, 'end', 0, 2 * processes.ROW);
+      processes.link(p, start.id, 'next', step.id);
+      processes.link(p, step.id, 'next', end.id);
+      this.change(() => {
+        this.doc.process = p;
+        for (const a of this.doc.actions) a.tile = step.id;
+      }, { check: false });
+      this.openTile(step.id);
+      return true;
+    }
+
+    // A change to the process (fn edits it): undoable like drawing; the board follows.
+    processChange(fn) {
+      if (!this.doc.process || this.frozen) return false;
+      if (this.scope) this.project = this.workingProject();
+      const done = this.change(() => fn(this.doc.process), { check: false });
+      if (done) this.rescope();
+      return done;
+    }
+
+    // A tile's settings; what is placed of it on the board follows (its name, a dispense's
+    // reservoir and droplet, a wait's time). Undoable.
+    tileSettings(id, fields) {
+      return this.processChange((p) => {
+        const t = processes.tileById(p, id);
+        if (!t) return;
+        const { droplet, ...rest } = fields;
+        Object.assign(t, rest);
+        if (t.kind === 'parallel' && fields.lanes !== undefined) processes.setLanes(p, id, fields.lanes);
+        for (const a of this.doc.actions) {
+          if (a.tile !== id) continue;
+          if (a.type === 'dispense' && fields.reservoir && RESERVOIR_STEPS[fields.reservoir]) a.reservoir = fields.reservoir;
+          if (a.type === 'wait' && Number.isFinite(fields.seconds)) a.duration = Math.max(1, Math.round(fields.seconds * 1000));
+        }
+        if (droplet !== undefined && t.kind === 'dispense') {
+          // The droplet it makes: renamed down its chain once placed; until then just the tile's.
+          const value = String(droplet).trim().slice(0, 60);
+          const made = this.doc.actions.filter((a) => a.tile === id && a.type === 'dispense');
+          if (!made.length) {
+            if (value) t.droplet = value;
+            else delete t.droplet;
+          } else if (value) for (const a of made) this.renameDroplet(a, value);
+        }
+      });
+    }
+
+    // A mix tile's kind, size, rounds or direction; the mixer placed on the board changes with it
+    // (as Properties would change it there). Undoable, in one step.
+    setTileParams(id, params) {
+      const t = this.doc.process && processes.tileById(this.doc.process, id);
+      if (!t) return false;
+      const next = templates.cleanParams({ ...(t.params || { kind: 'circle' }), ...params });
+      if (!next) return false;
+      const placed = this.doc.actions.find((a) => a.tile === id && a.type === 'template');
+      if (placed) {
+        if (!this.openTile(id) || !this.setParams(placed.id, next)) return false;
+        t.params = next; // part of the step just recorded: undo goes back to the state before it
+        this.recompile();
+        return true;
+      }
+      return this.processChange(() => {
+        t.params = next;
+      });
+    }
+
+    // The project as another tab changed it (actions, templates, process, default frame time):
+    // taken in as an undo step here, the open tile staying open. False while something is being
+    // dragged, run or made, when it has to wait.
+    applyRemote(shared) {
+      if (this.dragging || this.frozen || this.saved || this.placement) return false;
+      const tile = this.scope && this.scope.tile;
+      const selection = this.selection;
+      this.cancel();
+      this.leaveScope();
+      this.change(() => {
+        this.doc.actions = shared.actions;
+        this.doc.templates = shared.templates;
+        if (shared.process) this.doc.process = shared.process;
+        else delete this.doc.process;
+        if (shared.frameTime) this.doc.frameTime = shared.frameTime;
+      }, { check: false });
+      if (this.doc.process && tile && this.openTile(tile)) {
+        // the same tile
+      } else this.rescope();
+      this.selection = selection && this.action(selection) ? selection : null;
+      return true;
+    }
+
+    // A tile goes, with its actions on the board.
+    removeTile(id) {
+      return this.processChange((p) => {
+        processes.removeTile(p, id);
+        this.doc.actions = this.doc.actions.filter((a) => a.tile !== id);
+        if (this.scope) this.project = this.workingProject();
+      });
+    }
+
+    // Several tiles go, with their arrows and their actions on the board: one undo step.
+    removeTiles(ids) {
+      const gone = new Set(ids);
+      return this.processChange((p) => {
+        for (const id of gone) processes.removeTile(p, id);
+        this.doc.actions = this.doc.actions.filter((a) => !gone.has(a.tile));
+        if (this.scope) this.project = this.workingProject();
+      });
+    }
+
+    // The last actions of the tiles before tile `id` in its stretch (the nearest ones with
+    // something on the board): what its actions start after.
+    orderAfter(id) {
+      const p = this.doc.process;
+      if (!p || !id || !this.scope) return [];
+      const g = processes.graph(p);
+      const back = processes.backLinks(p, g);
+      const inside = this.scope.tiles;
+      const groups = [];
+      const seen = new Set();
+      const walk = (tid) => {
+        for (const l of g.into.get(tid) || []) {
+          if (back.has(processes.linkKey(l)) || seen.has(l.from) || !inside.has(l.from)) continue;
+          seen.add(l.from);
+          const mine = this.project.actions.filter((a) => a.tile === l.from);
+          if (mine.length) groups.push(mine);
+          else walk(l.from);
+        }
+      };
+      walk(id);
+      const out = [];
+      for (const mine of groups) {
+        const ids = new Set(mine.map((a) => a.id));
+        const followed = new Set(mine.flatMap((a) => (predsOf(a) || []).filter((x) => ids.has(x))));
+        for (const a of mine) if (!followed.has(a.id) && this.span(a.id)) out.push(a.id);
+      }
+      return out;
+    }
+
+    // The frame a tile's work starts in: where the tiles before it end (1 if nothing is before).
+    tileStart(id) {
+      const ends = this.orderAfter(id).map((x) => this.span(x)).filter(Boolean).map((s) => s.to);
+      return ends.length ? Math.max(...ends) : 1;
+    }
+
+    // Puts the open tile's operation on the board: a dispense or a wait is added at once; a mix,
+    // merge or split starts being placed (the page lets the pointer drop it); a move picks the
+    // freehand tool. Returns { kind: 'added' | 'placing' | 'draw', text } or null (with a notice).
+    placeTile() {
+      const id = this.scope && this.scope.tile;
+      const t = id && processes.tileById(this.doc.process, id);
+      if (!t || this.locked) {
+        this.notice = this.locked || 'Open a step of the process first';
+        return null;
+      }
+      this.frame = Math.min(MAX_FRAMES, this.tileStart(id));
+      const droplets = this.arrive.map((a) => a.droplet);
+      switch (t.kind) {
+        case 'dispense':
+          if (!this.layout.hasReservoirs) {
+            this.notice = 'This layout has no reservoirs';
+            return null;
+          }
+          if (!this.dispense(t.reservoir || 'reservoirLeftTop')) return null;
+          return { kind: 'added', text: `${t.name}: dispensing from the ${RESERVOIR_NAMES[t.reservoir] || 'left top'} reservoir` };
+        case 'wait': {
+          const seconds = Math.max(0.01, Number(t.seconds) || 1);
+          const done = this.change(() => this.addAction({ type: 'wait', name: t.name || 'Wait', droplet: '', duration: Math.round(seconds * 1000) }, this.frame, []));
+          return done ? { kind: 'added', text: `${t.name}: everything waits ${seconds} s here` } : null;
+        }
+        case 'mix':
+        case 'merge':
+        case 'split': {
+          const template = t.kind === 'mix' ? templates.fromParams(t.params || { kind: 'circle' }) : templates.BUILT_IN.find((x) => x.id === t.kind);
+          if (!template) {
+            this.notice = 'Choose what kind of mix it is first';
+            return null;
+          }
+          this.startPlacement(template);
+          return { kind: 'placing', text: `${t.name}: click where the droplet is to drop the ${template.name.toLowerCase()} (R turns it, Esc cancels)` };
+        }
+        case 'move':
+          this.setTool('freehand');
+          return { kind: 'draw', text: `${t.name}: draw the path${droplets.length ? ` from where ${droplets.join(' or ')} ${droplets.length === 1 ? 'is' : 'are'}` : ''}` };
+        default:
+          return { kind: 'draw', text: `${t.name || 'This step'}: draw on the board whatever happens in it` };
+      }
     }
 
     // The frames: compiled from the actions, so changing them changes nothing that lasts.
@@ -199,7 +553,9 @@
       this.layout = lay;
       this.ctx = lines.context(lay.rects);
       this.project.layout = lay.id;
+      this.doc.layout = lay.id;
       this.recompile();
+      if (this.scope) this.rescope(); // the droplets coming in depend on the layout too
     }
 
     setTool(tool) {
@@ -253,7 +609,7 @@
     // that droplet since. { after (an id, or a list for a merge), delay, droplet } or null.
     linkFor(cells, frame) {
       const found = new Map(); // electrode -> { a, to }
-      for (const a of this.project.actions) {
+      for (const a of [...this.arrive, ...this.project.actions]) {
         const span = this.span(a.id);
         if (!span || span.cut || span.to > frame) continue;
         for (const e of this.lastCells(a.id)) {
@@ -282,16 +638,26 @@
     // An action that starts in frame `frame` with `cells` on in its first step: after the action
     // it carries on from (taking its droplet name), or at that frame with a new droplet name.
     // `fields.droplet`, if given, is kept.
+    // With a process, it belongs to the open tile, and also starts after the tiles before it.
     newAction(fields, frame, cells) {
-      const a = { id: projects.nextId(this.project), ...fields };
+      const all = { actions: [...this.doc.actions, ...this.project.actions, ...this.arrive] };
+      const a = { id: projects.nextId(all), ...fields };
+      const tile = this.scope && this.scope.tile;
+      if (tile) a.tile = tile;
+      const t = this.tileOf(a);
+      if (namedByTile(t)) a.name = tileName(t); // syncNames numbers it if the tile has more
       const link = this.linkFor(cells, frame);
-      if (link) {
-        a.after = link.after;
-        if (link.delay) a.delay = link.delay;
-        if (a.droplet === undefined) a.droplet = link.droplet;
+      const after = [...new Set([...(link ? [].concat(link.after) : []), ...(tile ? this.orderAfter(tile) : [])])];
+      const fresh = () => (cells.some((e) => e < DROPLET_CELLS) ? projects.nextDroplet(all) : '');
+      if (after.length) {
+        a.after = after.length === 1 ? after[0] : after;
+        const ends = after.map((id) => this.span(id)).filter(Boolean).map((s) => s.to);
+        const delay = ends.length ? frame - Math.max(...ends) : 0;
+        if (delay > 0) a.delay = delay;
+        if (a.droplet === undefined) a.droplet = link ? link.droplet : fresh();
       } else {
         a.start = frame;
-        if (a.droplet === undefined) a.droplet = cells.some((e) => e < DROPLET_CELLS) ? projects.nextDroplet(this.project) : '';
+        if (a.droplet === undefined) a.droplet = fresh();
       }
       return a;
     }
@@ -318,6 +684,10 @@
       if (action) {
         this.run(action, now);
         return action;
+      }
+      if (this.locked) {
+        if (inArray(mx, my)) this.notice = this.locked;
+        return null;
       }
       const drawing = this.tool === 'freehand' || this.tool === 'straight';
       if (!(drawing && shift && !alt)) this.pending = null;
@@ -1173,29 +1543,88 @@
       return this.commit(this.tryChanges(new Map([[id, { ...a, points }]])));
     }
 
+    // Renames action id; one called by its tile's name renames the tile (and so all of its).
     rename(id, name) {
       const a = this.action(id);
       const value = String(name).trim().slice(0, 80);
       if (!a || !value) return false;
+      const t = this.tileOf(a);
+      if (namedByTile(t)) return value.slice(0, 60) === tileName(t) || this.tileSettings(t.id, { name: value.slice(0, 60) });
       return this.change(() => (a.name = value));
     }
 
-    // A new droplet name for action id and the actions after it that had the same name.
+    // A new droplet name for action id and what follows it under the same name (renameDroplet).
     setDroplet(id, name) {
       const a = this.action(id);
       if (!a) return false;
       const value = String(name).trim().slice(0, 60);
-      const old = a.droplet || '';
-      return this.change(() => {
-        const seen = new Set();
-        const visit = (x) => {
-          if (seen.has(x.id)) return;
-          seen.add(x.id);
-          x.droplet = value;
-          for (const f of this.followersOf(x.id)) if ((f.droplet || '') === old) visit(f);
-        };
-        visit(a);
-      });
+      return this.change(() => this.renameDroplet(a, value));
+    }
+
+    // Names the droplet action a moves `value`, from a on (inside a change): a and the actions
+    // after it that had the same name; merged droplets named after it ("D1 + D2") follow its short
+    // name. With a process this goes over the whole project: the parts of the process further
+    // down that take the droplet in ("in:<old name>") follow, on down, and a Dispense tile making
+    // it gets the new name.
+    renameDroplet(a, value) {
+      this.flush();
+      const all = this.doc.process ? this.doc.actions : this.project.actions;
+      const followers = (x) => all.filter((y) => (predsOf(y) || []).includes(x.id));
+      const later = this.doc.process ? this.laterStretches() : null;
+      const seen = new Set();
+      const visit = (x, from, to) => {
+        if (seen.has(x.id)) return;
+        seen.add(x.id);
+        x.droplet = to;
+        const t = x.type === 'dispense' && this.tileOf(x);
+        if (t && t.kind === 'dispense') t.droplet = to;
+        for (const f of followers(x)) {
+          const name = f.droplet || '';
+          if (name === from) visit(f, from, to);
+          else {
+            const merged = mergedRenamed(name, from, to);
+            if (merged) visit(f, name, merged);
+          }
+        }
+        // Further down the process, where the droplet comes in by its name.
+        if (!later || !from || !to || !x.tile) return;
+        const below = later(x.tile);
+        for (const f of all) {
+          if (!below.has(f.tile) || !(predsOf(f) || []).includes(`in:${from}`)) continue;
+          const after = [].concat(f.after).map((id) => (id === `in:${from}` ? `in:${to}` : id));
+          f.after = after.length === 1 ? after[0] : after;
+          if ((f.droplet || '') === from) visit(f, from, to);
+        }
+      };
+      visit(a, a.droplet || '', value);
+    }
+
+    // For the parts of the process after a tile's: tile id -> the set of tiles in the stretches
+    // further down from its stretch (by arrows going down, not those going back up).
+    laterStretches() {
+      const p = this.doc.process;
+      const g = processes.graph(p);
+      const back = processes.backLinks(p, g);
+      const st = processes.stretches(p, g, back);
+      const memo = new Map();
+      return (tileId) => {
+        const sid = st.of.get(tileId);
+        if (memo.has(sid)) return memo.get(sid);
+        const s = st.list.find((x) => x.id === sid);
+        const seen = new Set(s ? s.tiles : [tileId]);
+        const stack = [...seen];
+        while (stack.length) {
+          const id = stack.pop();
+          for (const l of g.out.get(id) || []) {
+            if (back.has(processes.linkKey(l)) || seen.has(l.to)) continue;
+            seen.add(l.to);
+            stack.push(l.to);
+          }
+        }
+        const out = new Set([...seen].filter((id) => st.of.get(id) && st.of.get(id) !== sid));
+        memo.set(sid, out);
+        return out;
+      };
     }
 
     // How long each step of action id lasts (ms; 0 = the default frame time).
@@ -1320,6 +1749,10 @@
 
     startPlacement(template) {
       this.cancel();
+      if (this.locked) {
+        this.notice = this.locked;
+        return false;
+      }
       this.playing = false;
       this.placement = { template, turns: Number.isInteger(template.turns) ? ((template.turns % 4) + 4) % 4 : 0, spot: null };
     }
@@ -1393,10 +1826,17 @@
 
     startTemplate(seq = null) {
       this.cancel();
+      this.flush();
       if (!this.saved) {
-        this.saved = { project: this.project, frame: this.frame, undoStack: this.undoStack, redoStack: this.redoStack, selection: this.selection };
+        this.saved = {
+          project: this.doc, scope: this.scope, arrive: this.arrive,
+          frame: this.frame, undoStack: this.undoStack, redoStack: this.redoStack, selection: this.selection,
+        };
       }
       this.project = projects.newProject({ layout: this.layout.id, frameTime: this.project.frameTime });
+      this.doc = this.project;
+      this.scope = null;
+      this.arrive = [];
       this.selection = null;
       if (seq) {
         const a = { id: projects.nextId(this.project), ...importSequence(seq, 'Template') };
@@ -1416,15 +1856,17 @@
     // too (`making`), the project being set aside. Plain data, for JSON.
 
     snapshot(history = UNDO_LIMIT) {
-      const part = (s) => ({
-        project: s.project,
+      this.flush();
+      const part = (s, project) => ({
+        project,
         frame: s.frame,
         selection: s.selection,
+        tile: s.scope && s.scope.tile ? s.scope.tile : null,
         undo: history > 0 ? s.undoStack.slice(-history) : [],
         redo: history > 0 ? s.redoStack.slice(-history) : [],
       });
-      const out = part(this.saved || this);
-      if (this.saved) out.making = part(this);
+      const out = this.saved ? part(this.saved, this.saved.project) : part(this, this.doc);
+      if (this.saved) out.making = part(this, this.doc);
       return out;
     }
 
@@ -1448,19 +1890,29 @@
         project.layout = this.layout.id;
         const frame = Number.isInteger(s.frame) ? Math.min(MAX_FRAMES, Math.max(1, s.frame)) : 1;
         const selection = project.actions.some((a) => a.id === s.selection) ? s.selection : null;
-        return { project, frame, selection, undoStack: steps(s.undo), redoStack: steps(s.redo), warnings };
+        const tile = typeof s.tile === 'string' ? s.tile : null;
+        return { project, frame, selection, tile, undoStack: steps(s.undo), redoStack: steps(s.redo), warnings };
       };
       const main = take(data);
       const making = data.making ? take(data.making) : null;
       this.cancel();
       this.playing = false;
-      const { warnings: w1, ...mainState } = main;
+      const { warnings: w1, tile, ...mainState } = main;
       this.saved = null;
+      this.scope = null;
+      this.arrive = [];
       Object.assign(this, mainState);
+      this.doc = this.project;
+      if (this.doc.process && !(tile && this.openTile(tile))) this.rescope();
       if (making) {
-        const { warnings: w2, ...makingState } = making;
-        this.saved = mainState;
+        const { warnings: w2, tile: unused, ...makingState } = making;
+        void unused;
+        this.flush();
+        this.saved = { ...mainState, project: this.doc, scope: this.scope, arrive: this.arrive, frame: this.frame, selection: this.selection };
+        this.scope = null;
+        this.arrive = [];
         Object.assign(this, makingState);
+        this.doc = this.project;
         w1.push(...w2);
       }
       this.recompile();
@@ -1471,18 +1923,22 @@
       if (!this.saved) return;
       this.cancel();
       this.saved.project.frameTime = this.project.frameTime; // the default frame time is a setting
-      ({ project: this.project, frame: this.frame, undoStack: this.undoStack, redoStack: this.redoStack, selection: this.selection } = this.saved);
+      ({ project: this.doc, scope: this.scope, arrive: this.arrive, frame: this.frame, undoStack: this.undoStack, redoStack: this.redoStack, selection: this.selection } = this.saved);
+      this.project = this.scope ? this.workingProject() : this.doc;
+      if (this.scope) this.project.frameTime = this.doc.frameTime;
       this.saved = null;
       this.playing = false;
       this.recompile();
     }
 
     // --- undo ----------------------------------------------------------------------------------
-    // Each change keeps a copy of the actions (and the templates they use) from before it, with
-    // the frame and selection of that moment.
+    // Each change keeps a copy of the whole project's actions, the templates they use and the
+    // process, from before it, with the frame and selection of that moment.
 
     state() {
-      return JSON.stringify({ actions: this.project.actions, templates: this.project.templates });
+      this.flush();
+      const d = this.doc;
+      return JSON.stringify(d.process ? { actions: d.actions, templates: d.templates, process: d.process } : { actions: d.actions, templates: d.templates });
     }
 
     checkpoint() {
@@ -1490,10 +1946,15 @@
     }
 
     restore(point) {
-      const { actions, templates: kept } = JSON.parse(point.state);
-      this.project.actions = actions;
-      this.project.templates = kept;
+      const { actions, templates: kept, process } = JSON.parse(point.state);
+      this.doc.actions = actions;
+      this.doc.templates = kept;
+      if (process) this.doc.process = process;
+      else delete this.doc.process;
+      // The board's part is taken from the restored project before anything writes it back.
+      this.project = this.scope ? this.workingProject() : this.doc;
       this.frame = point.frame;
+      if (this.scope || this.doc.process) this.rescope();
       this.selection = point.selection && this.action(point.selection) ? point.selection : null;
       this.recompile();
     }
@@ -1648,6 +2109,11 @@
 
     run(action, now = 0) {
       const f = this.frame;
+      const changes = ['copy', 'clearFrame', 'clearAll', 'undo', 'redo'].includes(action) || Boolean(RESERVOIR_STEPS[action]);
+      if (this.locked && (changes || (this.frozen && (action === 'play' || action === 'next' || action === 'prev')))) {
+        this.notice = this.locked;
+        return;
+      }
       switch (action) {
         case 'play':
           this.togglePlay(now);
@@ -1687,12 +2153,19 @@
     }
 
     // A reservoir button: a dispense action from the frame on screen; the view moves to its end.
+    // In an open Dispense tile with nothing placed yet, the droplet gets the tile's droplet name (a
+    // free one, kept on the tile, if it has none).
     dispense(reservoir) {
       const done = this.change(() => {
-        this.addAction({ type: 'dispense', name: `Dispense ${RESERVOIR_NAMES[reservoir]}`, droplet: projects.nextDroplet(this.project), reservoir }, this.frame, []);
+        const t = this.scope && this.scope.tile ? processes.tileById(this.doc.process, this.scope.tile) : null;
+        const first = t && t.kind === 'dispense' && !this.doc.actions.some((a) => a.tile === t.id && a.type === 'dispense') ? t : null;
+        const droplet = (first && first.droplet) || this.freeDroplet();
+        if (first) first.droplet = droplet;
+        this.addAction({ type: 'dispense', name: `Dispense ${RESERVOIR_NAMES[reservoir]}`, droplet, reservoir }, this.frame, []);
       });
       const span = done && this.span(this.selection);
       if (span) this.frame = span.to;
+      return done;
     }
 
     // Everything on in the previous frame goes into the pattern being painted (a new one if none).
@@ -1736,23 +2209,36 @@
     // setting); its layout is set by the caller.
     openProject(project) {
       this.cancel();
+      this.leaveScope();
       this.change(() => {
         for (const k of Object.keys(project)) if (k !== 'frameTime' && k !== 'layout') this.project[k] = project[k];
+        if (!project.process) delete this.project.process;
         this.selection = null;
         this.frame = 1;
       }, { check: false });
       this.project.frameTime = project.frameTime;
       this.recompile();
+      this.rescope();
+    }
+
+    // Back to showing the whole project (before it is replaced).
+    leaveScope() {
+      this.flush();
+      this.scope = null;
+      this.arrive = [];
+      this.project = this.doc;
     }
 
     // Opening an OpenDrop file: one pattern holding all its frames. A file with frame times also
     // brings its default frame time; one without keeps the current default.
     openSequence(seq, { timed = false, name = 'Imported' } = {}) {
       this.cancel();
+      this.leaveScope();
       this.change(() => {
         const empty = seq.lastFrame() === 1 && seq.isEmpty(1);
         this.project.actions = empty ? [] : [{ id: 'a1', ...importSequence(seq, name) }];
         this.project.templates = {};
+        delete this.project.process;
         this.selection = null;
         this.frame = 1;
       }, { check: false });
@@ -1770,7 +2256,9 @@
       }
       block.frames = block.frames.slice(first);
       if (block.times) block.times = block.times.slice(first);
-      const a = { id: projects.nextId(this.project), ...block, start: this.frame };
+      const { start, ...fields } = block;
+      void start;
+      const a = this.newAction(fields, this.frame, []);
       const check = this.tryChanges(new Map(), [a]);
       if (!check.valid) {
         this.notice = check.reason;

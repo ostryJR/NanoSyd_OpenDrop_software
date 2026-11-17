@@ -63,7 +63,7 @@
       d.auto.checked = this.prefs.auto;
       if (serial.supported()) {
         serial.watch((port) => this.plugged(port));
-        if (this.prefs.auto) this.reconnect();
+        if (this.prefs.auto) this.free().then((ok) => ok && this.reconnect());
       }
     }
 
@@ -183,7 +183,16 @@
       if (!this.prefs.auto || this.session.connected || this.busy) return;
       const known = this.prefs.port && this.prefs.port.usbVendorId !== undefined;
       if (known && !serial.sameInfo(serial.infoOf(port), this.prefs.port)) return;
-      this.open(port, { quiet: true });
+      this.free().then((ok) => ok && this.open(port, { quiet: true }));
+    }
+
+    // Whether this tab may take the device: not when another tab of this page has it (the page
+    // says, through app.deviceElsewhere()).
+    async free() {
+      if (!this.app.deviceElsewhere) return true;
+      const elsewhere = await this.app.deviceElsewhere();
+      if (elsewhere) this.app.setStatus('The OpenDrop is connected in another tab of this page');
+      return !elsewhere;
     }
 
     async disconnect() {

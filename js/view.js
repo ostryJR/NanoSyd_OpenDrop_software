@@ -143,6 +143,9 @@
       this.speedLabel = label('', 18, 16);
 
       this.electrodeLayer = el('g', { class: 'electrodes' }, svg);
+      // Rings where a droplet waits on an electrode that isn't on: left there, or coming in.
+      this.ringLayer = el('g', { class: 'rings' }, svg);
+      this.ringsKey = '';
       // Droplet paths as lines through their electrodes' centres, and the selected path's points.
       this.lineLayer = el('g', { class: 'lines' }, svg);
       // Where the device senses a droplet (feedback), as dots.
@@ -284,8 +287,21 @@
       }
     }
 
-    render(ed, { numbers = false, lines = true, device = null } = {}) {
+    // rings: [{ e, colour }] — a droplet waits on electrode e.
+    renderRings(rings) {
+      const key = JSON.stringify(rings);
+      if (key === this.ringsKey) return;
+      this.ringsKey = key;
+      this.ringLayer.replaceChildren();
+      for (const r of rings) {
+        const c = this.at(r.e);
+        if (c) el('circle', { cx: c[0], cy: c[1], r: 15, style: `stroke: ${r.colour}` }, this.ringLayer);
+      }
+    }
+
+    render(ed, { numbers = false, lines = true, device = null, rings = [] } = {}) {
       this.renderDevice(device);
+      this.renderRings(rings);
       const shown = ed.shown;
       const { seq } = shown;
       const { frame } = ed;

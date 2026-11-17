@@ -64,6 +64,12 @@
       }
       case 'pattern':
         return { steps: action.frames.map((cells, k) => ({ cells: cells.slice(), time: ownTime(action, k) })) };
+      case 'arrive':
+        // A droplet coming in from the stretch before: it rests on its electrodes from frame 1.
+        return { steps: [{ cells: (action.cells || []).slice(), time: 0 }] };
+      case 'wait':
+        // A hold: nothing switched on for its time; the others keep moving meanwhile.
+        return { steps: [{ cells: [], time: Math.max(1, Math.round(action.duration || 0)) }] };
       default:
         return { error: `this version can't show “${action.type}” actions (kept in the file)`, unknown: true };
     }
@@ -80,12 +86,16 @@
   //   expanded action id -> what expand() returned
   //   resting  [{ id, cells, from, to }]: droplets left where an action ended, until picked up
   //   touches  Set of 'id|id' pairs of actions whose droplets touch
+  //   left     [{ droplet, cells }]: where the droplets are at the end, by droplet name
   //   issues   [{ kind, id, text, ... }]; kinds: invalid, unknown, link, cut, jump, touch, waits
   // Actions start at their `start` frame, or in the last frame of the action(s) they follow
   // (+ delay): the droplet is handed over in that frame. A frame lasts as long as the longest step
   // of the actions in it. A `split` action doesn't hold the others up: its long steps stretch over
-  // as many frames as the others take, each step lasting at least its own time.
-  function compile(project, rects) {
+  // as many frames as the others take, each step lasting at least its own time; a wait (hold)
+  // always does that. `arrive` lists droplets coming in from the stretch before: actions of type
+  // 'arrive' ({ id, droplet, cells }) that rest on their electrodes from frame 1, switch nothing on
+  // and don't set frame times; others can follow them (after: their id) and mustn't touch them.
+  function compile(project, rects, { arrive = [] } = {}) {
     const ctx = lines.context(rects);
     const frameTime = project.frameTime || DEFAULT_FRAME_TIME;
     const seq = new Sequence();
@@ -94,7 +104,9 @@
     const spans = new Map();
     const active = Array.from({ length: MAX_FRAMES + 1 }, () => []);
     const expanded = new Map();
-    const actions = project.actions;
+    const actions = arrive.length ? [...arrive, ...project.actions] : project.actions;
+    const coming = (a) => a.type === 'arrive';
+    const split = (a) => a.split || a.type === 'wait';
     const byId = new Map(actions.map((a) => [a.id, a]));
     const nameOf = (id) => (byId.has(id) ? `“${byId.get(id).name}”` : id);
 
@@ -147,7 +159,7 @@
       let time = 0;
       let by = null; // the non-split action whose step sets the frame time
       for (const r of running) {
-        if (r.a.split) continue;
+        if (split(r.a) || coming(r.a)) continue;
         const t = stepTime(r);
         if (t > time) {
           time = t;
@@ -163,7 +175,7 @@
       for (let more = true; more; ) {
         more = false;
         for (const r of running.slice()) {
-          if (ended.has(r) || r.k !== r.steps.length - 1 || (r.a.split && r.remaining > time)) continue;
+          if (ended.has(r) || r.k !== r.steps.length - 1 || (split(r.a) && r.remaining > time)) continue;
           ended.add(r);
           more = true;
           for (const s of followers.get(r.a.id) || []) {
@@ -175,7 +187,7 @@
               continue;
             }
             const n = begin(s, f);
-            if (n && !n.a.split && stepTime(n) > time) {
+            if (n && !split(n.a) && !coming(n.a) && stepTime(n) > time) {
               time = stepTime(n);
               by = n;
             }
@@ -184,7 +196,7 @@
       }
 
       for (const r of running) {
-        for (const e of r.steps[r.k].cells) if (e >= 0 && e < CELLS) seq.set(e, f, true);
+        if (!coming(r.a)) for (const e of r.steps[r.k].cells) if (e >= 0 && e < CELLS) seq.set(e, f, true);
         active[f].push({ id: r.a.id, step: r.k });
       }
       seq.setTime(f, time === frameTime ? 0 : time);
@@ -192,13 +204,13 @@
       // Actions held up by a longer step: not split, not on their last step (arrived), and with a
       // shorter step of their own.
       if (by) {
-        const held = running.filter((r) => r !== by && !r.a.split && r.k < r.steps.length - 1 && stepTime(r) < time);
+        const held = running.filter((r) => r !== by && !split(r.a) && !coming(r.a) && r.k < r.steps.length - 1 && stepTime(r) < time);
         if (held.length) issues.push({ kind: 'waits', id: by.a.id, frame: f, time, ids: held.map((r) => r.a.id) });
       }
 
       const next = [];
       for (const r of running) {
-        if (r.a.split) {
+        if (split(r.a)) {
           r.remaining -= time;
           if (r.remaining > 0) {
             next.push(r);
@@ -210,7 +222,7 @@
           spans.set(r.a.id, { from: r.from, to: f });
           continue;
         }
-        if (r.a.split) r.remaining = stepTime(r);
+        if (split(r.a)) r.remaining = stepTime(r);
         next.push(r);
       }
       running = next;
@@ -309,7 +321,23 @@
       issues.push({ kind: 'touch', id: b, other: a, frame, text: `its droplet touches ${nameOf(a)}'s in frame ${frame}` });
     }
 
-    return { seq, spans, active, expanded, resting, touches: new Set(touches.keys()), issues, frameTime };
+    // The droplets at the end: where the actions running in the last frame leave theirs, and where
+    // droplets rest until then; by droplet name (an action without one goes by its own name).
+    // A dispense's reservoir electrode (its first step) stays on at its end, holding the liquid
+    // left in the reservoir: that isn't its droplet.
+    const leftBy = new Map();
+    const put = (id, all) => {
+      const a = byId.get(id);
+      const cells = a.type === 'dispense' ? all.filter((e) => !firstCells(id).includes(e)) : all;
+      if (!cells.length) return;
+      const name = a.droplet || a.name || id;
+      leftBy.set(name, [...new Set([...(leftBy.get(name) || []), ...cells])].sort((x, y) => x - y));
+    };
+    for (const a of ran) if (spans.get(a.id).to === end && !spans.get(a.id).cut) put(a.id, lastCells(a.id));
+    for (const r of resting) if (r.to === end) put(r.id, r.cells);
+    const left = [...leftBy].map(([droplet, cells]) => ({ droplet, cells })).sort((x, y) => (x.droplet < y.droplet ? -1 : x.droplet > y.droplet ? 1 : 0));
+
+    return { seq, spans, active, expanded, resting, touches: new Set(touches.keys()), left, issues, frameTime };
   }
 
   // A sequence (e.g. a loaded OpenDrop file) as one pattern action covering frame 1 to its last
