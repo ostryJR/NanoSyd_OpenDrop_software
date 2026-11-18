@@ -125,10 +125,6 @@
         return t;
       };
       label('OpenDrop Generator', -43, -18);
-      // In the notch in the frame's top edge (y 80-135 px of the image), centred, level with the
-      // title on the left.
-      this.cutoutTitle = label('Path Generator', 0, -18.8);
-      this.cutoutTitle.setAttribute('class', 'cutout-title');
       label('export', 25, -18.5);
       label('save', 32, -18.5);
       label('load', 38, -18.5);
@@ -188,8 +184,8 @@
       for (const [u, v] of [[28, -6], [28, 4], [-30, -6], [-30, 4]]) box(u, v, this.reservoirButtons);
 
       // The device, where OpenDropController had it: live and feedback under play (white when
-      // on; feedback only for boards that have it), connect at the bottom left, and a dot by the
-      // title: gray = not connected, amber = connecting, green = answering, red = not answering.
+      // on; feedback only for boards that have it), and a dot by the title: gray = not connected,
+      // amber = connecting, green = answering, red = not answering. Connecting is in the Device tab.
       // A hover tip over a box and its label (w grid units wide).
       const tip = (u, v, w, parent) => el('title', {}, el('rect', { class: 'hit', x: px(u), y: py(v), width: G.UNIT * w, height: G.UNIT * 2 }, parent));
       this.liveBox = box(34, -6);
@@ -199,12 +195,6 @@
       this.feedbackBox = box(34, -3, this.feedbackGroup);
       label('feedback', 37, -1.5, this.feedbackGroup);
       tip(34, -3, 9, this.feedbackGroup).textContent = 'Show where the device senses droplets';
-      this.connectBox = box(-43.5, 14.5);
-      this.connectLabel = label('connect', -41, 16, controls);
-      // Which port to pick in the browser's list: the OpenDrop shows up as a Feather M0.
-      this.connectHint = label('look for “Feather M0”', -43.5, 18.6, controls);
-      this.connectHint.setAttribute('class', 'connect-hint');
-      this.connectTip = tip(-43.5, 14.5, 12, controls);
       this.deviceDot = el('circle', { class: 'device-dot', cx: px(-44.5), cy: py(-18.5), r: BOX / 4 }, controls);
       this.deviceTip = el('title', {}, this.deviceDot);
       this.deviceKey = '';
@@ -241,10 +231,6 @@
       this.flows = new WeakMap(); // a template's expanded steps -> its moves (grid units)
       this.overlayKey = '';
       this.linesKey = '';
-    }
-
-    setCutoutTitle(text) {
-      this.cutoutTitle.textContent = text;
     }
 
     setLayout(lay) {
@@ -348,10 +334,6 @@
       this.liveBox.setAttribute('fill', d.live ? COLOR.active : COLOR.button);
       this.feedbackGroup.style.display = on && d.canFeedback ? '' : 'none';
       this.feedbackBox.setAttribute('fill', d.feedback ? COLOR.active : COLOR.button);
-      this.connectBox.setAttribute('fill', on ? COLOR.active : COLOR.button);
-      this.connectLabel.textContent = d.state === 'connecting' ? 'connecting…' : on ? 'disconnect' : 'connect';
-      this.connectHint.style.display = on ? 'none' : '';
-      this.connectTip.textContent = on ? 'Disconnect the OpenDrop (everything is switched off first)' : 'Connect the OpenDrop over USB (Chrome or Edge)';
       this.deviceDot.setAttribute('class', `device-dot ${d.state}`);
       const states = { off: 'Not connected', connecting: 'Connecting…', on: d.name || 'Connected', silent: `${d.name || 'The device'} is not answering` };
       this.deviceTip.textContent = states[d.state] || '';
@@ -374,7 +356,7 @@
       }
     }
 
-    render(ed, { numbers = false, lines = true, device = null, rings = [], heat = null } = {}) {
+    render(ed, { numbers = false, lines = true, device = null, rings = [], heat = null, frameOffset = 0 } = {}) {
       this.renderDevice(device);
       this.renderHeat(heat);
       this.renderRings(rings);
@@ -388,7 +370,7 @@
           r.fill = fill;
         }
       }
-      this.frameLabel.textContent = frame;
+      this.frameLabel.textContent = frame + frameOffset; // with a process: the whole timeline's frame
       this.speedLabel.textContent = perMinute(ed.speed);
       this.playBox.setAttribute('fill', ed.playing ? COLOR.active : COLOR.button);
       this.dots.forEach((dot, i) => dot.setAttribute('fill', i + 1 === frame ? COLOR.button : COLOR.idle));

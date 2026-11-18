@@ -16,6 +16,9 @@ Open `index.html` in Chrome or Edge. Double-clicking the file works: there is no
 to install, and it runs offline. Safari and Firefox work too, but there save and export ask for a
 file name and download the file instead of showing a save dialog.
 
+**Manual:** `manual.html` (the **Manual** link at the top of the app) explains how to use it in
+plain words, with worked process examples. It is kept up to date with every change to the app.
+
 ## Controls
 
 | To | Do |
@@ -47,7 +50,7 @@ file name and download the file instead of showing a save dialog.
 | Save / open a project | **save** (⌘S / Ctrl+S) / **load**, top right. **load** also opens OpenDrop `.json` files |
 | Export for the OpenDrop controller | **export**, top right |
 | Design the process: steps, decisions, loops, lanes | **Process** at the top (see "The process"); **Board** goes back. **▶ Run** runs it |
-| Connect the OpenDrop (Chrome, Edge) | **connect**, bottom left, or **Connect…** in the Device tab, then pick its port. The dot by the title is green while it answers |
+| Connect the OpenDrop (Chrome, Edge) | **Connect…** in the Device tab, then pick its port. The dot by the title is green while it answers |
 | Send what is on screen to the device | **live** under play (white when on). Stepping, playing and editing then go straight to the device; live off switches everything on it off |
 | See where the device senses droplets | **feedback** under live (OpenDrop V4.2): dark dots on the board |
 | Show electrode numbers / paths' lines | `N` / `L`, or the checkboxes in the bottom bar |
@@ -157,14 +160,27 @@ everything drawn so far.
 - **On the board:**
   - Double-click a step, or **Open on the board**, to draw its work.
   - The board shows that step with the steps that run with it up to the next stop (a decision,
-    Measure, Ask, Repeat or End). Its own clips are bright in the timeline and the others dim; a band
-    above the tracks shows each step's frames (click one to open it).
+    Measure, Ask, Repeat or End). Its own clips are bright in the timeline and the others dim.
   - The droplets coming in from the step before wait where it left them, shown as dashed rings. You
     draw from them as from any droplet.
   - What you draw goes into the open step, after the steps before it.
   - **Place on the board** does a typed tile's job: it adds a dispense or a hold, starts placing
     the mixer, merge or split (click where the droplet is, R turns it), or picks freehand for a
     move.
+- **The timeline shows the whole process**, the stretches one after another, with the frame
+  numbers counting on from Start:
+  - It follows one way through: at every decision it goes on rather than back round the loop (a
+    loop that waits for an answer is shown once; where both ways go on, "yes"), and a Repeat runs
+    all its rounds. Each stretch starts with the droplets, heaters and magnets the one before left.
+  - The board edits the stretch the frame on screen is in; the other stretches' clips are dimmed.
+    Clicking or scrubbing into another stretch, or clicking one of its clips or bands, opens it.
+    Playing runs on from one stretch into the next.
+  - A band above the tracks shows each step every time the way goes through it. A purple ◆ between
+    two frames marks a stop (Measure, Ask, decision, Repeat round; hover for which), and ■ marks End.
+  - The total under the board is the whole way's frames and time, and says where it stops short
+    (an arrow going nowhere). The Step time chart shows the whole way too.
+  - A step the way doesn't go through (the other side of a decision) opens on its own, as the bar
+    at the top says.
 - **Run** (at the top) goes through the process from Start:
   - Each stretch plays on the board with its frame times, and the running tile glows. With
     **on the OpenDrop** ticked and the device connected, the device follows live and is switched
@@ -300,7 +316,7 @@ it had them, and a **Device** tab for the rest. It needs Chrome or Edge on a com
 opening `index.html` from disk is fine. Close OpenDropController first: only one program can use
 the port.
 
-- **connect** (bottom left) or **Connect…** in the Device tab opens the browser's port picker. The
+- **Connect…** in the Device tab opens the browser's port picker (the OpenDrop shows up as a Feather M0). The
   board's type is read from the device and shown: V4.1 or V4.2, with magnets or the temperature
   adapter. For a magnet board the layout switches to the magnet one, and back for a board without,
   as the original did. **Reconnect automatically** finds the same device again when the page opens
@@ -486,7 +502,7 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
   is a simulated OpenDrop, `js/serial.js` the Web Serial port and `js/devicepanel.js` the Device
   tab; see `docs/device-protocol.md`. `js/process.js` is the process (tiles, arrows, stretches,
   loops, checks, layout, a run's way through it), `js/stretch.js` puts it on the board (droplets
-  coming in, each tile's frames), `js/runner.js` runs it, `js/processview.js` and
+  coming in, each tile's frames, the whole process laid out along one way), `js/runner.js` runs it, `js/processview.js` and
   `js/processpanel.js` are the process view and its Properties, and `js/sync.js` keeps two tabs in
   step. The view, chart, timeline, serial, device panel, process view and panel, sync and app run
   in the browser; the rest runs in node too.

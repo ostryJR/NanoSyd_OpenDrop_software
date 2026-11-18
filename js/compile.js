@@ -319,14 +319,18 @@
     }
 
     // A droplet stays where its action left it until something carries on from that electrode
-    // (or to the end): it can still be touched there.
+    // (or to the end): it can still be touched there. A dispense's reservoir electrode (its first
+    // step, on again at its end) holds the liquid left in the reservoir, not a droplet: only the
+    // droplet it pulled out rests.
     let end = 0;
     for (const s of spans.values()) end = Math.max(end, s.to);
     const resting = [];
     for (const a of ran) {
       const span = spans.get(a.id);
       if (span.cut) continue;
+      const reservoir = a.type === 'dispense' ? firstCells(a.id) : [];
       for (const e of lastCells(a.id)) {
+        if (reservoir.includes(e)) continue;
         let until = end;
         for (const b of ran) {
           const sb = spans.get(b.id);

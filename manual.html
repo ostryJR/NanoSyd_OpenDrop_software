@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenDrop Generator: manual</title>
+  <!-- The user manual. Keep it in step with the app: every change to what you see or do in the app
+       updates the section it belongs to here (and the README for the technical side). -->
+  <style>
+    :root {
+      --background: rgb(255, 250, 240);
+      --surface: #fff;
+      --ink: #2b2a27;
+      --muted: #6b6a65;
+      --line: rgba(0, 0, 0, 0.12);
+      --accent: #2a78d6;
+      --work: #6c86c9;
+      --ask-fill: #fff8e1;
+      --ask-line: #c99a00;
+      --decide-fill: #f6edfb;
+      --decide-line: #8e44ad;
+      --repeat-fill: #e6f5f2;
+      --repeat-line: #00897b;
+      --stop: #3d3d3a;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--ink);
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      padding: 24px 16px 24px 24px;
+      overflow-y: auto;
+      border-right: 1px solid var(--line);
+      font-size: 13.5px;
+    }
+
+    nav .title { margin: 0 0 4px; font-size: 16px; font-weight: 700; }
+    nav .back { display: inline-block; margin-bottom: 16px; color: var(--accent); text-decoration: none; }
+    nav ol { margin: 0; padding-left: 18px; }
+    nav ol ol { margin: 2px 0 6px; padding-left: 14px; font-size: 12.5px; }
+    nav li { margin: 3px 0; }
+    nav a { color: var(--ink); text-decoration: none; }
+    nav a:hover { color: var(--accent); }
+
+    main { max-width: 820px; padding: 24px 40px 80px; }
+
+    h1 { margin: 8px 0 4px; font-size: 30px; }
+    h2 { margin: 48px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 23px; }
+    h3 { margin: 28px 0 6px; font-size: 18px; }
+    h4 { margin: 20px 0 4px; font-size: 15px; }
+    p, li { max-width: 72ch; }
+    .lead { color: var(--muted); font-size: 16.5px; }
+
+    a { color: var(--accent); }
+
+    kbd {
+      display: inline-block;
+      min-width: 1.6em;
+      padding: 0 5px;
+      border: 1px solid rgba(0, 0, 0, 0.25);
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      background: var(--surface);
+      font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-align: center;
+    }
+
+    /* A button or field name as the app shows it. */
+    .ui {
+      padding: 0 5px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    table { width: 100%; margin: 10px 0; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+
+    .box {
+      margin: 14px 0;
+      padding: 10px 16px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .box.tip { border-left-color: #1e7d32; }
+    .box.warn { border-left-color: #c98a00; }
+    .box > :first-child { margin-top: 0; }
+    .box > :last-child { margin-bottom: 0; }
+    .box .label { font-weight: 700; }
+
+    ol.steps { padding-left: 22px; }
+    ol.steps > li { margin: 6px 0; }
+
+    /* Worked examples: the process drawn as tiles beside the steps that build it. */
+    .example {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 24px;
+      margin: 16px 0 28px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .example h3 { grid-column: 1 / -1; margin: 0; }
+    .example .goal { grid-column: 1 / -1; margin: -12px 0 0; color: var(--muted); }
+
+    .flow { display: flex; flex-direction: column; align-items: center; gap: 0; font-size: 13px; }
+
+    .tile {
+      position: relative;
+      width: 190px;
+      padding: 6px 10px;
+      border: 1.5px solid var(--work);
+      border-radius: 8px;
+      background: var(--surface);
+      line-height: 1.35;
+    }
+
+    .tile b { display: block; }
+    .tile small { color: var(--muted); }
+    .tile.startend { width: 110px; border-color: var(--stop); border-radius: 999px; background: var(--stop); color: #fff; text-align: center; }
+    .tile.ask { border-color: var(--ask-line); background: var(--ask-fill); }
+    .tile.decide { border-color: var(--decide-line); background: var(--decide-fill); text-align: center; }
+    .tile.repeat { border-color: var(--repeat-line); background: var(--repeat-fill); }
+    .tile.lanes { width: 200px; padding: 2px 8px; border: 0; border-radius: 4px; background: #5a5955; color: #fff; text-align: center; font-size: 12px; }
+
+    .arrow { position: relative; height: 22px; width: 2px; background: #6b6a65; }
+    .arrow::after {
+      position: absolute;
+      bottom: -1px;
+      left: -4px;
+      border: 5px solid transparent;
+      border-top: 6px solid #6b6a65;
+      border-bottom: 0;
+      content: "";
+    }
+
+    .arrow .port {
+      position: absolute;
+      top: 2px;
+      left: 8px;
+      color: var(--muted);
+      font-size: 11.5px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .loopnote {
+      margin: 2px 0;
+      padding: 1px 8px;
+      border: 1px dashed var(--decide-line);
+      border-radius: 999px;
+      color: #6c2d87;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .lanes-row { display: flex; gap: 10px; }
+    .lanes-row .flow .tile { width: 105px; }
+
+    figure.screen {
+      margin: 14px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      font-size: 13.5px;
+    }
+
+    .screen-map {
+      display: grid;
+      grid-template-columns: 1fr 150px;
+      grid-template-rows: auto 120px auto auto;
+      gap: 6px;
+      margin-bottom: 8px;
+      font-size: 12.5px;
+      text-align: center;
+    }
+
+    .screen-map div { display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 6px; }
+    .screen-map .bar { grid-column: 1; background: #ece8dc; }
+    .screen-map .board { grid-column: 1; background: #e44; color: #fff; font-weight: 600; }
+    .screen-map .side { grid-column: 2; grid-row: 1 / 4; background: #dfe3ec; }
+    .screen-map .timeline { grid-column: 1; background: #f3f2ee; border: 1px solid var(--line); }
+    .screen-map .bottom { grid-column: 1 / 3; background: #ece8dc; }
+
+    .timeline-pic {
+      position: relative;
+      height: 74px;
+      margin: 10px 0;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fcfcfb;
+      font-size: 11px;
+    }
+
+    .timeline-pic .band, .timeline-pic .clip { position: absolute; height: 17px; padding: 0 5px; overflow: hidden; border-radius: 4px; line-height: 17px; white-space: nowrap; }
+    .timeline-pic .band { top: 6px; background: #dfe3ec; }
+    .timeline-pic .band.open { background: #1f6feb; color: #fff; }
+    .timeline-pic .clip { top: 34px; border: 1px solid #e8a27c; background: #fbe4d8; }
+    .timeline-pic .clip.dim { opacity: 0.45; }
+    .timeline-pic .stop { position: absolute; top: 4px; bottom: 4px; border-left: 1px dashed var(--decide-line); }
+    .timeline-pic .stop span { position: absolute; top: 0; left: -6px; color: var(--decide-line); font-size: 11px; }
+    .timeline-pic .end { position: absolute; top: 4px; bottom: 4px; border-left: 2px solid var(--stop); }
+    .timeline-pic .playhead { position: absolute; top: 0; bottom: 0; border-left: 2px solid #d0021b; }
+
+    .faq dt { margin-top: 14px; font-weight: 700; }
+    .faq dd { margin: 4px 0 0 0; }
+
+    footer { margin-top: 60px; color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      main { padding: 16px 18px 60px; }
+      .example { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      nav { display: none; }
+      .layout { display: block; }
+      .example, .box, figure { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav aria-label="Contents">
+    <p class="title">OpenDrop Generator</p>
+    <a class="back" href="index.html">← Back to the app</a>
+    <ol>
+      <li><a href="#start">Getting started</a>
+        <ol>
+          <li><a href="#screen">The screen</a></li>
+          <li><a href="#ideas">Five ideas to know</a></li>
+          <li><a href="#first">Your first sequence</a></li>
+        </ol>
+      </li>
+      <li><a href="#board">Drawing on the board</a>
+        <ol>
+          <li><a href="#dispense">Dispensing</a></li>
+          <li><a href="#paths">Paths</a></li>
+          <li><a href="#select">Selecting and changing</a></li>
+          <li><a href="#templates">Templates: mix, merge, split</a></li>
+          <li><a href="#paint">Paint</a></li>
+          <li><a href="#touch">Droplets mustn't touch</a></li>
+        </ol>
+      </li>
+      <li><a href="#time">Timeline and time</a>
+        <ol>
+          <li><a href="#timeline">The timeline</a></li>
+          <li><a href="#frametimes">Frame times and waits</a></li>
+          <li><a href="#play">Playing</a></li>
+        </ol>
+      </li>
+      <li><a href="#heat">Heaters and magnets</a></li>
+      <li><a href="#process">Processes</a>
+        <ol>
+          <li><a href="#process-what">What a process is</a></li>
+          <li><a href="#tiles">The tiles</a></li>
+          <li><a href="#build">Building a process</a></li>
+          <li><a href="#place">Putting the work on the board</a></li>
+          <li><a href="#whole">The whole process on the timeline</a></li>
+          <li><a href="#run">Running it</a></li>
+        </ol>
+      </li>
+      <li><a href="#examples">Process examples</a>
+        <ol>
+          <li><a href="#ex-simple">Dispense, move, mix</a></li>
+          <li><a href="#ex-ask">Mix until it looks right</a></li>
+          <li><a href="#ex-measure">Mix until a value is reached</a></li>
+          <li><a href="#ex-repeat">Wash three times</a></li>
+          <li><a href="#ex-heat">Heat, mix, hold with a magnet</a></li>
+          <li><a href="#ex-lanes">Two droplets at once, then merge</a></li>
+        </ol>
+      </li>
+      <li><a href="#device">Connecting the OpenDrop</a></li>
+      <li><a href="#files">Saving, files and export</a></li>
+      <li><a href="#keys">Keyboard shortcuts</a></li>
+      <li><a href="#faq">Questions and problems</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <h1>OpenDrop Generator manual</h1>
+    <p class="lead">How to draw droplet sequences for the OpenDrop V4, build whole processes out of
+      steps, questions and loops, and run them, with or without the device.</p>
+
+    <!-- ============================================================================== -->
+    <h2 id="start">Getting started</h2>
+    <p>Open <code>index.html</code> in <b>Chrome</b> or <b>Edge</b>. Double-clicking the file is
+      enough: there is nothing to install and it works offline. Safari and Firefox work too, but they
+      download files instead of showing a save dialog, and can't talk to the device.</p>
+    <p>Your work is kept in the browser automatically and comes back when you open the page again.
+      Still, use <span class="ui">save</span> for anything you want to keep: clearing the browser's
+      data removes it.</p>
+
+    <h3 id="screen">The screen</h3>
+    <figure class="screen">
+      <div class="screen-map" aria-hidden="true">
+        <div class="bar">Top bar: Process / Board · where you are · ▶ Run</div>
+        <div class="board">The board (the electrode array)</div>
+        <div class="side">Side panel: Properties · Templates · Device</div>
+        <div class="timeline">Timeline panel: frame times · Timeline / Step time / Temperature</div>
+        <div class="bottom">Bottom bar: layout, electrode numbers, lines, messages and hints</div>
+      </div>
+      <ul>
+        <li><b>Top bar:</b> switch between <span class="ui">Process</span> (the plan of your
+          experiment) and <span class="ui">Board</span> (the electrodes). With a process it says which
+          step is on the board, and has <span class="ui">▶ Run</span>.</li>
+        <li><b>Board:</b> the OpenDrop as in the original controller. The yellow squares are
+          electrodes; green ones are on in the frame on screen. Tools on the left, buttons on the right;
+          the dot by the title shows whether the OpenDrop is connected.</li>
+        <li><b>Timeline panel:</b> every action as a bar over its frames, one row per droplet; the red
+          line is the frame on screen. It can also show <span class="ui">Step time</span> (how long each
+          frame lasts) or <span class="ui">Temperature</span>. Drag its top edge to make it taller;
+          <span class="ui">▾ Timeline</span> folds it away.</li>
+        <li><b>Side panel:</b> <span class="ui">Properties</span> of what you selected (or project
+          settings when nothing is selected), <span class="ui">Templates</span> to drag onto the board,
+          and <span class="ui">Device</span> for the OpenDrop. <span class="ui">›</span> shrinks it to a
+          tab.</li>
+        <li><b>Bottom bar:</b> what just happened, warnings, and the keys you can use right now.
+          Read it when something doesn't work: it usually says why.</li>
+      </ul>
+    </figure>
+
+    <h3 id="ideas">Five ideas to know</h3>
+    <ol>
+      <li><b>Frames.</b> A sequence is a list of frames. In each frame some electrodes are on; a
+        droplet moves to the electrode that is on next to it. Frame by frame, droplets move one
+        electrode at a time.</li>
+      <li><b>Actions.</b> You don't switch electrodes one by one. You draw <em>actions</em>: a
+        dispense, a path, a mixer, a hold. The app works out the frames from them, so you can move or
+        reshape an action later and everything after it follows.</li>
+      <li><b>Droplets have names.</b> Each action belongs to a droplet ("Droplet 1", or a name you
+        give it, like "Sample"). Its short name (D1, Sample) appears on the timeline and in merged
+        names like "D1 + D2".</li>
+      <li><b>Time.</b> Each frame lasts the default frame time (0.5 s to begin with) unless an action
+        says otherwise.</li>
+      <li><b>Droplets never touch by accident.</b> Anything that would put two droplets next to each
+        other is refused, with the reason in the bottom bar. Droplets only join where you say so, with
+        a merge.</li>
+    </ol>
+
+    <h3 id="first">Your first sequence (two minutes)</h3>
+    <ol class="steps">
+      <li>Press the square button beside the <b>left top reservoir</b> on the board. A droplet is
+        dispensed in 6 frames, and the timeline shows a <b>Dispense</b> bar.</li>
+      <li>The board now shows the last frame of the dispense. Press on the droplet's electrode and
+        <b>drag</b> across the array to where it should go. Let go: the path is added, one frame per
+        electrode, as a <b>Path</b> bar after the dispense.</li>
+      <li>Open the <span class="ui">Templates</span> tab and drag <b>Circle mix 2×2</b> onto the
+        electrode where the path ended. The droplet now mixes there.</li>
+      <li>Press <kbd>Space</kbd> to play it. Press <kbd>Space</kbd> again to stop.</li>
+      <li>Press <span class="ui">save</span> (top right, or <kbd>⌘S</kbd> / <kbd>Ctrl+S</kbd>) to keep
+        the project, or <span class="ui">export</span> to write the OpenDrop <code>.json</code> file for
+        the original controller.</li>
+    </ol>
+    <div class="box tip"><p><span class="label">Tip:</span> made a mistake? <kbd>⌘Z</kbd> /
+      <kbd>Ctrl+Z</kbd> undoes it, as many times as you like.</p></div>
+
+    <!-- ============================================================================== -->
+    <h2 id="board">Drawing on the board</h2>
+    <p>The tools on the left of the board decide what a drag does:</p>
+    <table>
+      <tr><th>Tool</th><th>Key</th><th>A drag…</th></tr>
+      <tr><td><b>freehand</b></td><td><kbd>F</kbd></td><td>draws a droplet path through every electrode you pass</td></tr>
+      <tr><td><b>straight</b></td><td><kbd>S</kbd></td><td>draws a path along a row or column, turning once to the blue end electrode</td></tr>
+      <tr><td><b>paint</b></td><td><kbd>P</kbd></td><td>switches electrodes on or off in this frame, like the original controller</td></tr>
+      <tr><td><b>select</b></td><td><kbd>V</kbd></td><td>picks what is drawn and moves it, or reshapes a path</td></tr>
+    </table>
+
+    <h3 id="dispense">Dispensing</h3>
+    <p>The four buttons beside the reservoirs pull a droplet out of that reservoir (6 frames),
+      starting in the frame on screen. In a process, use a <b>Dispense</b> tile instead (see
+      <a href="#tiles">The tiles</a>).</p>
+
+    <h3 id="paths">Paths</h3>
+    <ul>
+      <li><b>Drag</b> from the droplet's electrode. Every electrode you pass is the next frame; the
+        path shows in blue with its step count until you let go. <kbd>Esc</kbd> cancels, and going back
+        along the path takes steps back.</li>
+      <li><b>Corner by corner:</b> <kbd>Shift</kbd>+click where it starts, then
+        <kbd>Shift</kbd>+click each corner. <kbd>Esc</kbd> stops.</li>
+      <li>A path starts in the frame on screen. After you add it, the board jumps to its last frame,
+        so the next drag carries on from there.</li>
+      <li><b>Several droplets at once:</b> go back to the frame where the first path starts (click
+        the timeline's ruler) and draw the second droplet's path. Both move together.</li>
+      <li><b>Make a droplet wait on its way:</b> right-click the path's line on that electrode (on a
+        Mac also <kbd>Ctrl</kbd>+click), type the seconds, press <kbd>Enter</kbd>. An orange diamond with
+        "+3 s" shows the wait.</li>
+    </ul>
+
+    <h3 id="select">Selecting and changing</h3>
+    <ul>
+      <li><b>Select</b> by clicking a bar in the timeline, or the action on the board. Its settings
+        appear in <span class="ui">Properties</span>: name, droplet, when it starts, time per step and
+        more. <kbd>Esc</kbd> lets go.</li>
+      <li><b>Reshape a path:</b> drag a straight piece sideways, or drag a corner or an end.
+        Double-click the line to add a point; double-click a point to remove it.</li>
+      <li><b>Move it on the board:</b> <kbd>⌥</kbd>/<kbd>Alt</kbd> + drag, or the select tool and drag,
+        or <kbd>⌥</kbd>/<kbd>Alt</kbd> + arrow keys. What follows it moves along.</li>
+      <li><b>Move it in time:</b> drag its bar in the timeline, or <kbd>[</kbd> / <kbd>]</kbd>.</li>
+      <li><b>Turn it:</b> <kbd>R</kbd> (<kbd>Shift+R</kbd> turns back).</li>
+      <li><b>Delete it:</b> <kbd>Delete</kbd> or <kbd>Backspace</kbd>.</li>
+    </ul>
+    <p>An action that carries on from where another one left its droplet is <em>linked</em> to it:
+      it starts when that one ends and takes its droplet name. Make the first one longer and the
+      linked one moves later by itself.</p>
+
+    <h3 id="templates">Templates: mix, merge, split</h3>
+    <p>The <span class="ui">Templates</span> tab has ready-made operations. Drag one onto the
+      electrode the droplet is on; <kbd>R</kbd> turns it while you drag, <kbd>Esc</kbd> cancels. Where
+      it doesn't fit it shows red and nothing is added.</p>
+    <ul>
+      <li><b>Mixers:</b> circle mix on 2×2 or 3×3 squares, back and forth, split &amp; merge. After
+        dropping one, Properties changes its size, rounds and direction.</li>
+      <li><b>Merge:</b> for two droplets one above the other with one electrode between them. Drop it
+        on the upper one (<kbd>R</kbd> turns it for side by side). It waits for both and makes one
+        droplet called "D1 + D2" in the middle.</li>
+      <li><b>Split:</b> one droplet becomes two.</li>
+      <li><b>Your own:</b> <span class="ui">+ New</span> gives you an empty board to draw the
+        operation from frame 1; name it and press <span class="ui">Save template</span>. Your templates
+        stay in this browser; <span class="ui">Export…</span> and <span class="ui">Import…</span> move
+        them to another computer.</li>
+    </ul>
+
+    <h3 id="paint">Paint</h3>
+    <p>With <b>paint</b> (<kbd>P</kbd>) you switch single electrodes on or off in the frame on screen,
+      as in the original controller. What you paint is kept as a <b>Pattern</b>. The buttons on the
+      right copy the previous frame, clear this frame, or clear everything (undo brings it back).</p>
+
+    <h3 id="touch">Droplets mustn't touch</h3>
+    <p>Two droplets on the same or neighbouring electrodes (diagonals too) would flow together. So
+      the app refuses anything that would make that happen: a template turns red, a path being drawn
+      turns red, a move is taken back, and the bottom bar says why. To join droplets on purpose, use a
+      <b>Merge</b>.</p>
+
+    <!-- ============================================================================== -->
+    <h2 id="time">Timeline and time</h2>
+
+    <h3 id="timeline">The timeline</h3>
+    <p>Every action is a bar from its first to its last frame, on its droplet's row. Curves with
+      arrows show where one droplet's action carries on from another's (as at a merge). A bar with a
+      red outline has a problem: hover it to read what. The red line is the frame on screen; click or
+      drag the numbers along the top to go to another frame. <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + mouse
+      wheel zooms; double-click empty space to fit everything again.</p>
+    <p>With a process, the timeline shows the <b>whole process</b>; see
+      <a href="#whole">The whole process on the timeline</a>.</p>
+
+    <h3 id="frametimes">Frame times and waits</h3>
+    <ul>
+      <li><b>Default frame time:</b> how long every frame lasts unless something says otherwise.
+        Change it in <span class="ui">Properties</span> with nothing selected (click empty space on the
+        board or press <kbd>Esc</kbd>), under <b>Project</b>.</li>
+      <li><b>This frame's time:</b> the <span class="ui">Frame</span> field above the timeline sets the
+        time of the frame on screen; <span class="ui">Use default</span> takes it off.</li>
+      <li><b>An action's speed:</b> <span class="ui">Time per step</span> in its Properties.</li>
+      <li><b>A pause on a path:</b> right-click the line (see <a href="#paths">Paths</a>).</li>
+      <li>A frame lasts as long as its slowest action. When one slow action makes the others wait, the
+        bar above the timeline says so and offers <span class="ui">Let the others keep moving</span>.</li>
+      <li><span class="ui">Step time</span> (instead of Timeline) shows how long each frame lasts; the
+        bar shows the total time.</li>
+    </ul>
+
+    <h3 id="play">Playing</h3>
+    <p><kbd>Space</kbd> or the <span class="ui">play</span> button plays the frames, each for its own
+      time; <kbd>←</kbd> / <kbd>→</kbd> or the mouse wheel step through them. While playing, the mouse
+      wheel changes the speed. With a process, playing goes from step to step through the whole
+      process.</p>
+
+    <!-- ============================================================================== -->
+    <h2 id="heat">Heaters and magnets</h2>
+    <p>With the temperature adapter, the OpenDrop has three heaters (<b>T1</b>, <b>T2</b>,
+      <b>T3</b>, 20–120 °C) and two magnets. A setting holds from its frame until it is set again, so
+      temperatures can change during an experiment.</p>
+    <ul>
+      <li><b>Temperature view:</b> choose <span class="ui">Temperature</span> above the timeline. Pick
+        T1, T2 or T3, then <b>click</b> in the chart to set that heater from that frame on. Drag a point
+        up or down to change the temperature, sideways to move it. Click a magnet lane at the bottom to
+        switch that magnet on or off from that frame.</li>
+      <li><b>Waiting for the heaters:</b> select the setting and tick
+        <span class="ui">Wait until the heaters get there</span>. With the OpenDrop connected and live,
+        it waits until the readings get there; without a device it waits the estimated time, worked
+        out from the <span class="ui">Warms</span> and <span class="ui">cools</span> rates (°C per
+        minute) above the chart. The other droplets keep moving meanwhile.</li>
+      <li><b>On the board:</b> the strip under the array shows each heater's target and reading and
+        each magnet. On the standard and magnet layouts, the electrodes over each heater get a coloured
+        outline: T1 over electrodes 25 and 26, T2 over 57 and 58, T3 over 97 and 98.</li>
+      <li><b>In a process:</b> use the <b>Temperature</b> and <b>Magnet</b> tiles (see
+        <a href="#ex-heat">example 5</a>).</li>
+    </ul>
+
+    <!-- ============================================================================== -->
+    <h2 id="process">Processes</h2>
+
+    <h3 id="process-what">What a process is</h3>
+    <p>A sequence plays the same way every time. A real experiment often doesn't: you check
+      something, then decide what to do next, or repeat a step until it is right. A <b>process</b> is
+      the plan of the experiment as a flowchart of <b>tiles</b> joined by <b>arrows</b>:</p>
+    <ul>
+      <li><b>Work tiles</b> (Dispense, Move, Mix, Wait, …) do something on the board. You draw or
+        place their work on the board.</li>
+      <li><b>Stops</b> (Measure, Ask, Decision, Repeat) are where the run pauses to ask you something,
+        or chooses which way to go.</li>
+    </ul>
+    <p>Press <span class="ui">Process</span> in the top bar. The first time, everything you have drawn
+      goes into a tile called <b>Step 1</b>, between <b>Start</b> and <b>End</b>.
+      <span class="ui">Board</span> goes back to the electrodes.</p>
+
+    <h3 id="tiles">The tiles</h3>
+    <p>The palette on the left of the process view has them in groups; hover one to see what it does.</p>
+    <table>
+      <tr><th>Tile</th><th>What it does</th><th>Its settings</th></tr>
+      <tr><td><b>Start</b>, <b>End</b></td><td>Where a run begins and finishes</td><td>–</td></tr>
+      <tr><td><b>Step</b></td><td>Anything you draw on the board yourself</td><td>Name</td></tr>
+      <tr><td><b>Dispense</b></td><td>Pulls a new droplet out of a reservoir</td><td>Reservoir, Droplet name</td></tr>
+      <tr><td><b>Move</b></td><td>Moves a droplet along a path you draw</td><td>Name</td></tr>
+      <tr><td><b>Mix</b></td><td>Mixes one droplet in place</td><td>Kind (circle, back and forth, split &amp; merge), Size, Goes round, Rounds</td></tr>
+      <tr><td><b>Merge</b></td><td>Two droplets become one; it waits for both</td><td>–</td></tr>
+      <tr><td><b>Split</b></td><td>One droplet becomes two</td><td>–</td></tr>
+      <tr><td><b>Wait</b></td><td>Holds the droplets where they are</td><td>Wait (s)</td></tr>
+      <tr><td><b>Temperature</b></td><td>Sets the heaters, optionally waits until they get there</td><td>T1–T3 (°C), Wait until the heaters get there, Close enough within (°C)</td></tr>
+      <tr><td><b>Magnet</b></td><td>Switches a magnet on or off until the next Magnet tile</td><td>Magnet 1 or 2, on or off</td></tr>
+      <tr><td><b>Measure</b></td><td>The run stops and asks you to type in a measured value</td><td>Value (a name, e.g. <code>conc</code>), Unit</td></tr>
+      <tr><td><b>Ask</b></td><td>The run stops and asks you a question</td><td>Question, Answer (yes or no, or a number), Value</td></tr>
+      <tr><td><b>Decision</b></td><td>Goes the <b>yes</b> or <b>no</b> way by a measured or asked value</td><td>Value, Is / Compared, With</td></tr>
+      <tr><td><b>Repeat</b></td><td>Goes round what follows <b>again</b> a number of times, then on by <b>done</b></td><td>Times</td></tr>
+      <tr><td><b>Parallel</b></td><td>Splits the way into lanes that run at the same time</td><td>Lanes</td></tr>
+      <tr><td><b>Wait for all</b></td><td>Waits until every lane has finished; droplets stay apart</td><td>–</td></tr>
+    </table>
+
+    <h3 id="build">Building a process</h3>
+    <ul>
+      <li><b>Add a tile:</b> drag it from the palette onto the canvas. Drop it onto an arrow to put it
+        in between two tiles (the arrow lights up: "Drop to put it here"). Clicking a palette tile puts
+        it under the selected tile.</li>
+      <li><b>Connect two tiles:</b> drag from the dot at the bottom of a tile (its output) onto the
+        next tile. A Decision has two outputs, <b>yes</b> and <b>no</b>; a Repeat has <b>again</b> and
+        <b>done</b>. Dragging into empty space offers a tile to add there.</li>
+      <li><b>Loops:</b> an arrow that goes back up (for example a decision's <b>no</b> going back to
+        Mix) is drawn in purple round the side. The tiles in the loop get a dashed outline with the
+        condition, like "repeat until ok is yes".</li>
+      <li><b>Change a tile:</b> click it; its settings are in <span class="ui">Properties</span>.</li>
+      <li><b>Tidy up:</b> <span class="ui">Tidy</span> lays the tiles out neatly,
+        <span class="ui">Fit</span> shows everything. Drag a box round several tiles to move or delete
+        them together. <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + wheel zooms, <kbd>Space</kbd> + drag pans.</li>
+    </ul>
+    <p>Problems show as a badge on the tile: an orange <b>!</b> (for example "not placed yet": its
+      work isn't on the board) or a red one (an arrow that goes nowhere, a value used before it is
+      measured). Click the tile to read them in Properties.</p>
+
+    <h3 id="place">Putting the work on the board</h3>
+    <p>A work tile only describes what should happen; you still say <em>where</em> on the board:</p>
+    <ol class="steps">
+      <li>Click the tile, then press <span class="ui">Place on the board</span> in Properties. Or
+        double-click the tile (or <span class="ui">Open on the board</span>) to go to the board and draw
+        it yourself.</li>
+      <li>What happens depends on the tile:
+        <ul>
+          <li><b>Dispense, Wait, Temperature, Magnet</b> are added straight away.</li>
+          <li><b>Mix, Merge, Split:</b> click on the board where the droplet is (<kbd>R</kbd> turns it,
+            <kbd>Esc</kbd> cancels).</li>
+          <li><b>Move:</b> the freehand tool is picked; draw the path from where the droplet is.</li>
+          <li><b>Step:</b> draw whatever happens in it.</li>
+        </ul>
+      </li>
+      <li>Droplets coming in from the steps before wait where they were left, shown as
+        <b>dashed rings</b>. Draw from them like from any droplet.</li>
+    </ol>
+    <p>The top bar says which step the board is on, for example <i>On the board: Mix · frames
+      11–23</i>. Whatever you draw goes into that step.</p>
+    <div class="box"><p><span class="label">Why are some steps together on the board?</span> Steps
+      with no stop between them run straight after each other, so they share the board: open Dispense
+      and you see Move with it. A step starts afresh after a stop (Ask, Measure, Decision, Repeat),
+      or when an arrow loops back into it. In <a href="#ex-ask">example 2</a>, Mix has its own part
+      because the run comes back to it each time round the loop.</p></div>
+
+    <h3 id="whole">The whole process on the timeline</h3>
+    <p>With a process, the timeline always shows <b>all of it</b>: the steps one after another, in
+      the order a run goes through them, with frame numbers counted from Start.</p>
+    <div class="timeline-pic" aria-hidden="true">
+      <div class="band" style="left:8px;width:110px">Dispense</div>
+      <div class="band" style="left:120px;width:110px">Move</div>
+      <div class="band open" style="left:232px;width:170px">Mix</div>
+      <div class="stop" style="left:404px"><span>◆</span></div>
+      <div class="band" style="left:408px;width:130px">Move</div>
+      <div class="end" style="left:540px"></div>
+      <div class="clip dim" style="left:8px;width:110px">Dispense</div>
+      <div class="clip dim" style="left:120px;width:110px">→ Move</div>
+      <div class="clip" style="left:232px;width:170px">◎ Mix</div>
+      <div class="clip dim" style="left:408px;width:130px">→ Move</div>
+      <div class="playhead" style="left:300px"></div>
+    </div>
+    <ul>
+      <li>The row of <b>step bands</b> on top names each step over its frames. The step that is on the
+        board is blue; its bars are bright, the others faded.</li>
+      <li>A purple <b>◆</b> between two frames marks a stop (Measure, Ask, Decision, a Repeat round);
+        hover it to see which. <b>■</b> marks End.</li>
+      <li><b>To work on another step,</b> click its band or one of its faded bars, or move the red line
+        into its frames: that step opens on the board.</li>
+      <li><b>Play</b> (<kbd>Space</kbd>) runs through all the steps, one after another.</li>
+      <li>At a <b>decision</b>, the timeline follows the way that goes on, so a loop that waits for
+        your answer is shown once. A <b>Repeat</b> is shown with all its rounds. The total time above
+        the timeline is for that way through.</li>
+      <li>A step on the other way of a decision isn't on the timeline. When you open it, it is shown
+        on its own, and the top bar says it is "not on the way the timeline follows".</li>
+    </ul>
+
+    <h3 id="run">Running it</h3>
+    <ol class="steps">
+      <li>Press <span class="ui">▶ Run</span> in the top bar. To have the OpenDrop do it for real,
+        connect it first and tick <span class="ui">on the OpenDrop</span>.</li>
+      <li>Each step plays on the board with its frame times; the running tile glows in the process
+        view.</li>
+      <li>At a <b>Measure</b> tile you type in the value and press <span class="ui">Go on</span>. At an
+        <b>Ask</b> tile you answer <span class="ui">Yes</span> / <span class="ui">No</span> or type a
+        number. <span class="ui">Stop the run</span> ends it there.</li>
+      <li>Decisions and Repeats choose the way by themselves.</li>
+      <li>The <b>run log</b> at the bottom right of the process view lists the values, decisions and
+        times. Click its heading to fold it away.</li>
+      <li><span class="ui">⏸ Pause</span> and <span class="ui">■ Stop</span> are in the top bar. Nothing
+        can be changed while a run goes. Keep the page in front: a hidden tab runs slowly.</li>
+    </ol>
+    <p>A run changes nothing in your project: afterwards the board is back where it was.</p>
+
+    <!-- ============================================================================== -->
+    <h2 id="examples">Process examples</h2>
+    <p>Each example shows the process on the left and how to build it on the right. Start from an
+      empty project: <span class="ui">clear all</span> on the board (undo brings it back), then
+      <span class="ui">Process</span>. You get Start → Step 1 → End. If you don't need Step 1, select it,
+      press <span class="ui">Delete tile</span>, and drag from Start's dot onto End to connect them
+      again.</p>
+
+    <!-- Example 1 -->
+    <section class="example" id="ex-simple">
+      <h3>1. Dispense, move, mix</h3>
+      <p class="goal">The simplest process: no questions, it runs straight through.</p>
+      <div class="flow" aria-label="Start, Dispense, Move, Mix, End">
+        <div class="tile startend"><b>Start</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Dispense</b><small>left top · Sample</small></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Move</b><small>to the mixing spot</small></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Mix</b><small>circle 2×2 ×3</small></div>
+        <div class="arrow"></div>
+        <div class="tile startend"><b>End</b></div>
+      </div>
+      <div>
+        <ol class="steps">
+          <li>Drag <b>Dispense</b> from the palette onto the arrow from Start to End: it goes in between.
+            Then drag <b>Move</b> onto the arrow under Dispense, and <b>Mix</b> onto the arrow under
+            Move.</li>
+          <li>Click <b>Dispense</b>. In Properties choose <b>Reservoir</b> <i>left top</i> and type
+            <b>Droplet</b> <i>Sample</i>. Press <span class="ui">Place on the board</span>: the dispense
+            is added.</li>
+          <li>Click <b>Move</b> and press <span class="ui">Place on the board</span>. The board opens with
+            freehand picked: drag from the Sample droplet to where you want to mix it.</li>
+          <li>Back in <span class="ui">Process</span>, click <b>Mix</b>, set <b>Rounds</b> to 3 and press
+            <span class="ui">Place on the board</span>. Click the electrode where Move ended.</li>
+          <li>Press <span class="ui">▶ Run</span>, or go to the board and press <kbd>Space</kbd> to play
+            it.</li>
+        </ol>
+        <p>Dispense and Move share the board (nothing stops between them); the timeline shows all
+          three steps one after another.</p>
+      </div>
+    </section>
+
+    <!-- Example 2 -->
+    <section class="example" id="ex-ask">
+      <h3>2. Mix until it looks right</h3>
+      <p class="goal">After each mix, the run asks you whether the droplet looks mixed; "no" mixes
+        again.</p>
+      <div class="flow" aria-label="Start, Dispense, Move, Mix, Ask, Decision with no back to Mix, Move, End">
+        <div class="tile startend"><b>Start</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Dispense</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Move</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Mix</b></div>
+        <div class="arrow"></div>
+        <div class="tile ask"><b>Ask</b><small>Mixed well? (yes/no) → <code>ok</code></small></div>
+        <div class="arrow"></div>
+        <div class="tile decide"><b>ok is yes</b></div>
+        <div class="loopnote">no → back to Mix</div>
+        <div class="arrow"><span class="port">yes</span></div>
+        <div class="tile"><b>Move</b><small>to the output</small></div>
+        <div class="arrow"></div>
+        <div class="tile startend"><b>End</b></div>
+      </div>
+      <div>
+        <ol class="steps">
+          <li>Build example 1 first.</li>
+          <li>Drop an <b>Ask</b> tile on the arrow after Mix. Set <b>Question</b> <i>Mixed well?</i>,
+            <b>Answer</b> <i>yes or no</i> and <b>Value</b> <i>ok</i>.</li>
+          <li>Drop a <b>Decision</b> after Ask. Choose <b>Value</b> <i>ok</i> and <b>Is</b> <i>yes</i>.
+            Properties reads "If ok is yes: the yes arrow, otherwise no".</li>
+          <li>Drag from the decision's <b>no</b> dot up onto <b>Mix</b>. It becomes a purple loop, and
+            the loop is labelled "repeat until ok is yes".</li>
+          <li>Drop a <b>Move</b> on the <b>yes</b> arrow and place it: draw the droplet from the mixer to
+            where it goes next.</li>
+          <li>Press <span class="ui">▶ Run</span>. After each mix a box asks <i>Mixed well?</i>.
+            <span class="ui">No</span> mixes again; <span class="ui">Yes</span> goes on to the Move.</li>
+        </ol>
+        <p>On the timeline the loop is shown once: Dispense, Move, Mix, a ◆ for the question, then the
+          last Move.</p>
+      </div>
+    </section>
+
+    <!-- Example 3 -->
+    <section class="example" id="ex-measure">
+      <h3>3. Mix until a value is reached</h3>
+      <p class="goal">You measure something (for example a concentration) after each mix and go on
+        once it is below 5 mM.</p>
+      <div class="flow" aria-label="Start, Dispense, Move, Mix, Measure, Decision conc below 5 with no back to Mix, End">
+        <div class="tile startend"><b>Start</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Dispense</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Move</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Mix</b></div>
+        <div class="arrow"></div>
+        <div class="tile ask"><b>Measure</b><small><code>conc</code> in mM</small></div>
+        <div class="arrow"></div>
+        <div class="tile decide"><b>conc &lt; 5 mM</b></div>
+        <div class="loopnote">no → back to Mix</div>
+        <div class="arrow"><span class="port">yes</span></div>
+        <div class="tile startend"><b>End</b></div>
+      </div>
+      <div>
+        <ol class="steps">
+          <li>Build example 1.</li>
+          <li>Drop a <b>Measure</b> tile after Mix. Set <b>Value</b> <i>conc</i> and <b>Unit</b>
+            <i>mM</i>.</li>
+          <li>Drop a <b>Decision</b> after it: <b>Value</b> <i>conc</i>, <b>Compared</b> <i>&lt;</i>,
+            <b>With</b> <i>5</i>.</li>
+          <li>Connect <b>yes</b> to End (if dropping it on the arrow hasn't already) and drag <b>no</b> back up onto <b>Mix</b>.</li>
+          <li>Run it. After each mix it asks "Measure conc (mM) and type it in". Type the number and
+            press <span class="ui">Go on</span>: 7 mixes again, 3 ends the run.</li>
+        </ol>
+        <p>Comparisons can be &lt;, ≤, &gt;, ≥, = or ≠. An <b>Ask</b> tile with <b>Answer</b> <i>a
+          number</i> works the same way as Measure.</p>
+      </div>
+    </section>
+
+    <!-- Example 4 -->
+    <section class="example" id="ex-repeat">
+      <h3>4. Wash three times</h3>
+      <p class="goal">A fixed number of rounds: no question needed, so use a Repeat tile.</p>
+      <div class="flow" aria-label="Start, Dispense, Repeat 3 times: again to Move to wash, Wait, back to Repeat; done to End">
+        <div class="tile startend"><b>Start</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Dispense</b></div>
+        <div class="arrow"></div>
+        <div class="tile repeat"><b>Repeat 3×</b></div>
+        <div class="arrow"><span class="port">again</span></div>
+        <div class="tile"><b>Move</b><small>over the wash spot and back</small></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Wait</b><small>10 s</small></div>
+        <div class="loopnote">back to Repeat</div>
+        <div class="arrow"><span class="port">done (from Repeat)</span></div>
+        <div class="tile startend"><b>End</b></div>
+      </div>
+      <div>
+        <ol class="steps">
+          <li>Make Start → <b>Dispense</b> → <b>Repeat</b> → End. Set the Repeat's <b>Times</b> to
+            <i>3</i>.</li>
+          <li>Connect the Repeat's <b>done</b> dot to <b>End</b>.</li>
+          <li>From its <b>again</b> dot, drag into empty space and add a <b>Move</b>; under it add a
+            <b>Wait</b> with <b>Wait (s)</b> <i>10</i>.</li>
+          <li>Drag from the Wait's dot back up onto the <b>Repeat</b>: that closes the loop.</li>
+          <li>Place the Dispense, then the Move (draw the droplet over the wash spot and back to where it
+            started, so every round starts from the same place), then the Wait.</li>
+        </ol>
+        <p>The timeline shows all three rounds, each after a ◆ "round 1 of 3", "round 2 of 3"… and the
+          total time is for all of them.</p>
+        <div class="box warn"><p>End each round where it started. Every round plays the same path, so
+          if the droplet ends somewhere else, the next round's path starts where the droplet
+          isn't.</p></div>
+      </div>
+    </section>
+
+    <!-- Example 5 -->
+    <section class="example" id="ex-heat">
+      <h3>5. Heat, mix, hold with a magnet</h3>
+      <p class="goal">Warm the sample to 60 °C before mixing, then hold magnetic beads with magnet 1
+        while it rests.</p>
+      <div class="flow" aria-label="Start, Dispense, Temperature T1 60 waits, Move, Mix, Magnet 1 on, Wait 30 s, Magnet 1 off, End">
+        <div class="tile startend"><b>Start</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Dispense</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Temperature</b><small>T1 60 °C · waits</small></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Move</b><small>onto heater T1 (25/26)</small></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Mix</b></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Magnet</b><small>magnet 1 on</small></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Wait</b><small>30 s</small></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Magnet</b><small>magnet 1 off</small></div>
+        <div class="arrow"></div>
+        <div class="tile startend"><b>End</b></div>
+      </div>
+      <div>
+        <ol class="steps">
+          <li>Make the chain of tiles shown on the left (palette group <b>Heat and magnets</b> for
+            Temperature and Magnet).</li>
+          <li><b>Temperature:</b> <b>T1 (°C)</b> <i>60</i>, leave T2 and T3 empty (they stay as they
+            are), tick <span class="ui">Wait until the heaters get there</span>.</li>
+          <li><b>Magnet</b> tiles: <i>Magnet 1</i>, <b>Switch it</b> <i>on</i> in the first,
+            <i>off</i> in the second. <b>Wait:</b> <i>30</i> s.</li>
+          <li>Place each tile. Draw the Move onto the electrodes over heater T1 (25 and 26 on the standard
+            layout, outlined on the board once T1 has a target) and drop the Mix there.</li>
+          <li>Run it on the OpenDrop: the run waits at the Temperature step until T1 reads 60 °C (within
+            the tolerance). Without a device it waits the estimated time instead.</li>
+        </ol>
+        <p>Heater and magnet settings carry on through the following steps, also past questions, until
+          another tile changes them. The <span class="ui">Temperature</span> view above the timeline
+          shows them over time.</p>
+      </div>
+    </section>
+
+    <!-- Example 6 -->
+    <section class="example" id="ex-lanes">
+      <h3>6. Two droplets at once, then merge</h3>
+      <p class="goal">Bring a sample and a reagent to the middle at the same time, merge them and
+        mix.</p>
+      <div class="flow" aria-label="Start, Parallel with two lanes: Dispense and Move each, then Merge, Mix, End">
+        <div class="tile startend"><b>Start</b></div>
+        <div class="arrow"></div>
+        <div class="tile lanes">Parallel · 2 lanes</div>
+        <div class="lanes-row">
+          <div class="flow">
+            <div class="arrow"><span class="port">lane 1</span></div>
+            <div class="tile"><b>Dispense</b><small>left top</small></div>
+            <div class="arrow"></div>
+            <div class="tile"><b>Move</b></div>
+            <div class="arrow"></div>
+          </div>
+          <div class="flow">
+            <div class="arrow"><span class="port">lane 2</span></div>
+            <div class="tile"><b>Dispense</b><small>right top</small></div>
+            <div class="arrow"></div>
+            <div class="tile"><b>Move</b></div>
+            <div class="arrow"></div>
+          </div>
+        </div>
+        <div class="tile"><b>Merge</b><small>Sample + Reagent</small></div>
+        <div class="arrow"></div>
+        <div class="tile"><b>Mix</b></div>
+        <div class="arrow"></div>
+        <div class="tile startend"><b>End</b></div>
+      </div>
+      <div>
+        <ol class="steps">
+          <li>Add a <b>Parallel</b> tile after Start (palette group <b>Lanes</b>); it has two lane
+            dots.</li>
+          <li>Under lane 1 add a Dispense (<i>left top</i>, droplet <i>Sample</i>) and a Move; under lane
+            2 a Dispense (<i>right top</i>, droplet <i>Reagent</i>) and a Move.</li>
+          <li>Add a <b>Merge</b> and connect the end of <b>each</b> lane to it: it has an input for each.
+            Then Merge → Mix → End.</li>
+          <li>Place both Dispenses and draw both Moves so the droplets arrive one above the other with one
+            electrode between them. All the lanes share one board, so you see both droplets at once.</li>
+          <li>Place the Merge: click on the upper of the two droplets. It waits for both and makes one
+            droplet, "Sample + Reagent", on the electrode between them. Then place the Mix there.</li>
+        </ol>
+        <p>Use <b>Wait for all</b> instead of Merge when the lanes should only finish together and the
+          droplets stay apart.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================================== -->
+    <h2 id="device">Connecting the OpenDrop</h2>
+    <p>This needs Chrome or Edge on a computer. Close OpenDropController first: only one program can
+      use the USB port.</p>
+    <ol class="steps">
+      <li>Plug in the OpenDrop and press <span class="ui">Connect…</span> in the
+        <span class="ui">Device</span> tab.</li>
+      <li>In the browser's list, pick the device. It is usually called <b>Feather M0</b>. The dot by
+        the title turns green while it answers, and the Device tab shows the board type (V4.1 or V4.2,
+        with magnets or the temperature adapter).</li>
+      <li>Switch on <span class="ui">live</span> (under play): the device now shows the frame on
+        screen. Stepping, playing and drawing go straight to it. Switching live off switches everything
+        on the device off.</li>
+    </ol>
+    <ul>
+      <li><b>feedback</b> (V4.2): shows where the device senses droplets as dark dots on the board.</li>
+      <li><b>Temperatures</b> in the Device tab: the three readings and the targets for heaters the
+        sequence doesn't set.</li>
+      <li><span class="ui">Reconnect automatically</span> finds the device again when the page opens or
+        it is plugged back in. <span class="ui">Switch all off</span> turns every electrode off.</li>
+      <li>Keep the page in front while playing live: a hidden tab stops playback.</li>
+      <li><b>Without a device</b>, open <code>index.html#sim</code> and use
+        <span class="ui">Simulated OpenDrop</span> in the Device tab to try it.</li>
+    </ul>
+
+    <!-- ============================================================================== -->
+    <h2 id="files">Saving, files and export</h2>
+    <table>
+      <tr><th>Button</th><th>What it does</th></tr>
+      <tr><td><span class="ui">save</span> / <span class="ui">load</span></td><td>Save the project
+        (<code>*.odproj.json</code>: everything, including the process and templates) and open it again.
+        <span class="ui">load</span> also opens OpenDrop <code>.json</code> files.</td></tr>
+      <tr><td><span class="ui">export</span></td><td>Writes the OpenDrop <code>.json</code> frame file
+        for the original OpenDropController. With a process it writes the step on the board and what
+        runs with it: a process with decisions can't be one file, so run it from here instead.</td></tr>
+      <tr><td><span class="ui">Add file…</span></td><td>Adds an OpenDrop <code>.json</code> file to the
+        project as one block, starting at the frame on screen.</td></tr>
+      <tr><td>Templates <span class="ui">Export…</span> / <span class="ui">Import…</span></td><td>Move
+        your own templates between browsers or computers.</td></tr>
+    </table>
+    <p>The original controller reads only the first 200 frames; exporting a longer sequence warns
+      about that. Played live from here, sequences can be as long as you need.</p>
+
+    <!-- ============================================================================== -->
+    <h2 id="keys">Keyboard shortcuts</h2>
+    <table>
+      <tr><th>Key</th><th>Does</th></tr>
+      <tr><td><kbd>F</kbd> <kbd>S</kbd> <kbd>P</kbd> <kbd>V</kbd></td><td>Freehand, straight, paint, select tool</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Play / stop</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd>, mouse wheel</td><td>Previous / next frame (while playing the wheel changes the speed)</td></tr>
+      <tr><td><kbd>⌘Z</kbd> / <kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
+      <tr><td><kbd>⇧⌘Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Redo</td></tr>
+      <tr><td><kbd>⌘S</kbd> / <kbd>Ctrl+S</kbd></td><td>Save</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Cancel what you are doing, or let go of the selection</td></tr>
+      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete the selected action or tiles</td></tr>
+      <tr><td><kbd>R</kbd> / <kbd>Shift+R</kbd></td><td>Turn the selected action or the template being dropped</td></tr>
+      <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Move the selected action a frame earlier / later</td></tr>
+      <tr><td><kbd>⌥</kbd>/<kbd>Alt</kbd> + arrows</td><td>Move the selected action on the board</td></tr>
+      <tr><td><kbd>Shift</kbd>+click</td><td>Draw a path corner by corner</td></tr>
+      <tr><td><kbd>N</kbd> / <kbd>L</kbd></td><td>Show electrode numbers / all paths' lines</td></tr>
+      <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + wheel</td><td>Zoom the timeline or the process view</td></tr>
+    </table>
+    <p>The bottom bar always lists the keys that work right now.</p>
+
+    <!-- ============================================================================== -->
+    <h2 id="faq">Questions and problems</h2>
+    <dl class="faq">
+      <dt>I can't draw on the board.</dt>
+      <dd>Read the bottom bar. With a process, the board needs a step open: double-click a work tile in
+        the process view, or click a step on the timeline. While a run goes, nothing can be changed:
+        stop it first.</dd>
+      <dt>My path or template turns red and isn't added.</dt>
+      <dd>It would make two droplets touch, or it doesn't fit on the array. The bottom bar says which.
+        Draw it a step further away, or start it in another frame.</dd>
+      <dt>A tile has an orange "!" and says "not placed yet".</dt>
+      <dd>Its work isn't on the board yet. Click it and press <span class="ui">Place on the
+        board</span> (see <a href="#place">Putting the work on the board</a>).</dd>
+      <dt>Why are Dispense and Move shown together, but Mix on its own?</dt>
+      <dd>Steps with nothing stopping between them share the board. A step that a loop comes back to
+        starts afresh, because the run plays it again on its own (see the box in
+        <a href="#place">Putting the work on the board</a>).</dd>
+      <dt>The tile says "the droplets are elsewhere".</dt>
+      <dd>The step can be reached two ways (for example the first time, and round a loop), and the
+        droplets arrive in different places. End the loop where the droplet started.</dd>
+      <dt>Playing is slow or stops.</dt>
+      <dd>The browser slows down pages that are not in front. Keep the app's tab visible while playing
+        or running.</dd>
+      <dt>The device doesn't appear in the list.</dt>
+      <dd>Use Chrome or Edge, close OpenDropController, try another cable (some only charge), and look
+        for <b>Feather M0</b> in the list.</dd>
+      <dt>Where did my work go?</dt>
+      <dd>It is kept in this browser and comes back when you reopen the page. In another browser or
+        after clearing browser data it is gone, so <span class="ui">save</span> important projects to
+        a file.</dd>
+    </dl>
+
+    <footer>
+      <p>OpenDrop Generator is based on <a href="https://github.com/GaudiLabs/OpenDrop">OpenDrop</a> by
+        GaudiLabs. Technical details (file formats, the device protocol, development) are in the
+        README. <a href="index.html">Back to the app</a>.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

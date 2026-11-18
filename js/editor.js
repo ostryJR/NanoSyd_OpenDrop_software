@@ -42,11 +42,10 @@
     { action: 'reservoirLeftTop', x: -30, y: -6, w: 2, h: 2, reservoir: true },
     { action: 'reservoirLeftBottom', x: -30, y: 4, w: 2, h: 2, reservoir: true },
     // The device, where OpenDropController had its buttons: live (its "life": the device shows
-    // the frame on screen), feedback (V4.2 boards) and connect (its "reconnect"). The page
+    // the frame on screen) and feedback (V4.2 boards); connecting is in the Device tab. The page
     // handles these; the editor only reports them.
     { action: 'live', x: 34, y: -6, w: 6, h: 2, device: true },
     { action: 'feedback', x: 34, y: -3, w: 9, h: 2, device: true },
-    { action: 'connect', x: -43.5, y: 14.5, w: 12, h: 2, device: true },
     // New on the left: what a drag does, and undo/redo. The label comes first and the box (at
     // box, y) sits on the side facing the array, mirroring the right-hand buttons. The label is
     // clickable too.
@@ -93,6 +92,9 @@
       this.project = project;
       this.doc = project;
       this.scope = null; // with a process: { tile, stretch, tiles: Set of tile ids }
+      // Called when playing reaches the last frame; returning true means it went on elsewhere (the
+      // page moves to the next step of the process) instead of back to frame 1.
+      this.onPlayEnd = null;
       this.arrive = []; // the droplets coming into that stretch (actions of type 'arrive')
       this.controlsIn = null; // the heaters and magnets coming into it (null: nothing set)
       // The heaters' temperatures from a live device (°C or null ×3), or null without one: the page
@@ -2225,7 +2227,8 @@
       // (once there, it lasts at least the default frame time; without a device, its estimate)
       if (now - this.playStart <= (temps ? this.seq.frameTime : this.frameMs)) return false;
       this.playStart = now;
-      this.frame = this.frame < this.playLast ? this.frame + 1 : 1;
+      if (this.frame < this.playLast) this.frame++;
+      else if (!(this.onPlayEnd && this.onPlayEnd())) this.frame = 1;
       return true;
     }
 

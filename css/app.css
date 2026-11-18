@@ -86,6 +86,21 @@ body {
   border-radius: 0;
 }
 
+/* The manual, as a link that looks like the bar's buttons. */
+#manual-link {
+  padding: 2px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font-size: 13.3px;
+  text-decoration: none;
+}
+
+#manual-link:hover {
+  border-color: rgba(0, 0, 0, 0.35);
+}
+
 #viewbar .segmented button + button {
   border-left: 1px solid rgba(0, 0, 0, 0.2);
 }
@@ -165,16 +180,6 @@ button {
 
 #board text.end {
   text-anchor: end;
-}
-
-#board text.connect-hint {
-  font-size: 20px;
-  opacity: 0.85;
-}
-
-#board text.cutout-title {
-  fill: rgb(140, 140, 140);
-  text-anchor: middle;
 }
 
 /* Left-hand controls: the whole box + label area is clickable and shows a hover tip. */
@@ -2255,6 +2260,40 @@ body.dragging-template * {
 
 .tl-clip.dim {
   opacity: 0.45;
+}
+
+/* The whole process: where it stops for a question, decision or round (a mark in the steps row,
+   a dashed line down through the tracks), and End. */
+.tl-stop {
+  position: absolute;
+  top: 0;
+  width: 0;
+  border-left: 1px dashed #8e44ad;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.tl-stop.end {
+  border-left: 2px solid #3d3d3a;
+  opacity: 0.6;
+}
+
+.tl-stop-mark {
+  position: absolute;
+  top: 2px;
+  z-index: 1;
+  width: 13px;
+  margin-left: -6.5px;
+  color: #8e44ad;
+  font-size: 11px;
+  line-height: 15px;
+  text-align: center;
+  cursor: help;
+}
+
+.tl-stop-mark.end {
+  color: #3d3d3a;
+  font-size: 9px;
 }
 
 /* A droplet waiting on an electrode that isn't on. */
