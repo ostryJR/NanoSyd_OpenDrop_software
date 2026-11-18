@@ -3,7 +3,7 @@
  * moving its points instead of redrawing it. Straight means one direction on screen (left, right,
  * up or down), stepping between neighbouring electrodes; it goes by where the electrodes are drawn,
  * not by their numbers, because on several layouts neighbours aren't one column or row apart.
- * A point is { e: electrode, wait?: ms }; other fields on a point are kept as they are. No DOM. */
+ * A point is { e: electrode }; other fields on a point are kept as they are. No DOM. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
     module.exports = factory(require('./paths.js'));
@@ -90,7 +90,7 @@
     route !== null && route.length === b - a + 1 && route.every((e, j) => e === cells[a + j]);
 
   // The points of a drawn route: its ends and every electrode where the direction changes, plus
-  // the step indices in `keep` (a Map of step -> extra point fields, such as waits). Each piece
+  // the step indices in `keep` (a Map of step -> extra point fields). Each piece
   // is rebuilt and compared with what was drawn; one that doesn't come back the same keeps all its
   // electrodes as points, so the line always gives back exactly the drawn route.
   function pointsFromRoute(graph, cells, keep = new Map()) {
@@ -112,19 +112,15 @@
     return chosen.map((i) => ({ e: cells[i], ...(keep.get(i) || {}) }));
   }
 
-  // Zero-length pieces are dropped (a wait on either point is kept), and a point in the middle of
-  // a straight run goes if the line is the same without it. Points with a wait (or any other field)
+  // Zero-length pieces are dropped (other fields on either point are kept), and a point in the
+  // middle of a straight run goes if the line is the same without it. Points with any other field
   // and the two ends always stay.
   function tidy(graph, points) {
     const out = [];
     for (const p of points) {
       const last = out[out.length - 1];
       if (last && last.e === p.e) {
-        for (const k of Object.keys(p)) {
-          if (k === 'wait') last.wait = Math.max(last.wait || 0, p.wait || 0) || undefined;
-          else if (k !== 'e' && !(k in last)) last[k] = p[k];
-        }
-        if (last.wait === undefined) delete last.wait;
+        for (const k of Object.keys(p)) if (k !== 'e' && !(k in last)) last[k] = p[k];
         continue;
       }
       out.push({ ...p });
@@ -294,15 +290,6 @@
     return tidy(graph, [...points.slice(0, i), ...points.slice(i + 1)]);
   }
 
-  // Takes the wait off the point on step k (and the point itself, if it is no longer needed).
-  function clearWaitAt(graph, points, built, k) {
-    const at = built.steps.indexOf(k);
-    if (at < 0 || !points[at].wait) return points.map((p) => ({ ...p }));
-    const out = points.map((p) => ({ ...p }));
-    delete out[at].wait;
-    return tidy(graph, out);
-  }
-
   // What part of a line electrode e is on: { kind: 'start' | 'end' | 'point' | 'piece', index },
   // or null. Where the line passes e more than once, the visit nearest to step `near` counts.
   function partAt(built, points, e, near = 0) {
@@ -334,7 +321,6 @@
     moveLine,
     addPointAt,
     removePoint,
-    clearWaitAt,
     partAt,
   };
 });

@@ -329,7 +329,7 @@
         <div class="bar">Top bar: Process / Board · where you are · ▶ Run</div>
         <div class="board">The board (the electrode array)</div>
         <div class="side">Side panel: Properties · Templates · Device</div>
-        <div class="timeline">Timeline panel: frame times · Timeline / Step time / Temperature</div>
+        <div class="timeline">Timeline panel: frame number, total time · Timeline / Step time / Temperature</div>
         <div class="bottom">Bottom bar: layout, electrode numbers, lines, messages and hints</div>
       </div>
       <ul>
@@ -363,8 +363,8 @@
       <li><b>Droplets have names.</b> Each action belongs to a droplet ("Droplet 1", or a name you
         give it, like "Sample"). Its short name (D1, Sample) appears on the timeline and in merged
         names like "D1 + D2".</li>
-      <li><b>Time.</b> Each frame lasts the default frame time (0.5 s to begin with) unless an action
-        says otherwise.</li>
+      <li><b>Time.</b> Every step lasts the frame time (0.5 s to begin with). To pause, add a
+        <b>Wait</b>.</li>
       <li><b>Droplets never touch by accident.</b> Anything that would put two droplets next to each
         other is refused, with the reason in the bottom bar. Droplets only join where you say so, with
         a merge.</li>
@@ -414,15 +414,14 @@
         so the next drag carries on from there.</li>
       <li><b>Several droplets at once:</b> go back to the frame where the first path starts (click
         the timeline's ruler) and draw the second droplet's path. Both move together.</li>
-      <li><b>Make a droplet wait on its way:</b> right-click the path's line on that electrode (on a
-        Mac also <kbd>Ctrl</kbd>+click), type the seconds, press <kbd>Enter</kbd>. An orange diamond with
-        "+3 s" shows the wait.</li>
+      <li><b>Make a droplet wait:</b> put a <b>Wait</b> tile in the process after the step that
+        brings it there, and place it (see <a href="#frametimes">Frame times and waits</a>).</li>
     </ul>
 
     <h3 id="select">Selecting and changing</h3>
     <ul>
       <li><b>Select</b> by clicking a bar in the timeline, or the action on the board. Its settings
-        appear in <span class="ui">Properties</span>: name, droplet, when it starts, time per step and
+        appear in <span class="ui">Properties</span>: name, droplet, when it starts, and
         more. <kbd>Esc</kbd> lets go.</li>
       <li><b>Reshape a path:</b> drag a straight piece sideways, or drag a corner or an end.
         Double-click the line to add a point; double-click a point to remove it.</li>
@@ -463,6 +462,18 @@
       the app refuses anything that would make that happen: a template turns red, a path being drawn
       turns red, a move is taken back, and the bottom bar says why. To join droplets on purpose, use a
       <b>Merge</b>.</p>
+    <p>The message names both droplets (D1, D2…), the frame, and the electrodes where they would
+      meet; the other droplet's electrodes in that frame show <b>dark red</b> on the board. That
+      frame may be later than the one on screen, so the other droplet can be somewhere you don't see
+      yet. The usual surprises:</p>
+    <ul>
+      <li><b>A droplet stays where its path ends</b> until something takes it on. A path that ends
+        next to the route of a droplet that comes by <i>later</i> clashes then, even though the lines
+        never cross.</li>
+      <li><b>Diagonals count</b>: corner to corner is touching.</li>
+      <li><b>Just left counts too</b>: moving next to the electrode another droplet was on in the frame
+        before.</li>
+    </ul>
 
     <!-- ============================================================================== -->
     <h2 id="time">Timeline and time</h2>
@@ -478,21 +489,21 @@
 
     <h3 id="frametimes">Frame times and waits</h3>
     <ul>
-      <li><b>Default frame time:</b> how long every frame lasts unless something says otherwise.
-        Change it in <span class="ui">Properties</span> with nothing selected (click empty space on the
-        board or press <kbd>Esc</kbd>), under <b>Project</b>.</li>
-      <li><b>This frame's time:</b> the <span class="ui">Frame</span> field above the timeline sets the
-        time of the frame on screen; <span class="ui">Use default</span> takes it off.</li>
-      <li><b>An action's speed:</b> <span class="ui">Time per step</span> in its Properties.</li>
-      <li><b>A pause on a path:</b> right-click the line (see <a href="#paths">Paths</a>).</li>
-      <li>A frame lasts as long as its slowest action. When one slow action makes the others wait, the
-        bar above the timeline says so and offers <span class="ui">Let the others keep moving</span>.</li>
-      <li><span class="ui">Step time</span> (instead of Timeline) shows how long each frame lasts; the
-        bar shows the total time.</li>
+      <li><b>Frame time:</b> how long every step lasts. Change it in <span class="ui">Properties</span>
+        with nothing selected (click empty space on the board or press <kbd>Esc</kbd>), under
+        <b>Project</b>. There are no separate times for single steps or frames.</li>
+      <li><b>A pause:</b> a <b>Wait</b> tile in the process, placed on the board, waits its seconds.
+        It switches nothing on, and the other droplets keep moving meanwhile; when nothing else
+        moves, its frame simply lasts the rest of the wait. Waiting for the heaters works the same way.</li>
+      <li><b>Older files</b> with times of their own (time per step, a frame's own time, waits on a
+        path) open with those left out, and say so. Exported OpenDrop files from elsewhere with
+        frames of different lengths play every frame at the frame time, with a warning.</li>
+      <li><span class="ui">Step time</span> (instead of Timeline) shows how long each frame lasts
+        (gray: a step, blue: a wait); the bar shows the total time.</li>
     </ul>
 
     <h3 id="play">Playing</h3>
-    <p><kbd>Space</kbd> or the <span class="ui">play</span> button plays the frames, each for its own
+    <p><kbd>Space</kbd> or the <span class="ui">play</span> button plays the frames, each for its
       time; <kbd>←</kbd> / <kbd>→</kbd> or the mouse wheel step through them. While playing, the mouse
       wheel changes the speed. With a process, playing goes from step to step through the whole
       process.</p>
@@ -547,7 +558,7 @@
       <tr><td><b>Mix</b></td><td>Mixes one droplet in place</td><td>Kind (circle, back and forth, split &amp; merge), Size, Goes round, Rounds</td></tr>
       <tr><td><b>Merge</b></td><td>Two droplets become one; it waits for both</td><td>–</td></tr>
       <tr><td><b>Split</b></td><td>One droplet becomes two</td><td>–</td></tr>
-      <tr><td><b>Wait</b></td><td>Holds the droplets where they are</td><td>Wait (s)</td></tr>
+      <tr><td><b>Wait</b></td><td>Holds the droplets where they are for a time (the way to pause)</td><td>Wait (s)</td></tr>
       <tr><td><b>Temperature</b></td><td>Sets the heaters, optionally waits until they get there</td><td>T1–T3 (°C), Wait until the heaters get there, Close enough within (°C)</td></tr>
       <tr><td><b>Magnet</b></td><td>Switches a magnet on or off until the next Magnet tile</td><td>Magnet 1 or 2, on or off</td></tr>
       <tr><td><b>Measure</b></td><td>The run stops and asks you to type in a measured value</td><td>Value (a name, e.g. <code>conc</code>), Unit</td></tr>
@@ -627,7 +638,9 @@
         hover it to see which. <b>■</b> marks End.</li>
       <li><b>To work on another step,</b> click its band or one of its faded bars, or move the red line
         into its frames: that step opens on the board.</li>
-      <li><b>Play</b> (<kbd>Space</kbd>) runs through all the steps, one after another.</li>
+      <li><b>Play</b> (<kbd>Space</kbd>) runs through all the steps, one after another. It is a
+        <b>preview</b>: it asks nothing and goes on at every decision (the top bar says
+        “Previewing”). <span class="ui">▶ Run</span> is the real run.</li>
       <li>At a <b>decision</b>, the timeline follows the way that goes on, so a loop that waits for
         your answer is shown once. A <b>Repeat</b> is shown with all its rounds. The total time above
         the timeline is for that way through.</li>
@@ -638,8 +651,10 @@
     <h3 id="run">Running it</h3>
     <ol class="steps">
       <li>Press <span class="ui">▶ Run</span> in the top bar. To have the OpenDrop do it for real,
-        connect it first and tick <span class="ui">on the OpenDrop</span>.</li>
-      <li>Each step plays on the board with its frame times; the running tile glows in the process
+        connect it first and switch <span class="ui">live</span> on (under <span class="ui">play</span>
+        on the board, or in the Device tab): the device follows the run and is switched off at the
+        end.</li>
+      <li>Each step plays on the board, frame by frame; the running tile glows in the process
         view.</li>
       <li>At a <b>Measure</b> tile you type in the value and press <span class="ui">Go on</span>. At an
         <b>Ask</b> tile you answer <span class="ui">Yes</span> / <span class="ui">No</span> or type a
@@ -975,8 +990,10 @@
         the process view, or click a step on the timeline. While a run goes, nothing can be changed:
         stop it first.</dd>
       <dt>My path or template turns red and isn't added.</dt>
-      <dd>It would make two droplets touch, or it doesn't fit on the array. The bottom bar says which.
-        Draw it a step further away, or start it in another frame.</dd>
+      <dd>It would make two droplets touch, or it doesn't fit on the array. The message says which
+        droplets, in which frame and where (the other droplet shows dark red); see
+        <a href="#touch">Droplets mustn't touch</a>. Draw it a step further away, or start it in
+        another frame.</dd>
       <dt>A tile has an orange "!" and says "not placed yet".</dt>
       <dd>Its work isn't on the board yet. Click it and press <span class="ui">Place on the
         board</span> (see <a href="#place">Putting the work on the board</a>).</dd>

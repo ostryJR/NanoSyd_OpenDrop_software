@@ -131,16 +131,14 @@ test('off the layout, an edit gives null; a line moves as a whole', () => {
   assert.deepEqual(es(L.moveLine(ctx, P([1, 0], [5, 0], [5, 4]), D(2, 1))), es(P([3, 1], [7, 1], [7, 5])));
 });
 
-test('adding and removing points, waits on a step, and what part of a line an electrode is', () => {
+test('adding and removing points, and what part of a line an electrode is', () => {
   const pts = P([1, 0], [5, 0], [5, 4]);
   const built = L.build(g, pts);
   assert.deepEqual(es(L.addPointAt(pts, built, 2)), es(P([1, 0], [3, 0], [5, 0], [5, 4])));
-  assert.deepEqual(L.addPointAt(pts, built, 4, { wait: 700 })[1], { e: E(5, 0), wait: 700 });
+  assert.deepEqual(L.addPointAt(pts, built, 4, { note: 1 })[1], { e: E(5, 0), note: 1 }, 'a point already there gets the fields');
   assert.equal(L.removePoint(g, pts, 1), null, 'without the corner the line would not be straight');
   assert.deepEqual(es(L.removePoint(g, P([1, 0], [3, 0], [5, 0]), 1)), es(P([1, 0], [5, 0])));
   assert.equal(L.removePoint(g, pts, 0), null, 'the ends stay');
-  const waited = [{ e: E(1, 0) }, { e: E(3, 0), wait: 700 }, { e: E(5, 0) }];
-  assert.deepEqual(L.clearWaitAt(g, waited, L.build(g, waited), 2), P([1, 0], [5, 0]));
   assert.deepEqual(L.partAt(built, pts, E(1, 0)), { kind: 'start', index: 0, step: 0 });
   assert.deepEqual(L.partAt(built, pts, E(5, 0)), { kind: 'point', index: 1, step: 4 });
   assert.deepEqual(L.partAt(built, pts, E(5, 2)), { kind: 'piece', index: 1, step: 6 });

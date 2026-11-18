@@ -29,15 +29,15 @@ function twoPaths() {
   ed.escape();
   ed.frame = 1;
   drag(ed, E(2, 6), E(6, 6), E(6, 4));
-  ed.setStepTime(ed.selection, 800);
+  ed.rename(ed.selection, 'Second');
   ed.setDefaultTime(400);
   return ed;
 }
 
-test('the project comes back with its frame, selection, frame times and undo history', () => {
+test('the project comes back with its frame, selection, frame time and undo history', () => {
   const ed = twoPaths();
   ed.frame = 3;
-  ed.undo(); // the step time again
+  ed.undo(); // the rename again
   const { fresh, warnings } = reload(ed);
   assert.deepEqual(warnings, []);
   assert.equal(fresh.state(), ed.state());
@@ -47,7 +47,7 @@ test('the project comes back with its frame, selection, frame times and undo his
   assert.equal(fresh.seq.lastFrame(), ed.seq.lastFrame());
   assert.ok(fresh.canUndo && fresh.canRedo);
   assert.ok(fresh.redo(), 'redo works after the reload');
-  assert.equal(fresh.action(fresh.selection).stepTime, 800);
+  assert.equal(fresh.action(fresh.selection).name, 'Second');
   while (fresh.undo());
   assert.equal(fresh.project.actions.length, 0, 'undo goes all the way back');
 });

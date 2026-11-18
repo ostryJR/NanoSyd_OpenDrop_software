@@ -96,7 +96,7 @@
     }
 
     // data: { frames, frame, selection, clips: [{ id, name, type, track, trackName, trackShort,
-    //   colour, from, to, problem, broken, split, handIn, handOut, preds, dim }], bands } (trackShort:
+    //   colour, from, to, problem, broken, handIn, handOut, preds, dim }], bands } (trackShort:
     //   the droplet's short name, D1 ...; broken: it can't run; shown where it would start; dim:
     //   another tile's; bands: [{ id, name, from, to, open, visit }] the process's tiles (visit: which time through);
     //   stops: [{ frame, text, end }] where the whole process stops for a question, a decision or a
@@ -213,7 +213,6 @@
           clip.classList.toggle('selected', c.id === selection);
           clip.classList.toggle('problem', Boolean(c.problem));
           clip.classList.toggle('broken', Boolean(c.broken));
-          clip.classList.toggle('split', Boolean(c.split));
           clip.classList.toggle('dim', Boolean(c.dim));
           clip.style.setProperty('--c', c.colour);
           clip.style.left = `${x0}px`;

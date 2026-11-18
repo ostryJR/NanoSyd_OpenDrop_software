@@ -21,7 +21,7 @@
   const MAX_WAIT = 24 * 3600 * 1000; // a wait (hold) may last up to a day
   // Key order in saved files; other keys follow in the order they came.
   const KEY_ORDER = ['id', 'type', 'name', 'droplet', 'tile', 'start', 'after', 'delay', 'points', 'template', 'at', 'turns',
-    'reservoir', 'frames', 'duration', 'targets', 'wait', 'tolerance', 'magnet', 'on', 'stepTime', 'times', 'split'];
+    'reservoir', 'frames', 'duration', 'targets', 'wait', 'tolerance', 'magnet', 'on'];
   const TILE_ORDER = ['id', 'kind', 'name', 'x', 'y'];
 
   function newProject({ layout = 'electrodes', frameTime = DEFAULT_FRAME_TIME } = {}) {
@@ -37,11 +37,19 @@
     const raw = typeof p === 'number' ? { e: p } : p;
     if (!raw || typeof raw !== 'object' || !isElectrode(raw.e)) return null;
     const point = { ...raw };
-    if ('wait' in point) {
-      if (goodTime(point.wait)) point.wait = clampTime(point.wait);
-      else delete point.wait;
-    }
+    delete point.wait; // waits on a path's points are gone: a Wait does that
     return point;
+  }
+
+  // Step times of older files (time per step, frames' own times, waits on a path's points, letting
+  // the others keep moving): gone, every step lasts the default frame time. Whether `a` had any.
+  function hadStepTimes(a) {
+    const points = Array.isArray(a.points) && a.points.some((p) => p && typeof p === 'object' && goodTime(p.wait));
+    const had = goodTime(a.stepTime) || a.split === true || (Array.isArray(a.times) && a.times.some(goodTime)) || points;
+    delete a.stepTime;
+    delete a.split;
+    delete a.times;
+    return had;
   }
 
   // One action from a file, checked; null (with a warning) if it can't be used. Its id is
@@ -75,16 +83,7 @@
         a.start = 1;
       }
     }
-    if ('stepTime' in a) {
-      if (goodTime(a.stepTime)) a.stepTime = clampTime(a.stepTime);
-      else delete a.stepTime;
-    }
-    if (a.split !== true) delete a.split;
-    if ('times' in a) {
-      const times = Array.isArray(a.times) ? a.times.map((ms) => (goodTime(ms) ? clampTime(ms) : 0)) : [];
-      if (times.some(Boolean)) a.times = times;
-      else delete a.times;
-    }
+    if (hadStepTimes(a)) warn.times = (warn.times || 0) + 1;
 
     switch (a.type) {
       case 'path': {
@@ -226,6 +225,7 @@
 
     const list = Array.isArray(data.actions) ? data.actions : [];
     project.actions = list.map((raw, i) => cleanAction(raw, i + 1, warn)).filter(Boolean);
+    if (warn.times) warn(`${warn.times} action(s) had times of their own (time per step, frame times or waits on a path): every step now lasts the default frame time; add a Wait where it should pause`);
     // Every id is kept the first time it is used (links refer to it); missing and repeated ones
     // get new ids that clash with none of them.
     const seen = new Set();
@@ -330,7 +330,6 @@
   function embedTemplate(project, t) {
     project.templates = project.templates || {};
     const def = { name: t.name, frames: t.frames };
-    if (t.times && t.times.some(Boolean)) def.times = t.times.slice();
     for (const [key, have] of Object.entries(project.templates)) if (templates.sameTemplate(have, def)) return key;
     let key = t.builtIn && t.id ? t.id : `t${numbered(Object.keys(project.templates), 't')}`;
     if (project.templates[key]) key = `t${numbered(Object.keys(project.templates), 't')}`;

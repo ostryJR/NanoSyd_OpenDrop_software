@@ -102,7 +102,7 @@
           entry.ms = seq.elapsed(entry.to) - seq.elapsed(entry.from - 1);
         }
         const ids = new Set(doc.actions.filter((a) => a.tile === t.id).map((a) => a.id));
-        for (const i of info.compiled.issues) if (ids.has(i.id) && i.kind !== 'waits') entry.problems.push(i.text);
+        for (const i of info.compiled.issues) if (ids.has(i.id)) entry.problems.push(i.text);
         if (info.start === t.id) entry.problems.push(...info.problems);
       }
       byTile.set(t.id, entry);

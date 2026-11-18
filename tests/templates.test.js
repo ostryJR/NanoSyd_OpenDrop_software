@@ -59,7 +59,7 @@ test('templates that run off the array or past frame 200 do not fit', () => {
   assert.equal(T.place(byId('split'), 0, E(1, 4), 1, rects).fits, false, 'one column further is off the array');
 });
 
-test('a template drawn in a sequence: trimmed, relative to its first electrode, with own times', () => {
+test('a template drawn in a sequence: trimmed, relative to its first electrode, frame times left out', () => {
   const seq = new Sequence();
   seq.set(E(6, 3), 4, true); // nothing in frames 1-3
   seq.set(E(6, 4), 5, true);
@@ -69,10 +69,10 @@ test('a template drawn in a sequence: trimmed, relative to its first electrode, 
   seq.setTime(5, 2000);
   const made = T.fromSequence(seq);
   assert.deepEqual(made.frames, [[[0, 0]], [[0, 1]], [[-1, 1], [1, 1]]]);
-  assert.deepEqual(made.times, [0, 2000, 0]);
+  assert.equal(made.times, undefined);
   assert.equal(T.fromSequence(new Sequence()), null);
   const back = T.toSequence(made);
-  assert.equal(back.timeOf(2), 2000);
+  assert.equal(back.times[2], 0);
 });
 
 test('stored templates are checked; export and import round-trip', () => {
@@ -80,7 +80,7 @@ test('stored templates are checked; export and import round-trip', () => {
   assert.equal(T.clean({ name: 'x', frames: [] }), null);
   assert.equal(T.clean({ name: 'x', frames: [[]] }), null, 'needs an electrode in the first frame');
   const t = T.clean({ name: '  Mix  ', frames: [[[0, 0], [99, 0], 'junk'], [[1, 0]]], times: [0, 5e9] });
-  assert.deepEqual(t, { name: 'Mix', frames: [[[0, 0]], [[1, 0]]], times: [0, 3600000] });
+  assert.deepEqual(t, { name: 'Mix', frames: [[[0, 0]], [[1, 0]]] }, 'older frame times are left out');
   const text = T.exportText([t, byId('merge')]);
   const back = T.importText(text);
   assert.equal(back.length, 2);

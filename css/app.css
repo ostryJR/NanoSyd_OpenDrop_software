@@ -127,10 +127,6 @@ body {
   color: #fff;
 }
 
-#run-device-label.off {
-  opacity: 0.5;
-}
-
 #run-state {
   color: #1e7d32;
   font-variant-numeric: tabular-nums;
@@ -208,6 +204,11 @@ button {
 
 #board .electrodes rect.bad-end {
   fill: rgb(215, 30, 30);
+}
+
+/* The other droplet a change would touch, where it is in that frame. */
+#board .electrodes rect.clash {
+  fill: rgb(120, 10, 10);
 }
 
 #board .path-badge.bad rect {
@@ -480,29 +481,6 @@ kbd {
   color: var(--ink-secondary);
 }
 
-#time-warning {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink-secondary);
-}
-
-#time-warning[hidden] {
-  display: none;
-}
-
-#time-warning.waits {
-  color: #8a5a00;
-}
-
-#time-warning button {
-  padding: 1px 8px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-}
-
 /* In the chart's top strip (the plot starts below it), so it takes no room in the bar. */
 #chart-legend {
   position: absolute;
@@ -697,10 +675,6 @@ kbd {
   border: 1px dashed #d0021b;
   background: #fff;
   color: #b00020;
-}
-
-.tl-clip.split {
-  background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(0, 0, 0, 0.08) 6px 9px);
 }
 
 .tl-mark {
@@ -1385,103 +1359,6 @@ kbd {
 
 .with-unit input {
   width: 9em;
-}
-
-/* A path's waits on the way: the place (goes to its frame), the seconds, and ×. */
-#prop-waits-list {
-  display: grid;
-  gap: 4px;
-}
-
-#prop-waits-list .place {
-  flex: 1;
-  min-width: 0;
-  padding: 2px 0;
-  border: 0;
-  background: none;
-  color: var(--ink-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-#prop-waits-list .place:hover {
-  text-decoration: underline;
-}
-
-#prop-waits-list .row input[type="number"] {
-  width: 4em;
-}
-
-#prop-waits-list .row button[aria-label] {
-  padding: 1px 6px;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-#prop-waits-list .none,
-#prop-waits-row .hint {
-  color: var(--ink-muted);
-  font-size: 12px;
-}
-
-/* The form a right-click on a path's line opens. */
-#wait-pop {
-  position: fixed;
-  z-index: 20;
-  display: grid;
-  gap: 8px;
-  min-width: 220px;
-  padding: 10px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  font-size: 13px;
-}
-
-#wait-pop-title {
-  color: var(--ink-secondary);
-  font-weight: 600;
-}
-
-#wait-pop label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-#wait-pop input {
-  width: 6em;
-  padding: 3px 6px;
-  font: inherit;
-}
-
-.wait-pop-buttons {
-  display: flex;
-  gap: 6px;
-}
-
-.wait-pop-buttons button {
-  padding: 3px 10px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
-  background: #fff;
-  font: inherit;
-  cursor: pointer;
-}
-
-.wait-pop-buttons button.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-
-.wait-pop-buttons button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 #drag-ghost {

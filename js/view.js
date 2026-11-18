@@ -177,6 +177,9 @@
       const box = (u, v, parent = controls) =>
         el('rect', { x: px(u), y: py(v), width: BOX, height: BOX, fill: COLOR.button }, parent);
       this.playBox = box(34, -9);
+      // Its hover tip, over the box and label: with a process, play is a preview of the timeline
+      // (▶ Run is the real run).
+      this.playTip = el('title', {}, el('rect', { class: 'hit', x: px(34), y: py(-9), width: G.UNIT * 6, height: G.UNIT * 2 }, controls));
       box(34, 4); // copy last frame
       box(34, 7); // clear frame
       box(34, 10); // clear all
@@ -373,6 +376,10 @@
       this.frameLabel.textContent = frame + frameOffset; // with a process: the whole timeline's frame
       this.speedLabel.textContent = perMinute(ed.speed);
       this.playBox.setAttribute('fill', ed.playing ? COLOR.active : COLOR.button);
+      const playText = ed.doc && ed.doc.process
+        ? 'Preview: plays the timeline, step after step, without asking anything (▶ Run at the top asks at Measure and Ask) (Space)'
+        : 'Play the frames with their times, round and round (Space)';
+      if (this.playTip.textContent !== playText) this.playTip.textContent = playText;
       this.dots.forEach((dot, i) => dot.setAttribute('fill', i + 1 === frame ? COLOR.button : COLOR.idle));
       this.nextArrow.setAttribute('fill', frame >= 18 ? COLOR.button : COLOR.idle);
       this.numberLayer.style.display = numbers ? '' : 'none';
@@ -400,6 +407,8 @@
         // A path that would touch another droplet shows red, with the reason.
         const bad = Boolean(draft.check && !draft.check.valid);
         for (const e of draft.cells) cls.set(e, bad ? 'bad' : 'path');
+        // Where it would touch another droplet (that frame's electrodes of both), dark red.
+        if (bad) for (const e of draft.check.clash || []) if (!cls.has(e)) cls.set(e, 'clash');
         if (draft.steps > 0) {
           cls.set(draft.end, bad ? 'bad-end' : 'path-end');
           const a = this.centres.get(draft.end);
@@ -429,6 +438,7 @@
         const ids = edit.valid ? [...edit.changes.keys()] : [ed.edit.id];
         const source = edit.valid ? shown : ed.compiled;
         for (const id of ids) for (const e of footprint(source, id)) cls.set(e, edit.valid ? 'path' : 'bad');
+        if (!edit.valid) for (const e of edit.clash || []) if (!cls.has(e)) cls.set(e, 'clash');
         const a = ed.action(ed.edit.id);
         const span = shown.spans.get(ed.edit.id);
         badge = {
@@ -504,7 +514,7 @@
     // Every path as a thin line in its droplet's colour, with small arrows the way the droplet
     // goes, and every template as lines between the places its droplets go round or through
     // (only the selected one when `all` is off). The selected path is thicker, with its points:
-    // start (ring), end (dot), corners (squares) and waits (diamonds). What is being moved or
+    // start (ring), end (dot) and corners (squares). What is being moved or
     // reshaped follows the edit; where a path's edit can't be built, its points are joined in red.
     renderLines(ed, shown, all) {
       const edit = ed.edit && ed.edit.preview;
@@ -571,13 +581,7 @@
         const [x, y] = c;
         if (i === 0) el('circle', { class: 'handle start', cx: x, cy: y, r: 13 }, this.handleLayer);
         else if (i === last) el('circle', { class: 'handle end', cx: x, cy: y, r: 13 }, this.handleLayer);
-        else if (p.wait) el('rect', { class: 'handle wait', x: x - 10, y: y - 10, width: 20, height: 20, transform: `rotate(45 ${x} ${y})` }, this.handleLayer);
         else el('rect', { class: 'handle corner', x: x - 9, y: y - 9, width: 18, height: 18 }, this.handleLayer);
-        // How much longer the droplet stays there, beside the point.
-        if (p.wait > 0) {
-          const s = p.wait / 1000;
-          el('text', { class: 'wait-label', x: x + 17, y: y - 17 }, this.handleLayer).textContent = s < 60 ? `+${+s.toFixed(1)} s` : `+${+(s / 60).toFixed(1)} min`;
-        }
       });
     }
   }

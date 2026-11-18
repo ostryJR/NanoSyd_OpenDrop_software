@@ -252,7 +252,7 @@
 
   svg.addEventListener('pointerdown', (evt) => {
     if (evt.button !== 0 || !evt.isPrimary) return;
-    if (MAC && evt.ctrlKey) return; // a right-click on a Mac: see 'contextmenu'
+    if (MAC && evt.ctrlKey) return; // a right-click on a Mac: nothing to do
     evt.preventDefault();
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const { mx, my } = toGrid(evt);
@@ -540,7 +540,7 @@
   // drawn, the first press says so and a second one (within 10 s) exports anyway.
   let exportWarnedAt = null;
   async function exportFrames() {
-    const problems = ed.compiled.issues.filter((i) => i.kind !== 'waits');
+    const problems = ed.compiled.issues;
     if (problems.length && (exportWarnedAt === null || performance.now() - exportWarnedAt > 10000)) {
       exportWarnedAt = performance.now();
       const first = problems[0];
@@ -620,15 +620,9 @@
   // --- timing strip ----------------------------------------------------------------------
 
   const defaultInput = $('time-default');
-  const frameInput = $('time-frame');
   const frameNo = $('time-frame-no');
-  const frameReset = $('time-frame-reset');
   const totalText = $('time-total');
-  const warningBox = $('time-warning');
-  const warningText = $('time-warning-text');
-  const splitButton = $('time-split');
   const seconds = (ms) => String(+(ms / 1000).toFixed(3));
-  let warningFix = null; // what the warning's button does
 
   const chart = new TimingChart($('chart'), {
     onPick(step) {
@@ -638,62 +632,17 @@
     },
   });
 
-  // A step that makes other actions wait (or one already split) in the frame on screen.
-  function showWarning() {
-    const f = ed.frame;
-    const issue = ed.compiled.issues.find((i) => i.kind === 'waits' && i.frame === f);
-    let text = '';
-    warningFix = null;
-    if (issue) {
-      const long = ed.action(issue.id);
-      const waiting = issue.ids.map((id) => quote(ed.action(id)));
-      text = `${waiting.join(', ')} ${waiting.length === 1 ? 'waits' : 'wait'} for ${quote(long)} (${formatTime(issue.time)})`;
-      splitButton.textContent = 'Let the others keep moving';
-      warningFix = () => {
-        ed.setSplit(long.id, true);
-        setStatus(`${quote(long)} no longer holds up the others: its long steps stretch over their frames`);
-      };
-    } else {
-      const split = (ed.compiled.active[f] || []).map(({ id }) => ed.action(id)).find((a) => a && a.split);
-      if (split) {
-        text = `${quote(split)} lets the others keep moving`;
-        splitButton.textContent = 'Make them wait';
-        warningFix = () => {
-          ed.setSplit(split.id, false);
-          setStatus(`Actions running with ${quote(split)} wait for its long steps again`);
-        };
-      }
-    }
-    warningBox.hidden = !text;
-    warningBox.classList.toggle('waits', Boolean(issue));
-    warningText.textContent = text;
-  }
-
-  splitButton.addEventListener('click', () => {
-    if (warningFix) warningFix();
-    splitButton.blur();
-    redraw();
-  });
-
   function showTiming() {
     const { seq } = ed;
-    const runs = (ed.compiled.active[ed.frame] || []).length > 0;
     if (document.activeElement !== defaultInput) defaultInput.value = seconds(seq.frameTime);
     const off = offset();
     frameNo.textContent = off + ed.frame;
-    const ownTime = seq.times[ed.frame];
-    if (document.activeElement !== frameInput) frameInput.value = ownTime ? seconds(ownTime) : '';
-    frameInput.placeholder = runs ? seconds(seq.frameTime) : '—';
-    frameInput.disabled = !runs;
-    frameInput.title = runs ? '' : 'Nothing happens in this frame';
-    frameReset.disabled = !ownTime || !runs;
     // With a process: the whole of it, along the way the timeline shows.
     const w = whole();
     const shown = w && boardPart() ? w.compiled.seq : seq;
     const last = shown.lastFrame();
     const short = w && w.ended === 'stuck' ? ' (it stops short: an arrow goes nowhere)' : w && w.ended === 'cut' ? ' (cut short: too long)' : '';
     totalText.textContent = `Total ${formatTime(shown.elapsed(last))} over ${plural(last, 'frame')}${short}`;
-    showWarning();
     if (prefs.timingMin) return; // the chart and timeline are folded away
     if (prefs.chart === 'timeline') {
       showTimeline();
@@ -721,37 +670,11 @@
     const ms = readSeconds(defaultInput);
     if (ms) {
       ed.setDefaultTime(ms);
-      setStatus(`Default frame time: ${formatTime(ed.seq.frameTime)}`);
+      setStatus(`Frame time: ${formatTime(ed.seq.frameTime)}`);
     } else {
-      setStatus('Frame times are in seconds, more than 0', 'warn');
+      setStatus('The frame time is in seconds, more than 0', 'warn');
     }
     defaultInput.value = seconds(ed.seq.frameTime); // shows a clamped value, or undoes a bad one
-    redraw();
-  });
-
-  // The frame on screen's own time; empty means the default. It goes on the selected action if
-  // it runs in this frame (on a path: a wait where the droplet is), otherwise on the actions in it.
-  function setFrameTime(ms) {
-    const f = ed.frame;
-    const set = ed.setFrameTime(f, ms);
-    if (!set.length) return;
-    const on = set.map(quote).join(', ');
-    if (ms) setStatus(`Frame ${f} lasts ${formatTime(ed.seq.timeOf(f))} (set on ${on})`);
-    else if (ed.seq.times[f]) setStatus(`Frame ${f} still lasts ${formatTime(ed.seq.timeOf(f))}: that is the time per step of ${on}`, 'warn');
-    else setStatus(`Frame ${f} uses the default time again (${on})`);
-  }
-
-  frameInput.addEventListener('change', () => {
-    const ms = frameInput.value.trim() === '' ? 0 : readSeconds(frameInput);
-    if (ms === null) setStatus('Frame times are in seconds, more than 0', 'warn');
-    else setFrameTime(ms);
-    frameInput.value = ed.seq.times[ed.frame] ? seconds(ed.seq.times[ed.frame]) : '';
-    redraw();
-  });
-
-  frameReset.addEventListener('click', () => {
-    setFrameTime(0);
-    frameReset.blur();
     redraw();
   });
 
@@ -763,7 +686,7 @@
       if (evt.key === 'Enter' || evt.key === 'Escape') input.blur();
     });
   }
-  for (const input of [defaultInput, frameInput]) editKeys(input);
+  editKeys(defaultInput);
 
   const viewButtons = [...document.querySelectorAll('#timing .segmented button')];
   const chartBox = $('chart');
@@ -1060,7 +983,7 @@
         span = { from: Math.min(OD.model.MAX_FRAMES, from), to: Math.min(OD.model.MAX_FRAMES, from) };
       }
       const followers = actions.filter((b) => preds(b).includes(a.id));
-      const problem = compiled.issues.filter((i) => i.id === a.id && i.kind !== 'waits').map((i) => i.text).join('; ');
+      const problem = compiled.issues.filter((i) => i.id === a.id).map((i) => i.text).join('; ');
       const step = ed.tileOf(a); // a Step tile's actions show its name before their own
       out.push({
         id: a.id,
@@ -1074,7 +997,6 @@
         to: span.to + shift,
         problem: problem || null,
         broken,
-        split: Boolean(a.split),
         handIn: preds(a).some((id) => compiled.spans.get(id) && compiled.spans.get(id).to === span.from),
         handOut: followers.some((b) => compiled.spans.get(b.id) && compiled.spans.get(b.id).from === span.to),
         preds: preds(a),
@@ -1157,14 +1079,11 @@
   const afterBox = $('prop-after');
   const afterList = $('prop-after-list');
   const delayField = $('prop-delay');
-  const stepField = $('prop-step');
-  const splitBox = $('prop-split');
   const sizeField = $('prop-size');
   const dirField = $('prop-dir');
   const lengthField = $('prop-length');
   const roundsField = $('prop-rounds');
   const framesField = $('prop-frames');
-  const endWaitField = $('prop-endwait');
   const infoText = $('prop-info');
   const dropletNames = $('droplet-names');
   const show = (node, on) => (node.hidden = !on);
@@ -1246,14 +1165,9 @@
     });
     afterList.replaceChildren(...rows);
 
-    keep(stepField, a.stepTime ? seconds(a.stepTime) : '');
-    stepField.placeholder = `${seconds(ed.project.frameTime)} (default)`;
-    splitBox.checked = Boolean(a.split);
     // Heaters and magnets have no droplet, no steps of their own and nothing to turn.
     const control = a.type === 'temp' || a.type === 'magnet';
     show(dropletField.closest('.field'), !control && a.type !== 'wait');
-    show(stepField.closest('.field'), !control && a.type !== 'wait');
-    show(splitBox.closest('.check'), !control && a.type !== 'wait');
     show($('prop-temps-row'), a.type === 'temp');
     show($('prop-heatwait-row'), a.type === 'temp');
     show($('prop-tolerance-row'), a.type === 'temp' && Boolean(a.wait));
@@ -1283,14 +1197,7 @@
     }
     show($('prop-frames-row'), a.type === 'pattern');
     if (a.type === 'pattern') keep(framesField, String(a.frames.length));
-    show($('prop-endwait-row'), a.type === 'path');
-    show($('prop-waits-row'), a.type === 'path');
-    if (a.type === 'path') {
-      const end = a.points[a.points.length - 1];
-      keep(endWaitField, end.wait ? seconds(end.wait) : '');
-      showWaits(a);
-    }
-    const notes = ed.issuesOf(a.id).filter((i) => i.kind !== 'waits').map((i) => i.text);
+    const notes = ed.issuesOf(a.id).map((i) => i.text);
     if (a.type === 'temp' && a.wait && span) notes.push(`without a device it is estimated to take ${formatTime(ed.seq.elapsed(span.to) - ed.seq.elapsed(span.from - 1))}; live, the frame lasts until the heaters get there`);
     infoText.className = notes.length ? 'info' : 'info ok';
     if (!notes.length && a.type === 'dispense') notes.push('A dispense stays at its reservoir');
@@ -1389,17 +1296,6 @@
     propsKey = '';
     redraw();
   });
-  stepField.addEventListener('change', () => {
-    const a = ed.selected;
-    if (!a) return;
-    const ms = stepField.value.trim() === '' ? 0 : readSeconds(stepField);
-    if (ms === null) setStatus('Times are in seconds, more than 0', 'warn');
-    else propChange(ed.setStepTime(a.id, ms), () => (ms ? `Each step of ${quote(a)} lasts ${formatTime(ed.action(a.id).stepTime)}` : `${quote(a)} uses the default frame time`));
-  });
-  splitBox.addEventListener('change', () => {
-    const a = ed.selected;
-    if (a) propChange(ed.setSplit(a.id, splitBox.checked), () => (splitBox.checked ? `${quote(a)} lets the others keep moving` : `Actions running with ${quote(a)} wait for its long steps`));
-  });
   $('prop-turn-left').addEventListener('click', () => propChange(ed.rotateSelected(-1), () => `Turned ${quote(ed.selected)}`));
   $('prop-turn-right').addEventListener('click', () => propChange(ed.rotateSelected(1), () => `Turned ${quote(ed.selected)}`));
   for (const [field, name] of [[sizeField, 'size'], [lengthField, 'length'], [roundsField, 'rounds']]) {
@@ -1418,173 +1314,11 @@
     const a = ed.selected;
     if (a) propChange(ed.setFrames(a.id, Number(framesField.value)), () => `${quote(a)} lasts ${plural(ed.action(a.id).frames.length, 'frame')}`);
   });
-  endWaitField.addEventListener('change', () => {
-    const a = ed.selected;
-    if (!a) return;
-    const ms = endWaitField.value.trim() === '' || Number(endWaitField.value) === 0 ? 0 : readSeconds(endWaitField);
-    if (ms === null) setStatus('Times are in seconds', 'warn');
-    else propChange(ed.setEndWait(a.id, ms), () => (ms ? `${quote(a)} waits ${formatTime(ms)} at its end` : `${quote(a)} doesn't wait at its end`));
-  });
-  for (const input of [nameField, dropletField, startField, delayField, stepField, lengthField, roundsField, framesField, endWaitField]) editKeys(input);
+  for (const input of [nameField, dropletField, startField, delayField, lengthField, roundsField, framesField]) editKeys(input);
   $('prop-delete').addEventListener('click', (evt) => {
     evt.currentTarget.blur();
     deleteSelected();
   });
-
-  // --- waits -----------------------------------------------------------------------------
-  // Right-click (on a Mac also Ctrl+click) on a path's line opens a small form for how much
-  // longer the droplet stays on that electrode. Properties lists a path's waits on the way.
-
-  const waitPop = $('wait-pop');
-  const waitPopTitle = $('wait-pop-title');
-  const waitPopInput = $('wait-pop-input');
-  const waitPopClear = $('wait-pop-clear');
-  let waitSpot = null; // { id, step, e, wait } the form is for
-  for (const node of document.querySelectorAll('.mac-only')) node.hidden = !MAC;
-
-  // The first frame in which path id's droplet is on step k, or null.
-  function frameOfStep(id, k) {
-    const span = ed.span(id);
-    if (span) for (let f = span.from; f <= span.to; f++) if (ed.stepIn(id, f) === k) return f;
-    return null;
-  }
-
-  const spotText = (spot) => {
-    const f = frameOfStep(spot.id, spot.step);
-    return `electrode ${spot.e}${f ? ` (frame ${f})` : ''}`;
-  };
-
-  function closeWaitPop() {
-    waitPop.hidden = true;
-    waitSpot = null;
-  }
-
-  // Opens the form next to the pointer, with the path selected and the droplet shown there.
-  function openWaitPop(spot, clientX, clientY) {
-    ed.select(spot.id);
-    const f = frameOfStep(spot.id, spot.step);
-    if (f) ed.frame = f;
-    waitSpot = spot;
-    waitPopTitle.textContent = `${quote(ed.action(spot.id))} on ${spotText(spot)}`;
-    waitPopInput.value = spot.wait ? seconds(spot.wait) : '';
-    waitPopClear.disabled = !spot.wait;
-    waitPop.hidden = false;
-    const box = waitPop.getBoundingClientRect();
-    waitPop.style.left = `${Math.max(8, Math.min(window.innerWidth - box.width - 8, clientX + 12))}px`;
-    waitPop.style.top = `${Math.max(8, Math.min(window.innerHeight - box.height - 8, clientY + 12))}px`;
-    waitPopInput.focus();
-    waitPopInput.select();
-    setStatus('How many seconds more should the droplet stay here? Enter sets it, Esc closes');
-    redraw();
-  }
-
-  // A wait of `ms` (0 = none) at a spot on a path.
-  function applyWait(spot, ms) {
-    const a = ed.action(spot.id);
-    if (!a) return;
-    const where = spotText(spot);
-    if (ed.setWaitAt(spot.id, spot.step, ms)) setStatus(ms ? `${quote(a)} waits ${formatTime(ms)} on ${where}` : `${quote(a)} doesn't wait on ${where} any more`);
-    else showNotice();
-    propsKey = '';
-    redraw();
-  }
-
-  // Seconds typed in a wait field: ms (0 for empty), or null if it isn't a number of seconds.
-  function waitMs(input) {
-    if (input.validity && input.validity.badInput) return null;
-    const text = input.value.trim();
-    if (text === '') return 0;
-    const s = parseFloat(text);
-    return Number.isFinite(s) && s >= 0 ? Math.round(s * 1000) : null;
-  }
-
-  svg.addEventListener('contextmenu', (evt) => {
-    evt.preventDefault();
-    if (ed.dragging || ed.placement) return;
-    const { mx, my } = toGrid(evt);
-    const e = root.OD.paths.electrodeAt(ed.layout.rects, mx, my);
-    const spot = e === null ? null : ed.waitSpot(e);
-    if (!spot) {
-      closeWaitPop();
-      setStatus(`Right-click${MAC ? ' (or Ctrl+click)' : ''} on a path's line where its droplet should wait`);
-      redraw();
-      return;
-    }
-    openWaitPop(spot, evt.clientX, evt.clientY);
-  });
-
-  waitPop.addEventListener('submit', (evt) => {
-    evt.preventDefault();
-    const ms = waitMs(waitPopInput);
-    if (ms === null) {
-      setStatus('Waits are in seconds', 'warn');
-      return;
-    }
-    const spot = waitSpot;
-    closeWaitPop();
-    if (spot && (ms || spot.wait)) applyWait(spot, ms);
-    else setStatus('');
-  });
-  waitPopClear.addEventListener('click', () => {
-    const spot = waitSpot;
-    closeWaitPop();
-    if (spot) applyWait(spot, 0);
-  });
-  waitPop.addEventListener('keydown', (evt) => {
-    if (evt.key !== 'Escape') return;
-    evt.preventDefault();
-    evt.stopPropagation();
-    closeWaitPop();
-    setStatus('');
-    redraw();
-  });
-  // A press anywhere else closes it (a right-click on another spot opens it there).
-  document.addEventListener('pointerdown', (evt) => {
-    if (!waitPop.hidden && !waitPop.contains(evt.target)) closeWaitPop();
-  }, true);
-
-  // The selected path's waits on the way (the one at its end has its own field): where, and how
-  // long. The place goes to the frame where the droplet is there.
-  function showWaits(a) {
-    const steps = ed.stepsOf(a.id);
-    const end = steps ? steps.length - 1 : -1;
-    const rows = ed.waitsOf(a.id).filter((w) => w.step !== end).map((w) => {
-      const spot = { id: a.id, step: w.step, e: w.e, wait: w.wait };
-      const row = document.createElement('span');
-      row.className = 'row wait-row';
-      const place = document.createElement('button');
-      place.type = 'button';
-      place.className = 'place';
-      place.textContent = `electrode ${w.e}${w.frame ? ` · frame ${w.frame}` : ''}`; // numbers stay with their word
-      place.title = 'Show the droplet there';
-      place.addEventListener('click', () => {
-        place.blur();
-        if (w.frame) ed.frame = w.frame;
-        redraw();
-      });
-      const input = document.createElement('input');
-      Object.assign(input, { type: 'number', min: '0', max: '3600', step: 'any', value: seconds(w.wait) });
-      input.inputMode = 'decimal';
-      input.setAttribute('aria-label', `Wait on electrode ${w.e}, in seconds`);
-      editKeys(input);
-      input.addEventListener('change', () => {
-        const ms = waitMs(input);
-        if (ms === null) setStatus('Waits are in seconds', 'warn');
-        else applyWait(spot, ms);
-      });
-      const unit = document.createElement('span');
-      unit.textContent = 's';
-      row.append(place, input, unit, iconButton('×', 'No wait here', () => applyWait(spot, 0)));
-      return row;
-    });
-    if (!rows.length) {
-      const none = document.createElement('span');
-      none.className = 'none';
-      none.textContent = 'None';
-      rows.push(none);
-    }
-    $('prop-waits-list').replaceChildren(...rows);
-  }
 
   // --- adding a file ---------------------------------------------------------------------
 
@@ -1683,7 +1417,7 @@
     name.textContent = t.name; // names come from storage or imported files: text only
     const steps = document.createElement('div');
     steps.className = 'steps';
-    steps.textContent = plural(templates.stepsOf(t), 'step') + (t.times ? ' · own frame times' : '');
+    steps.textContent = plural(templates.stepsOf(t), 'step');
     text.append(name, steps);
     li.append(miniPreview(t), text);
     li.append(iconButton('✎', t.builtIn ? 'Copy it to change' : 'Change it', () => openMaker(t)));
@@ -1836,7 +1570,7 @@
       return;
     }
     const t = templates.clean({ name: nameInput.value, ...made });
-    if (editing) Object.assign(editing, { name: t.name, frames: t.frames, times: t.times });
+    if (editing) Object.assign(editing, { name: t.name, frames: t.frames });
     else myTemplates.push(mine(t));
     storeTemplates();
     renderTemplates();
@@ -2269,8 +2003,6 @@
     $('run-stop').hidden = !running;
     if (running) $('run-pause').textContent = runner.state.paused ? '▶ Go on' : '⏸ Pause';
     const connected = Boolean(device && device.session.connected);
-    $('run-device').disabled = !connected || running;
-    $('run-device-label').classList.toggle('off', !connected);
     const state = $('run-state');
     if (running) {
       const s = runner.state;
@@ -2278,6 +2010,7 @@
       const name = tile ? (tile.kind === 'decision' ? P.conditionText(tile, ed.doc.process) : tile.name || P.KINDS[tile.kind].name) : '';
       state.textContent = `${s.paused ? 'Paused' : 'Running'}: ${name}${s.stretch ? ` · frame ${s.frame} of ${s.frames}` : ''} · ${mmss(Date.now() - s.started)}`;
     } else if (remoteRun && !remoteRun.done) state.textContent = `Running in the other tab: frame ${remoteRun.frame || 0}`;
+    else if (ed.playing && ed.doc.process) state.textContent = 'Previewing: play goes through the timeline without asking anything; ▶ Run asks';
     else state.textContent = '';
     $('open-tab').textContent = view === 'process' ? 'Board in a new tab ↗' : 'Process in a new tab ↗';
     renderLog(runLog, view === 'process' && runner ? runner.state : null);
@@ -2301,9 +2034,9 @@
       return;
     }
     if (ed.dragging || ed.placement) ed.cancel();
-    const onDevice = $('run-device').checked && device.session.connected;
-    if (onDevice) device.setLive(true);
-    setStatus(`Running${onDevice ? ' on the OpenDrop' : ''}: each step plays on the board; you are asked at Measure and Ask tiles`);
+    // With live on, the OpenDrop follows the run (and is switched off at the end).
+    const onDevice = Boolean(device.session.live && device.session.connected);
+    setStatus(`Running${onDevice ? ' on the OpenDrop (live)' : ''}: each step plays on the board; you are asked at Measure and Ask tiles${onDevice || !device.session.connected ? '' : '. Switch live on for the OpenDrop to follow'}`);
     const ended = await runner.start();
     if (onDevice) device.allOff();
     if (ended === 'end') setStatus(`The run is done (${mmss(Date.now() - runner.state.started)})`);

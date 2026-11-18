@@ -259,7 +259,7 @@ test('frames after 200 are kept, saved and read back', () => {
   seq.setTime(450, 1234);
   const back = decode(encode(seq));
   assert.equal(back.frames, 450);
-  assert.deepEqual(back.warnings, []);
+  assert.deepEqual(back.warnings, ['1 frame(s) with a time of their own play at the default 0.5 s: add a Wait where it should pause']);
   assert.ok(back.seq.get(9, 450));
   assert.equal(back.seq.timeOf(450), 1234);
   assert.equal(back.seq.lastFrame(), 450);
