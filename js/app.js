@@ -146,8 +146,7 @@
       syncRev = ed.revision;
     }
     if (view === 'board') {
-      board.setCutoutTitle(ed.makingTemplate ? 'Making a template' : openTileName() || 'Path Generator');
-      board.render(ed, { numbers: showNumbers, lines: showLines, device: device && device.boardState(), rings: rings(), heat: heatInfo() });
+      board.render(ed, { numbers: showNumbers, lines: showLines, device: device && device.boardState(), rings: rings(), heat: heatInfo(), frameOffset: offset() });
     } else if (processView) processView.render();
     if (ed.draft && ed.draft.moved) showDraft(ed.draft);
     showTiming();
@@ -242,12 +241,11 @@
     return { mx: (p.x - G.CX) / G.UNIT, my: (p.y - G.CY) / G.UNIT };
   }
 
-  // Actions that open a browser dialog (a file, or the USB port picker for connect).
+  // Actions that open a browser dialog (a file).
   const DIALOGS = {
     save: () => save(),
     load: () => fileInput.click(),
     export: () => exportFrames(),
-    connect: () => device.action('connect'),
   };
   let pendingDialog = null;
   const MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
@@ -635,7 +633,7 @@
   const chart = new TimingChart($('chart'), {
     onPick(step) {
       if (ed.dragging || ed.placement) return;
-      ed.frame = step;
+      goToFrame(step);
       redraw();
     },
   });
@@ -681,15 +679,20 @@
     const { seq } = ed;
     const runs = (ed.compiled.active[ed.frame] || []).length > 0;
     if (document.activeElement !== defaultInput) defaultInput.value = seconds(seq.frameTime);
-    frameNo.textContent = ed.frame;
+    const off = offset();
+    frameNo.textContent = off + ed.frame;
     const ownTime = seq.times[ed.frame];
     if (document.activeElement !== frameInput) frameInput.value = ownTime ? seconds(ownTime) : '';
     frameInput.placeholder = runs ? seconds(seq.frameTime) : '—';
     frameInput.disabled = !runs;
     frameInput.title = runs ? '' : 'Nothing happens in this frame';
     frameReset.disabled = !ownTime || !runs;
-    const last = seq.lastFrame();
-    totalText.textContent = `Total ${formatTime(seq.elapsed(last))} over ${plural(last, 'frame')}`;
+    // With a process: the whole of it, along the way the timeline shows.
+    const w = whole();
+    const shown = w && boardPart() ? w.compiled.seq : seq;
+    const last = shown.lastFrame();
+    const short = w && w.ended === 'stuck' ? ' (it stops short: an arrow goes nowhere)' : w && w.ended === 'cut' ? ' (cut short: too long)' : '';
+    totalText.textContent = `Total ${formatTime(shown.elapsed(last))} over ${plural(last, 'frame')}${short}`;
     showWarning();
     if (prefs.timingMin) return; // the chart and timeline are folded away
     if (prefs.chart === 'timeline') {
@@ -702,11 +705,11 @@
     }
     const times = [];
     const own = [];
-    for (let f = 1; f <= Math.max(last, ed.frame); f++) {
-      times.push(seq.timeOf(f));
-      own.push(seq.times[f] > 0);
+    for (let f = 1; f <= Math.max(last, off + ed.frame); f++) {
+      times.push(shown.timeOf(f));
+      own.push(shown.times[f] > 0);
     }
-    chart.update({ times, own, current: ed.frame });
+    chart.update({ times, own, current: off + ed.frame });
   }
 
   const readSeconds = (input) => {
@@ -915,51 +918,138 @@
     });
   }
 
-  // --- timeline --------------------------------------------------------------------------
   // One track per droplet, each action a clip; actions without a droplet name get a track each.
-
   const KIND = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet' };
   // Heater and magnet settings share a track each, under the droplets'.
   const controlTrack = (a) => (a.type === 'temp' ? ['c:heat', 'Heaters', '°C'] : a.type === 'magnet' ? [`c:m${a.magnet || 1}`, `Magnet ${a.magnet || 1}`, `M${a.magnet || 1}`] : null);
+  // --- the whole process on the timeline -------------------------------------------------
+  // With a process, the timeline shows all of it: the stretches one after another along the way a
+  // run goes on (stretch.route: on at every decision, Repeats all their rounds). The board edits
+  // the stretch the frame on screen is in; its frame 1 is the whole timeline's frame offset() + 1.
+
+  let wholeKey = '';
+  let wholeRoute = null;
+  let visit = null; // which time through the open stretch the board is at (a Repeat's rounds)
+
+  function whole() {
+    if (!ed.doc.process || ed.makingTemplate) return null;
+    const key = `${ed.revision}|${ed.layout.id}`;
+    if (key !== wholeKey) {
+      wholeKey = key;
+      wholeRoute = OD.stretch.route(ed.doc, ed.layout.rects);
+    }
+    return wholeRoute;
+  }
+
+  const playedParts = (w) => w.parts.filter((p) => p.kind === 'stretch' && p.to >= p.from);
+
+  // The part of the whole process the board shows, or null (a step the way doesn't go through).
+  function boardPart() {
+    const w = whole();
+    if (!w || !ed.scope || !ed.scope.stretch) return null;
+    const mine = w.parts.filter((p) => p.kind === 'stretch' && p.stretch === ed.scope.stretch);
+    return mine.find((p) => p.visit === visit) || mine[0] || null;
+  }
+
+  const offset = () => {
+    const part = boardPart();
+    return part ? part.from - 1 : 0;
+  };
+
+  // Opens `part` of the whole process on the board, at `tile` if that is in it, with the droplets,
+  // heaters and magnets coming in as they come that time.
+  function openPart(part, tile = null) {
+    const keep = ed.scope && ed.scope.tile;
+    const id = tile && part.tiles.includes(tile) ? tile : keep && part.tiles.includes(keep) ? keep : part.tile;
+    if (!ed.openTile(id, { state: part.state, controls: part.controls })) return false;
+    visit = part.visit;
+    selectedTile = id;
+    if (processPanel) processPanel.show(id);
+    return true;
+  }
+
+  // Frame g of the whole timeline: the stretch it is in opens on the board.
+  function goToFrame(g) {
+    const w = whole();
+    const here = boardPart();
+    if (w && here && !ed.frozen) {
+      const part = playedParts(w).find((p) => p.from <= g && g <= p.to);
+      if (part && part.visit !== here.visit) openPart(part);
+    }
+    ed.frame = Math.max(1, g - offset());
+  }
+
+  // Playing on from the end of a stretch into the next one (from the last, back to the first).
+  ed.onPlayEnd = () => {
+    const w = whole();
+    const here = boardPart();
+    if (!w || !here || ed.frozen) return false;
+    const parts = playedParts(w);
+    if (!parts.length || (parts.length === 1 && parts[0] === here)) return false;
+    const next = parts[(parts.indexOf(here) + 1) % parts.length];
+    if (!openPart(next)) return false;
+    ed.frame = 1;
+    return true;
+  };
+
+  // --- timeline --------------------------------------------------------------------------
+
+  let otherClips = new Map(); // clip id -> { part, tile, of } for the clips of other stretches
+
   const timeline = new Timeline(timelineBox, {
     onSelect(id) {
       if (ed.dragging) return;
+      const other = id && otherClips.get(id);
+      if (other) {
+        // Another stretch's clip: that stretch opens on the board, the action selected.
+        if (ed.frozen || !openPart(other.part, other.tile)) return;
+        ed.select(other.of);
+        const span = ed.span(other.of);
+        if (span) ed.frame = span.from;
+        setStatus(`On the board: ${openTileName()}`);
+        redraw();
+        return;
+      }
       ed.select(id);
       redraw();
     },
-    onFrame(f) {
+    onFrame(g) {
       if (ed.dragging || ed.placement) return;
-      ed.frame = f;
+      goToFrame(g);
       redraw();
     },
-    onPreview(id, frame) {
-      const check = ed.previewTime(id, frame);
+    onPreview(id, g) {
+      const off = offset();
+      const check = ed.previewTime(id, g - off);
       const span = check.valid ? check.compiled.spans.get(id) : null;
-      return { valid: check.valid, reason: check.reason, from: span ? span.from : null, to: span ? span.to : null };
+      return { valid: check.valid, reason: check.reason, from: span ? span.from + off : null, to: span ? span.to + off : null };
     },
-    onMove(id, frame) {
+    onMove(id, g) {
       ed.select(id);
-      if (ed.moveToFrame(id, frame)) {
+      const off = offset();
+      if (ed.moveToFrame(id, g - off)) {
         const span = ed.span(id);
-        setStatus(`${quote(ed.action(id))}: frames ${span.from} to ${span.to}`);
+        setStatus(`${quote(ed.action(id))}: frames ${span.from + off} to ${span.to + off}`);
       } else showNotice();
       redraw();
     },
-    onTile(id) {
+    onTile(id, v) {
       if (ed.dragging || ed.frozen) return;
-      if (ed.openTile(id)) setStatus(`On the board: ${openTileName()}`);
+      const w = whole();
+      const part = w && v !== undefined ? w.parts.find((p) => p.kind === 'stretch' && p.visit === v) : null;
+      if (part ? openPart(part, id) : ed.openTile(id)) setStatus(`On the board: ${openTileName()}`);
       selectedTile = id;
       if (processPanel) processPanel.show(id);
       redraw();
     },
   });
 
-  function showTimeline() {
-    const { compiled, project } = ed;
-    const preds = (a) => (a.after === undefined ? [] : Array.isArray(a.after) ? a.after : [a.after]);
-    const clips = [];
-    const opened = ed.scope && ed.scope.tile;
-    for (const a of project.actions) {
+  const preds = (a) => (a.after === undefined ? [] : Array.isArray(a.after) ? a.after : [a.after]);
+
+  // Clips for `actions` as `compiled` has them, `shift` frames later.
+  function clipsOf(actions, compiled, shift, extra) {
+    const out = [];
+    for (const a of actions) {
       // An action that can't run still gets a clip, one frame long where it would start, so it
       // can be found and fixed.
       let span = compiled.spans.get(a.id);
@@ -969,10 +1059,10 @@
         const from = a.start || (ends.length ? Math.max(...ends) + (a.delay || 0) : 1);
         span = { from: Math.min(OD.model.MAX_FRAMES, from), to: Math.min(OD.model.MAX_FRAMES, from) };
       }
-      const followers = project.actions.filter((b) => preds(b).includes(a.id));
+      const followers = actions.filter((b) => preds(b).includes(a.id));
       const problem = compiled.issues.filter((i) => i.id === a.id && i.kind !== 'waits').map((i) => i.text).join('; ');
       const step = ed.tileOf(a); // a Step tile's actions show its name before their own
-      clips.push({
+      out.push({
         id: a.id,
         name: step && !ed.namedByTile(a) ? `${step.name || P.KINDS[step.kind].name} · ${a.name}` : a.name,
         type: a.type,
@@ -980,29 +1070,75 @@
         trackName: controlTrack(a) ? controlTrack(a)[1] : a.droplet || a.name,
         trackShort: controlTrack(a) ? controlTrack(a)[2] : a.droplet ? projects.shortDroplet(a.droplet) : '',
         colour: dropletColour(a.droplet),
-        from: span.from,
-        to: span.to,
+        from: span.from + shift,
+        to: span.to + shift,
         problem: problem || null,
         broken,
         split: Boolean(a.split),
         handIn: preds(a).some((id) => compiled.spans.get(id) && compiled.spans.get(id).to === span.from),
         handOut: followers.some((b) => compiled.spans.get(b.id) && compiled.spans.get(b.id).from === span.to),
         preds: preds(a),
-        dim: Boolean(opened && a.tile !== opened),
+        ...extra(a),
       });
     }
-    // With a process: a band per tile of the stretch on screen, over its frames.
+    return out;
+  }
+
+  // A band over a tile's frames, from the spans of its actions.
+  function bandOf(t, spans, shift, fields) {
+    if (!spans.length) return null;
+    return { id: t.id, name: t.name || P.KINDS[t.kind].name, from: Math.min(...spans.map((x) => x.from)) + shift, to: Math.max(...spans.map((x) => x.to)) + shift, ...fields };
+  }
+
+  function showTimeline() {
+    const { compiled, project } = ed;
+    const opened = ed.scope && ed.scope.tile;
+    const w = whole();
+    const here = boardPart();
+    const off = here ? here.from - 1 : 0;
+    const clips = clipsOf(project.actions, compiled, off, (a) => ({ dim: Boolean(opened && a.tile !== opened) }));
     const bands = [];
-    if (ed.doc.process && ed.scope) {
+    const stops = [];
+    otherClips = new Map();
+    if (w && here) {
+      // The other stretches along the way, dimmed: a click opens one.
+      const others = w.project.actions.filter((a) => a.visit !== here.visit);
+      clips.push(...clipsOf(others, w.compiled, 0, () => ({ dim: true, locked: true })));
+      const byVisit = new Map(w.parts.filter((p) => p.kind === 'stretch').map((p) => [p.visit, p]));
+      for (const a of others) otherClips.set(a.id, { part: byVisit.get(a.visit), tile: a.tile, of: a.of });
+      for (const part of w.parts) {
+        if (part.kind !== 'stretch') {
+          // Stops with no frames between them (an Ask and its decision) share one mark.
+          const same = stops.find((x) => x.frame === part.frame);
+          if (same) {
+            same.text += ` → ${part.text}`;
+            same.end = same.end || part.kind === 'end';
+          } else stops.push({ frame: part.frame, text: part.text, end: part.kind === 'end' });
+          continue;
+        }
+        const mine = part.visit === here.visit;
+        for (const id of part.tiles) {
+          const t = P.tileById(ed.doc.process, id);
+          if (!t || !P.hasWork(t)) continue;
+          const spans = mine
+            ? project.actions.filter((a) => a.tile === id).map((a) => compiled.spans.get(a.id)).filter(Boolean)
+            : w.project.actions.filter((a) => a.visit === part.visit && a.tile === id).map((a) => w.compiled.spans.get(a.id)).filter(Boolean);
+          const band = bandOf(t, spans, mine ? off : 0, { visit: part.visit, open: mine && id === opened });
+          if (band) bands.push(band);
+        }
+      }
+    } else if (ed.doc.process && ed.scope) {
+      // A step the way doesn't go through (a decision goes the other way): its stretch alone.
       for (const t of ed.doc.process.tiles) {
         if (!ed.scope.tiles.has(t.id) || !P.hasWork(t)) continue;
-        const spans = project.actions.filter((a) => a.tile === t.id).map((a) => compiled.spans.get(a.id)).filter(Boolean);
-        if (!spans.length) continue;
-        bands.push({ id: t.id, name: t.name || P.KINDS[t.kind].name, from: Math.min(...spans.map((x) => x.from)), to: Math.max(...spans.map((x) => x.to)), open: t.id === opened });
+        const band = bandOf(t, project.actions.filter((a) => a.tile === t.id).map((a) => compiled.spans.get(a.id)).filter(Boolean), 0, { open: t.id === opened });
+        if (band) bands.push(band);
       }
     }
     const last = clips.reduce((m, c) => Math.max(m, c.to), 0);
-    timeline.update({ frames: Math.min(OD.model.MAX_FRAMES, Math.max(30, last + 10, ed.frame + 5)), frame: ed.frame, selection: ed.selection, clips, bands });
+    const end = Math.max(last, ...stops.map((x) => x.frame));
+    const frame = off + ed.frame;
+    timeline.update({ frames: Math.min(OD.model.MAX_FRAMES, Math.max(30, end + 10, frame + 5)), frame, selection: ed.selection, clips, bands, stops });
   }
 
   // --- properties ------------------------------------------------------------------------
@@ -1675,7 +1811,6 @@
   function showMaker() {
     panel.hidden = true;
     maker.hidden = false;
-    board.setCutoutTitle('Making a template');
     applyPanels();
   }
 
@@ -1684,7 +1819,6 @@
     editing = null;
     panel.hidden = false;
     maker.hidden = true;
-    board.setCutoutTitle('Path Generator');
     applyPanels();
     redraw();
   }
@@ -2121,7 +2255,11 @@
     const where = $('viewbar-where');
     const t = openTile();
     if (ed.makingTemplate) where.textContent = 'Making a template';
-    else if (view === 'board' && t) where.textContent = `On the board: ${t.name || P.KINDS[t.kind].name}${ed.scope.tiles.size > 1 ? ` · with ${ed.scope.tiles.size - 1} more step${ed.scope.tiles.size === 2 ? '' : 's'} of the process` : ''}`;
+    else if (view === 'board' && t) {
+      const part = boardPart();
+      const frames = !part ? ' · not on the way the timeline follows (a decision goes the other way)' : part.to >= part.from ? ` · frames ${part.from}–${part.to}` : '';
+      where.textContent = `On the board: ${t.name || P.KINDS[t.kind].name}${ed.scope.tiles.size > 1 ? ` · with ${ed.scope.tiles.size - 1} more step${ed.scope.tiles.size === 2 ? '' : 's'} of the process` : ''}${frames}`;
+    }
     else if (view === 'board' && ed.doc.process) where.textContent = 'Open a step of the process to draw it';
     else where.textContent = '';
     $('run-controls').hidden = !ed.doc.process || ed.makingTemplate;

@@ -26,6 +26,8 @@
             <span id="run-state"></span>
           </span>
           <button type="button" id="open-tab" title="The other view in a second browser tab; both stay in step">Board in a new tab ↗</button>
+          <a id="manual-link" href="manual.html" target="_blank" rel="noopener"
+             title="How to use the app, with examples of processes (opens in a new tab)">Manual</a>
         </div>
         <div id="stage-area">
           <svg id="board" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"
@@ -42,8 +44,6 @@
           <button type="button" id="timing-toggle" class="panel-toggle" aria-expanded="true"
                   title="Minimise the timeline panel"><span class="arrow">▾</span> Timeline</button>
           <span class="timing-controls">
-            <label>Default frame time
-              <input type="number" id="time-default" min="0.01" max="3600" step="any" inputmode="decimal"> s</label>
             <label>Frame <span id="time-frame-no">1</span>
               <input type="number" id="time-frame" min="0.01" max="3600" step="any" inputmode="decimal"> s</label>
             <button type="button" id="time-frame-reset">Use default</button>
@@ -106,6 +106,10 @@
           <div id="props-none">
             <p class="hint">Click something on the board or in the timeline to see and change it here.</p>
             <p id="props-summary" class="info"></p>
+            <h3 class="props-settings">Project</h3>
+            <label class="field" title="How long a frame lasts unless an action gives it its own time">Default frame time
+              <span class="with-unit"><input type="number" id="time-default" min="0.01" max="3600" step="any"
+                     inputmode="decimal"> s</span></label>
           </div>
           <div id="props" hidden>
             <h3 id="prop-kind">Selected</h3>

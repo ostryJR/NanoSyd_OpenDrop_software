@@ -98,9 +98,11 @@
     // data: { frames, frame, selection, clips: [{ id, name, type, track, trackName, trackShort,
     //   colour, from, to, problem, broken, split, handIn, handOut, preds, dim }], bands } (trackShort:
     //   the droplet's short name, D1 ...; broken: it can't run; shown where it would start; dim:
-    //   another tile's; bands: [{ id, name, from, to, open }] the process's tiles on this board)
+    //   another tile's; bands: [{ id, name, from, to, open, visit }] the process's tiles (visit: which time through);
+    //   stops: [{ frame, text, end }] where the whole process stops for a question, a decision or a
+    //   round (after frame `frame`); a clip with `locked` is another stretch's: a click, no drag)
     update(data) {
-      const key = JSON.stringify([data.frames, data.selection, data.clips, data.bands]);
+      const key = JSON.stringify([data.frames, data.selection, data.clips, data.bands, data.stops]);
       this.data = data;
       if (key !== this.key) {
         this.key = key;
@@ -169,7 +171,8 @@
       this.layout.clear();
       let y = 0;
       // The process's tiles on this board: a band over each one's frames; a click opens it.
-      if (this.data.bands && this.data.bands.length) {
+      const stops = this.data.stops || [];
+      if ((this.data.bands && this.data.bands.length) || stops.length) {
         const row = div('tl-bands', this.body);
         row.style.height = `${BANDS}px`;
         div('tl-head tl-bands-head', row, 'Steps');
@@ -180,8 +183,14 @@
           band.title = `${b.name}: frames ${b.from}–${b.to}${b.open ? '' : ' (click to open it)'}`;
           band.addEventListener('pointerdown', (evt) => {
             evt.stopPropagation();
-            if (!b.open && this.cb.onTile) this.cb.onTile(b.id);
+            if (!b.open && this.cb.onTile) this.cb.onTile(b.id, b.visit);
           });
+        }
+        // The whole process's stops: a mark between two frames, the question or answer on hover.
+        for (const st of stops) {
+          const mark = div(`tl-stop-mark${st.end ? ' end' : ''}`, row, st.end ? '■' : '◆');
+          mark.style.left = `${this.xOf(st.frame + 1)}px`;
+          mark.title = st.end ? `${st.text}: after frame ${st.frame}` : `${st.text} (after frame ${st.frame})`;
         }
         y += BANDS;
       }
@@ -222,6 +231,11 @@
       }
       const height = RULER + y;
       this.canvas.style.height = `${height}px`;
+      for (const st of stops) {
+        const line = div(`tl-stop${st.end ? ' end' : ''}`, this.body);
+        line.style.left = `${this.xOf(st.frame + 1)}px`;
+        line.style.height = `${y}px`;
+      }
       this.drawLinks(y);
       this.movePlayhead(resized);
     }
@@ -289,7 +303,7 @@
       });
       node.addEventListener('pointermove', (evt) => {
         const d = this.drag;
-        if (!d || d.id !== c.id) return;
+        if (!d || d.id !== c.id || c.locked) return;
         const df = Math.round((evt.clientX - d.x0) / this.px);
         if (df === d.df) return;
         d.df = df;
