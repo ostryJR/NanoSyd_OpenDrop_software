@@ -261,7 +261,9 @@
     const t = step.tile;
     return new Promise((resolve) => {
       const box = node('div', { class: 'run-ask', role: 'dialog', 'aria-modal': 'true' });
+      let keys = null; // the yes/no keys, while they are listened for
       const finish = (value) => {
+        if (keys) document.removeEventListener('keydown', keys, true);
         box.remove();
         resolve(value);
       };
@@ -270,9 +272,20 @@
       box.append(t.kind === 'decision' ? node('h3', { text: `${name}?` }) : node('h3', { class: 'with-icon' }, icon(t.kind), t.name || P.KINDS[t.kind].name));
       if (t.kind === 'ask' && t.answer !== 'number') {
         box.append(node('p', { text: t.question || 'Go on?' }));
+        // Keys too: 1 or , for yes, 2 or . for no (side by side, like the buttons).
+        const key = (...k) => node('span', { class: 'keys' }, ...k.map((x) => node('kbd', { text: x })));
         box.append(node('div', { class: 'row' },
-          node('button', { type: 'button', class: 'primary', text: 'Yes', onclick: () => finish(true) }),
-          node('button', { type: 'button', text: 'No', onclick: () => finish(false) })));
+          node('button', { type: 'button', class: 'primary', title: 'Yes (1 or ,)', onclick: () => finish(true) }, 'Yes ', key('1', ',')),
+          node('button', { type: 'button', title: 'No (2 or .)', onclick: () => finish(false) }, 'No ', key('2', '.'))));
+        keys = (evt) => {
+          if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
+          const answer = evt.key === '1' || evt.key === ',' ? true : evt.key === '2' || evt.key === '.' ? false : null;
+          if (answer === null) return;
+          evt.preventDefault();
+          evt.stopPropagation(); // not a shortcut on the board as well
+          finish(answer);
+        };
+        document.addEventListener('keydown', keys, true);
       } else {
         box.append(node('p', { text: t.kind === 'ask' ? t.question || '' : t.kind === 'decision' ? `The decision needs ${name}, which wasn't measured on the way here.` : `Measure ${name}${unit ? ` (${unit})` : ''} and type it in.` }));
         const input = node('input', { type: 'number', step: 'any', 'aria-label': name });

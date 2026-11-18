@@ -19,6 +19,10 @@ file name and download the file instead of showing a save dialog.
 **Manual:** `manual.html` (the **Manual** link at the top of the app) explains how to use it in
 plain words, with worked process examples. It is kept up to date with every change to the app.
 
+**Help from an AI:** attach `ai-help.md` with a photo of the screen (or a description) to a chat
+with an AI assistant: it describes the screen, every message and the usual fixes, so the AI can
+explain what is going wrong. It is kept up to date with the app, like the manual.
+
 ## Controls
 
 | To | Do |
@@ -187,7 +191,8 @@ everything drawn so far.
     device follows the run and is switched all off at the end.
   - **play** on the board is only a preview: it goes through the timeline without asking anything
     (the top bar says "Previewing"). **▶ Run** is the real run.
-  - Measure and Ask tiles ask you. Decisions and Repeat choose the way.
+  - Measure and Ask tiles ask you; a yes/no question also takes the keys 1 or , (yes) and 2 or .
+    (no). Decisions and Repeat choose the way.
   - The log at the bottom right lists the values, decisions and times; **Pause** and **Stop** are
     at the top.
   - Nothing can be edited while it runs. Keep the page in front: a hidden tab runs slowly.

@@ -306,6 +306,7 @@
       <li><a href="#files">Saving, files and export</a></li>
       <li><a href="#keys">Keyboard shortcuts</a></li>
       <li><a href="#faq">Questions and problems</a></li>
+      <li><a href="#ai">Asking an AI for help</a></li>
     </ol>
   </nav>
 
@@ -657,7 +658,8 @@
       <li>Each step plays on the board, frame by frame; the running tile glows in the process
         view.</li>
       <li>At a <b>Measure</b> tile you type in the value and press <span class="ui">Go on</span>. At an
-        <b>Ask</b> tile you answer <span class="ui">Yes</span> / <span class="ui">No</span> or type a
+        <b>Ask</b> tile you answer <span class="ui">Yes</span> / <span class="ui">No</span> (or with
+        the keys: <kbd>1</kbd> or <kbd>,</kbd> for yes, <kbd>2</kbd> or <kbd>.</kbd> for no) or type a
         number. <span class="ui">Stop the run</span> ends it there.</li>
       <li>Decisions and Repeats choose the way by themselves.</li>
       <li>The <b>run log</b> at the bottom right of the process view lists the values, decisions and
@@ -1015,6 +1017,22 @@
         after clearing browser data it is gone, so <span class="ui">save</span> important projects to
         a file.</dd>
     </dl>
+
+    <h3 id="ai">Asking an AI for help</h3>
+    <p>When something doesn't work and this manual doesn't answer it, an AI assistant (Claude,
+      ChatGPT, …) can explain what is going on, from a photo of the screen or your own words.</p>
+    <ol class="steps">
+      <li>Take a photo or a screenshot of the whole app (board or process view, with the timeline and
+        the bottom bar in it), or write down what you did and what happened.</li>
+      <li>Attach the file <b><a href="ai-help.md">ai-help.md</a></b> from the app's folder. It tells the
+        AI how the app works: every part of the screen, what each message means, and the usual fixes.</li>
+      <li>Ask, for example: <i>"This is the OpenDrop Generator. Why can't I draw this path?"</i> or
+        <i>"Why does my Mix not happen at the same time as the other droplet's Move?"</i></li>
+      <li>If the AI can't tell from the picture, it may ask for the project file: press
+        <span class="ui">save</span> and attach the <code>.odproj.json</code> file it downloads.</li>
+    </ol>
+    <p>The message in the bottom bar (or the red badge on the board) is the most useful thing to
+      have in the picture. Make sure it can be read.</p>
 
     <footer>
       <p>OpenDrop Generator is based on <a href="https://github.com/GaudiLabs/OpenDrop">OpenDrop</a> by
