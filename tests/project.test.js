@@ -12,9 +12,9 @@ function sample() {
   p.templates.unused = { name: 'Unused', frames: [[[0, 0]]] };
   p.actions.push(
     { id: 'a1', type: 'dispense', name: 'Dispense left top', droplet: 'Sample', start: 1, reservoir: 'reservoirLeftTop' },
-    { id: 'a2', type: 'path', name: 'Sample to mixer', droplet: 'Sample', after: 'a1', points: [{ e: 9 }, { e: 41, wait: 5000 }, { e: 44 }], stepTime: 600 },
-    { id: 'a3', type: 'template', name: 'Mix', droplet: 'Sample', after: 'a2', template: 'circle-2x2', at: 44, turns: 0, split: true },
-    { id: 'a4', type: 'pattern', name: 'old.json', droplet: '', start: 1, frames: [[8, 9], [], [128]], times: [0, 2000, 0] }
+    { id: 'a2', type: 'path', name: 'Sample to mixer', droplet: 'Sample', after: 'a1', points: [{ e: 9 }, { e: 41 }, { e: 44 }] },
+    { id: 'a3', type: 'template', name: 'Mix', droplet: 'Sample', after: 'a2', template: 'circle-2x2', at: 44, turns: 0 },
+    { id: 'a4', type: 'pattern', name: 'old.json', droplet: '', start: 1, frames: [[8, 9], [], [128]] }
   );
   return p;
 }
@@ -38,10 +38,20 @@ test('save and open give the same project back; templates no action uses are lef
   assert.equal(P.serialize(project), text, 'saving again changes nothing');
 });
 
+test('times of their own from older files are left out, with a warning', () => {
+  const p = sample();
+  Object.assign(p.actions[1], { stepTime: 600, split: true });
+  p.actions[1].points[1].wait = 5000;
+  p.actions[3].times = [0, 2000, 0];
+  const { project, warnings } = P.parse(P.serialize(p));
+  assert.match(warnings.join(' '), /2 action\(s\) had times of their own/);
+  assert.deepEqual(project.actions, sample().actions);
+});
+
 test('the file is readable: one field per line, keys in a fixed order', () => {
   const text = P.serialize(sample());
   assert.match(text, /^\{\n {2}"openDropGeneratorProject": 1,\n {2}"layout": "electrodes",\n {2}"frameTime": 400,/);
-  assert.match(text, /\n {6}"points": \[\{"e":9\},\{"e":41,"wait":5000\},\{"e":44\}\],\n/);
+  assert.match(text, /\n {6}"points": \[\{"e":9\},\{"e":41\},\{"e":44\}\]\n/);
   const scrambled = { ...sample(), actions: [{ points: [{ e: 3 }], name: 'x', type: 'path', id: 'a9', start: 2, droplet: '' }] };
   const keys = Object.keys(JSON.parse(P.serialize(scrambled)).actions[0]);
   assert.deepEqual(keys, ['id', 'type', 'name', 'droplet', 'start', 'points']);
@@ -117,7 +127,7 @@ test('templates are copied in once: built-in ones by their id, others as t1, t2â
   const p = P.newProject();
   assert.equal(P.embedTemplate(p, circle), 'circle-2x2');
   assert.equal(P.embedTemplate(p, circle), 'circle-2x2', 'the same one again');
-  const mine = { name: 'Mine', frames: [[[0, 0]], [[1, 0]]], times: [0, 900] };
+  const mine = { name: 'Mine', frames: [[[0, 0]], [[1, 0]]] };
   assert.equal(P.embedTemplate(p, mine), 't1');
   assert.equal(P.embedTemplate(p, { ...mine, name: 'Other' }), 't2');
   assert.deepEqual(p.templates.t1, mine);

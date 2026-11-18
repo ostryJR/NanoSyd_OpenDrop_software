@@ -611,15 +611,28 @@
 
     // Why compile result `next` (of a project with `actions`) can't be kept, compared with the
     // project as it is; null if it can.
+    // The first touch in `next` (a compiled project) that isn't there now, or null.
+    newTouch(next) {
+      const pair = [...next.touches].find((k) => !this.compiled.touches.has(k));
+      return pair ? next.issues.find((i) => i.kind === 'touch' && pairKey(i.id, i.other) === pair) : null;
+    }
+
     blockReason(next, actions = this.project.actions) {
       const name = (id) => {
         const a = actions.find((x) => x.id === id);
         return a ? quote(a) : id;
       };
-      const pair = [...next.touches].find((k) => !this.compiled.touches.has(k));
-      if (pair) {
-        const t = next.issues.find((i) => i.kind === 'touch' && pairKey(i.id, i.other) === pair);
-        return `${name(t.id)} and ${name(t.other)} would touch in frame ${t.frame}`;
+      const t = this.newTouch(next);
+      if (t) {
+        // Which droplets, and where: the two actions are often called the same ("Move").
+        const who = (id) => {
+          const a = actions.find((x) => x.id === id) || this.arrive.find((x) => x.id === id);
+          const d = a && a.droplet ? projects.shortDroplet(a.droplet) : '';
+          return a ? `${quote(a)}${d ? ` (${d})` : ''}` : id;
+        };
+        const at = (id) => (t.cells[id] || []).join('+');
+        const when = t.before ? `in frame ${t.frame}, next to where ${who(t.other)} was a frame before` : `in frame ${t.frame}`;
+        return `${who(t.id)} and ${who(t.other)} would touch ${when} (electrodes ${at(t.id)} and ${at(t.other)}, dark red)`;
       }
       const cutBefore = new Set(this.compiled.issues.filter((i) => i.kind === 'cut').map((i) => i.id));
       const cut = next.issues.find((i) => i.kind === 'cut' && !cutBefore.has(i.id));
@@ -635,7 +648,10 @@
       const ids = new Set([...changes.keys(), ...extra.map((a) => a.id)]);
       const bad = compiled.issues.find((i) => ids.has(i.id) && i.kind === 'invalid');
       const reason = bad ? `It can't go there: ${bad.text}` : this.blockReason(compiled, actions);
-      return { changes, extra, compiled, valid: !reason, reason };
+      // Where droplets would touch, to show on the board.
+      const touch = !bad && reason ? this.newTouch(compiled) : null;
+      const clash = touch ? Object.values(touch.cells).flat() : [];
+      return { changes, extra, compiled, valid: !reason, reason, clash };
     }
 
     // --- adding actions -----------------------------------------------------------------------
@@ -1565,7 +1581,6 @@
       const key = projects.embedTemplate({ templates: { ...this.project.templates } }, t);
       const next = { ...a, template: key, params: t.params };
       if (!old || a.name === old.name) next.name = t.name;
-      if (Array.isArray(a.times) && a.times.length !== t.frames.length) delete next.times;
       const defs = { [key]: { name: t.name, frames: t.frames } };
       const changes = new Map([[id, next]]);
       const why = this.followAttached(changes, a, next, this.attachedPaths(id), defs);
@@ -1585,74 +1600,7 @@
       const frames = a.frames.slice(0, count);
       while (frames.length < count) frames.push(frames[frames.length - 1].slice());
       const next = { ...a, frames };
-      if (Array.isArray(a.times)) {
-        const times = a.times.slice(0, count);
-        while (times.length < count) times.push(times.length ? times[times.length - 1] : 0);
-        if (times.some(Boolean)) next.times = times;
-        else delete next.times;
-      }
       return this.commit(this.tryChanges(new Map([[id, next]])));
-    }
-
-    // How much longer the droplet stays at a path's end (ms; 0 = no wait).
-    setEndWait(id, ms) {
-      const a = this.action(id);
-      if (!a || a.type !== 'path') return false;
-      const points = a.points.map((p) => ({ ...p }));
-      const end = points[points.length - 1];
-      if (ms) end.wait = clampTime(ms);
-      else delete end.wait;
-      return this.commit(this.tryChanges(new Map([[id, { ...a, points }]])));
-    }
-
-    // --- waits on a path -------------------------------------------------------------------------
-    // A wait holds the droplet on an electrode of its path for that much longer than a step.
-
-    // The spot on a path's line under electrode e: the selected path first, else the latest
-    // drawn path whose line passes e (where it passes e twice, the visit nearest the frame on
-    // screen). { id, step, e, wait } or null.
-    waitSpot(e) {
-      const sel = this.selected;
-      const acts = this.project.actions;
-      const order = sel && sel.type === 'path' ? [sel, ...acts.filter((a) => a !== sel).reverse()] : acts.slice().reverse();
-      for (const a of order) {
-        const x = a.type === 'path' ? this.compiled.expanded.get(a.id) : null;
-        if (!x || !x.built) continue;
-        const part = lines.partAt(x.built, a.points, e, this.stepNear(a.id));
-        if (!part) continue;
-        const at = x.built.steps.indexOf(part.step);
-        return { id: a.id, step: part.step, e, wait: at >= 0 ? a.points[at].wait || 0 : 0 };
-      }
-      return null;
-    }
-
-    // The waits on path id, in the order the droplet gets to them: [{ step, e, wait, frame }]
-    // (frame: the first frame of that step, if the path runs).
-    waitsOf(id) {
-      const a = this.action(id);
-      const x = a && a.type === 'path' ? this.compiled.expanded.get(id) : null;
-      if (!x || !x.built) return [];
-      const span = this.span(id);
-      const firstFrame = (k) => {
-        if (!span) return null;
-        for (let f = span.from; f <= span.to; f++) if (this.stepIn(id, f) === k) return f;
-        return null;
-      };
-      return a.points
-        .map((p, i) => ({ step: x.built.steps[i], e: p.e, wait: p.wait || 0 }))
-        .filter((w) => w.wait > 0)
-        .sort((u, v) => u.step - v.step)
-        .map((w) => ({ ...w, frame: firstFrame(w.step) }));
-    }
-
-    // A wait of `ms` (0 = none) at step k of path id, where its line passes that electrode.
-    setWaitAt(id, k, ms) {
-      const a = this.action(id);
-      const x = a && a.type === 'path' ? this.compiled.expanded.get(id) : null;
-      if (!x || !x.built || !Number.isInteger(k) || k < 0 || k >= x.built.cells.length) return false;
-      const points = ms > 0 ? lines.addPointAt(a.points, x.built, k, { wait: clampTime(ms) }) : lines.clearWaitAt(this.ctx.graph, a.points, x.built, k);
-      if (JSON.stringify(points) === JSON.stringify(a.points)) return true;
-      return this.commit(this.tryChanges(new Map([[id, { ...a, points }]])));
     }
 
     // Renames action id; one called by its tile's name renames the tile (and so all of its).
@@ -1737,26 +1685,6 @@
         memo.set(sid, out);
         return out;
       };
-    }
-
-    // How long each step of action id lasts (ms; 0 = the default frame time).
-    setStepTime(id, ms) {
-      const a = this.action(id);
-      if (!a) return false;
-      return this.change(() => {
-        if (ms) a.stepTime = clampTime(ms);
-        else delete a.stepTime;
-      });
-    }
-
-    // Whether action id's long steps stretch over frames instead of holding the others up.
-    setSplit(id, on) {
-      const a = this.action(id);
-      if (!a) return false;
-      return this.change(() => {
-        if (on) a.split = true;
-        else delete a.split;
-      });
     }
 
     // --- painting ---------------------------------------------------------------------------------
@@ -1847,7 +1775,6 @@
     // Drops a pattern's empty frames at the end, and the pattern itself if nothing is left.
     tidyPattern(a) {
       while (a.frames.length > 1 && !a.frames[a.frames.length - 1].length) a.frames.pop();
-      if (Array.isArray(a.times)) a.times = a.times.slice(0, a.frames.length);
       if (!a.frames.some((cells) => cells.length)) {
         this.project.actions = this.project.actions.filter((x) => x !== a);
         if (this.selection === a.id) this.selection = null;
@@ -1894,9 +1821,7 @@
     }
 
     templateDef(t) {
-      const def = { name: t.name, frames: t.frames };
-      if (t.times && t.times.some(Boolean)) def.times = t.times.slice();
-      return def;
+      return { name: t.name, frames: t.frames };
     }
 
     // The action a dropped template becomes (not yet added).
@@ -1905,7 +1830,6 @@
       const key = projects.embedTemplate({ templates: { ...this.project.templates } }, t);
       const fields = { type: 'template', name: t.name, template: key, at: spot.anchor, turns: p.turns };
       if (t.params) fields.params = { ...t.params };
-      if (t.times && t.times.some(Boolean)) fields.times = t.times.slice();
       return this.newAction(fields, spot.frame, spot.frames[0]);
     }
 
@@ -2180,37 +2104,6 @@
       this.recompile();
     }
 
-    // Frame f's time (ms; 0 = back to the default), set on the selected action if it runs in
-    // frame f, otherwise on the actions in it that aren't split. On a path it is a wait at the
-    // electrode the droplet is on (what the frame needs on top of the path's step; none if the
-    // step is already that long), on other actions that step's own time. Returns the actions it
-    // was set on (empty if nothing runs in frame f, or the change was refused).
-    setFrameTime(f, ms) {
-      const act = this.compiled.active[f] || [];
-      let targets = act.filter((x) => x.id === this.selection);
-      if (!targets.length) targets = act.filter((x) => !this.action(x.id).split);
-      if (!targets.length) targets = act;
-      if (!targets.length) return [];
-      const done = this.change(() => {
-        for (const { id, step } of targets) {
-          const a = this.action(id);
-          if (a.type === 'path') {
-            const { built } = this.compiled.expanded.get(id);
-            const extra = ms ? ms - (a.stepTime || this.project.frameTime) : 0;
-            a.points = extra > 0 ? lines.addPointAt(a.points, built, step, { wait: clampTime(extra) }) : lines.clearWaitAt(this.ctx.graph, a.points, built, step);
-            continue;
-          }
-          const n = this.stepsOf(id).length;
-          const times = Array.isArray(a.times) ? a.times.slice(0, n) : [];
-          while (times.length < n) times.push(0);
-          times[step] = ms ? clampTime(ms) : 0;
-          if (times.some(Boolean)) a.times = times;
-          else delete a.times;
-        }
-      });
-      return done ? targets.map(({ id }) => this.action(id)) : [];
-    }
-
     // Advances playback, each frame staying for its own time; returns true when the frame
     // changed. Loops back to frame 1.
     tick(now) {
@@ -2385,7 +2278,6 @@
         return false;
       }
       block.frames = block.frames.slice(first);
-      if (block.times) block.times = block.times.slice(first);
       const { start, ...fields } = block;
       void start;
       const a = this.newAction(fields, this.frame, []);

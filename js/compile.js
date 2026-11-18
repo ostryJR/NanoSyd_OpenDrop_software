@@ -29,30 +29,23 @@
     reservoirLeftBottom: 'left bottom',
   };
 
-  const ownTime = (action, k) => (Array.isArray(action.times) && action.times[k] > 0 ? action.times[k] : 0);
-
-  // One action as steps { cells, time } (time 0 = the action's step time or the default), or
-  // { error } if it can't be shown. Paths also return `built` (their electrodes and point steps).
-  // A wait on a path's point comes on top of its step there: the droplet arrives, then stays
-  // that much longer, so a wait always holds it up, however long a step is.
+  // One action as steps { cells, time } (time 0 = the default frame time: every step that
+  // switches electrodes takes one frame; only a Wait and a temperature that waits take their own
+  // time), or { error } if it can't be shown. Paths also return `built` (their electrodes and
+  // point steps).
   function expand(action, project, ctx) {
     switch (action.type) {
       case 'path': {
         const built = lines.build(ctx.graph, action.points);
         if (built.error) return { error: built.error };
-        const waits = new Map();
-        action.points.forEach((p, i) => {
-          if (p.wait > 0) waits.set(built.steps[i], Math.max(waits.get(built.steps[i]) || 0, p.wait));
-        });
-        const step = action.stepTime || (project && project.frameTime) || DEFAULT_FRAME_TIME;
-        return { steps: built.cells.map((e, k) => ({ cells: [e], time: waits.has(k) ? step + waits.get(k) : 0 })), built };
+        return { steps: built.cells.map((e) => ({ cells: [e], time: 0 })), built };
       }
       case 'template': {
         const def = project.templates && project.templates[action.template];
         if (!def) return { error: `its template (${action.template}) is missing from the file` };
         const spot = templates.place(def, action.turns || 0, action.at, 1, ctx.rects);
         if (!spot.fits) return { error: "it doesn't fit there: part of it would be off the array" };
-        return { steps: spot.frames.map((cells, k) => ({ cells, time: ownTime(action, k) })) };
+        return { steps: spot.frames.map((cells) => ({ cells, time: 0 })) };
       }
       case 'dispense': {
         const list = RESERVOIR_STEPS[action.reservoir];
@@ -60,10 +53,10 @@
         if (list.some((cells) => cells.some((e) => !ctx.graph.centres.has(e)))) {
           return { error: 'this layout has no such reservoir' };
         }
-        return { steps: list.map((cells, k) => ({ cells: cells.slice(), time: ownTime(action, k) })) };
+        return { steps: list.map((cells) => ({ cells: cells.slice(), time: 0 })) };
       }
       case 'pattern':
-        return { steps: action.frames.map((cells, k) => ({ cells: cells.slice(), time: ownTime(action, k) })) };
+        return { steps: action.frames.map((cells) => ({ cells: cells.slice(), time: 0 })) };
       case 'arrive':
         // A droplet coming in from the stretch before: it rests on its electrodes from frame 1.
         return { steps: [{ cells: (action.cells || []).slice(), time: 0 }] };
@@ -95,12 +88,11 @@
   //   resting  [{ id, cells, from, to }]: droplets left where an action ended, until picked up
   //   touches  Set of 'id|id' pairs of actions whose droplets touch
   //   left     [{ droplet, cells }]: where the droplets are at the end, by droplet name
-  //   issues   [{ kind, id, text, ... }]; kinds: invalid, unknown, link, cut, jump, touch, waits
+  //   issues   [{ kind, id, text, ... }]; kinds: invalid, unknown, link, cut, jump, touch
   // Actions start at their `start` frame, or in the last frame of the action(s) they follow
-  // (+ delay): the droplet is handed over in that frame. A frame lasts as long as the longest step
-  // of the actions in it. A `split` action doesn't hold the others up: its long steps stretch over
-  // as many frames as the others take, each step lasting at least its own time; a wait (hold)
-  // always does that. `arrive` lists droplets coming in from the stretch before: actions of type
+  // (+ delay): the droplet is handed over in that frame. A frame lasts the default frame time. A
+  // Wait (and a temperature that waits) doesn't hold the others up: it lasts over as many frames
+  // as the others take, at least its own time; alone, its frame lasts the rest of it. `arrive` lists droplets coming in from the stretch before: actions of type
   // 'arrive' ({ id, droplet, cells }) that rest on their electrodes from frame 1, switch nothing on
   // and don't set frame times; others can follow them (after: their id) and mustn't touch them.
   // `controls` are the heater targets and magnets coming in (heat.emptyControls() if none):
@@ -121,7 +113,8 @@
     const coming = (a) => a.type === 'arrive';
     // Settings that take no time: a magnet, a temperature that doesn't wait.
     const marker = (a) => a.type === 'magnet' || (a.type === 'temp' && !a.wait);
-    const split = (a) => a.split || a.type === 'wait' || a.type === 'temp' || a.type === 'magnet';
+    // Settings and waits don't hold the others up: they last over the frames the others take.
+    const split = (a) => a.type === 'wait' || a.type === 'temp' || a.type === 'magnet';
     const state = controls ? heat.copyControls(controls) : heat.emptyControls();
     const rates = heat.cleanRates(project.heatRates);
     const byId = new Map(actions.map((a) => [a.id, a]));
@@ -155,7 +148,7 @@
       }
     }
 
-    const stepTime = (r) => r.steps[r.k].time || r.a.stepTime || frameTime;
+    const stepTime = (r) => r.steps[r.k].time || frameTime;
     const started = new Set();
     const scheduled = new Map(); // frame -> followers starting there after a delay
     let running = [];
@@ -195,19 +188,13 @@
         continue;
       }
 
-      let time = 0;
-      let by = null; // the non-split action whose step sets the frame time
-      for (const r of running) {
-        if (split(r.a) || coming(r.a)) continue;
-        const t = stepTime(r);
-        if (t > time) {
-          time = t;
-          by = r;
-        }
-      }
-      if (!by) {
+      // A frame with something switching electrodes lasts the default frame time; one with only
+      // waits lasts until the first of them ends.
+      const moves = (r) => !split(r.a) && !coming(r.a);
+      let time = frameTime;
+      if (!running.some(moves)) {
         const rest = running.filter((r) => !marker(r.a)).map((r) => r.remaining);
-        time = rest.length ? Math.min(...rest) : frameTime;
+        if (rest.length) time = Math.min(...rest);
       }
 
       // Actions that end in this frame start their followers here too (once all that a follower
@@ -229,10 +216,7 @@
               continue;
             }
             const n = begin(s, f);
-            if (n && !split(n.a) && !coming(n.a) && stepTime(n) > time) {
-              time = stepTime(n);
-              by = n;
-            }
+            if (n && moves(n)) time = Math.max(time, frameTime);
           }
         }
       }
@@ -243,13 +227,6 @@
       }
       seq.setTime(f, time === frameTime ? 0 : time);
       if (anyControls) record(f);
-
-      // Actions held up by a longer step: not split, not on their last step (arrived), and with a
-      // shorter step of their own.
-      if (by) {
-        const held = running.filter((r) => r !== by && !split(r.a) && !coming(r.a) && r.k < r.steps.length - 1 && stepTime(r) < time);
-        if (held.length) issues.push({ kind: 'waits', id: by.a.id, frame: f, time, ids: held.map((r) => r.a.id) });
-      }
 
       const next = [];
       for (const r of running) {
@@ -354,22 +331,25 @@
     }
     for (const r of resting) for (let f = r.from; f <= r.to; f++) add(f, r.id, r.cells);
     const touching = (xs, ys) => xs.some((x) => ys.some((y) => (near.get(x) ? near.get(x).has(y) : x === y)));
-    const touches = new Map(); // pair -> { a, b, frame }
-    const note = (a, b, f) => {
+    // pair -> { a, b, frame, cells: { [id]: electrodes }, before: b was there the frame before }
+    const touches = new Map();
+    const note = (a, b, f, cellsA, cellsB, before = false) => {
       const k = key(a, b);
       if (a === b || links.has(k) || touches.has(k)) return;
-      touches.set(k, { a, b, frame: f });
+      touches.set(k, { a, b, frame: f, cells: { [a]: cellsA, [b]: cellsB }, before });
     };
     for (let f = 1; f <= end; f++) {
       const now = [...groups[f]];
       for (let i = 0; i < now.length; i++) {
-        for (let j = i + 1; j < now.length; j++) if (touching(now[i][1], now[j][1])) note(now[i][0], now[j][0], f);
-        for (const [id, cells] of groups[f - 1]) if (id !== now[i][0] && touching(now[i][1], cells)) note(now[i][0], id, f);
+        for (let j = i + 1; j < now.length; j++) if (touching(now[i][1], now[j][1])) note(now[i][0], now[j][0], f, now[i][1], now[j][1]);
+        // Next to where another droplet was a frame before: its electrode has only just gone off.
+        for (const [id, cells] of groups[f - 1]) if (id !== now[i][0] && touching(now[i][1], cells)) note(now[i][0], id, f, now[i][1], cells, true);
       }
     }
-    for (const { a, b, frame } of touches.values()) {
-      issues.push({ kind: 'touch', id: a, other: b, frame, text: `its droplet touches ${nameOf(b)}'s in frame ${frame}` });
-      issues.push({ kind: 'touch', id: b, other: a, frame, text: `its droplet touches ${nameOf(a)}'s in frame ${frame}` });
+    for (const { a, b, frame, cells, before } of touches.values()) {
+      const where = { frame, cells, before };
+      issues.push({ kind: 'touch', id: a, other: b, ...where, text: `its droplet touches ${nameOf(b)}'s in frame ${frame}` });
+      issues.push({ kind: 'touch', id: b, other: a, ...where, text: `its droplet touches ${nameOf(a)}'s in frame ${frame}` });
     }
 
     // The droplets at the end: where the actions running in the last frame leave theirs, and where
@@ -392,20 +372,16 @@
   }
 
   // A sequence (e.g. a loaded OpenDrop file) as one pattern action covering frame 1 to its last
-  // frame, with its frames' own times. Compiling it gives the same frames and times back.
+  // frame. Its frames' own times are left out: every frame lasts the default frame time.
   function importSequence(seq, name = 'Imported') {
     const last = seq.lastFrame();
     const frames = [];
-    const times = [];
     for (let f = 1; f <= last; f++) {
       const cells = [];
       for (let e = 0; e < CELLS; e++) if (seq.get(e, f)) cells.push(e);
       frames.push(cells);
-      times.push(seq.times[f] || 0);
     }
-    const action = { type: 'pattern', name, droplet: '', start: 1, frames };
-    if (times.some(Boolean)) action.times = times;
-    return action;
+    return { type: 'pattern', name, droplet: '', start: 1, frames };
   }
 
   // A loaded sequence's heater targets as temperature actions, one where they change (from frame

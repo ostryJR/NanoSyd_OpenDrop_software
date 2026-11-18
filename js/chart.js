@@ -4,7 +4,7 @@
   'use strict';
 
   const NS = 'http://www.w3.org/2000/svg';
-  // Emphasis: steps with their own time in the accent, steps on the default in a recessive gray.
+  // Emphasis: frames a Wait (or the heaters) makes longer in the accent, the others in a recessive gray.
   const INK = {
     own: '#2a78d6',
     plain: '#9c9a92',
@@ -188,7 +188,7 @@
       first.append(strong, ` step ${s}`);
       const second = document.createElement('div');
       second.className = 'sub';
-      second.textContent = `${own ? 'its own time' : 'the default time'} · ${formatTime(totals[s - 1])} in all`;
+      second.textContent = `${own ? 'a wait' : 'a step'} · ${formatTime(totals[s - 1])} in all`;
       this.tip.replaceChildren(first, second);
       this.tip.hidden = false;
 

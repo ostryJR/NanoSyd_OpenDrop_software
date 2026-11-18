@@ -68,25 +68,17 @@ test('a pattern is taken as it is, control lines included', () => {
   assert.deepEqual(r.spans.get('a1'), { from: 2, to: 4 });
 });
 
-test('step times: a path’s waits on top of its step, its own step time, or the default', () => {
-  const r = compile(project([path('a1', { start: 1 }, [E(1, 0), { e: E(3, 0), wait: 4000 }, E(5, 0)], { stepTime: 800 })]), rects);
-  assert.deepEqual([1, 2, 3, 4, 5].map((f) => r.seq.timeOf(f)), [800, 800, 4800, 800, 800]);
-  const t = compile(project([pattern('a1', { start: 1 }, [[9], [9]], { times: [0, 1500] })]), rects);
-  assert.deepEqual([t.seq.timeOf(1), t.seq.timeOf(2), t.seq.times[1]], [500, 1500, 0]);
-});
-
-test('a wait always holds the droplet up, even one shorter than a step', () => {
-  // Slow steps (2 s each, from the default) and a 1 s wait: that electrode takes 3 s.
-  const slow = project([path('a1', { start: 1 }, [E(1, 0), { e: E(2, 0), wait: 1000 }, E(3, 0)])], { frameTime: 2000 });
-  const r = compile(slow, rects);
-  assert.deepEqual([1, 2, 3].map((f) => r.seq.timeOf(f)), [2000, 3000, 2000]);
-  // A wait at the end of a path makes the hand-over frame longer too.
-  const end = compile(project([
-    path('a1', { start: 1 }, [E(1, 0), { e: E(3, 0), wait: 2500 }]),
-    path('a2', { after: 'a1' }, [E(3, 0), E(3, 2)]),
-  ]), rects);
-  assert.deepEqual([1, 2, 3, 4, 5].map((f) => end.seq.timeOf(f)), [500, 500, 3000, 500, 500]);
-  assert.deepEqual(end.spans.get('a2'), { from: 3, to: 5 });
+test('every step lasts the frame time; a Wait alone lasts its own', () => {
+  const r = compile(project([path('a1', { start: 1 }, [E(1, 0), E(3, 0), E(5, 0)])], { frameTime: 800 }), rects);
+  assert.deepEqual([1, 2, 3, 4, 5].map((f) => r.seq.timeOf(f)), [800, 800, 800, 800, 800]);
+  assert.deepEqual([...r.seq.times.slice(1, 6)], [0, 0, 0, 0, 0], 'none has a time of its own');
+  // Older fields for times are ignored.
+  const old = compile(project([path('a1', { start: 1 }, [E(1, 0), { e: E(3, 0), wait: 4000 }, E(5, 0)], { stepTime: 2000, times: [9000] })]), rects);
+  assert.deepEqual([1, 2, 3].map((f) => old.seq.timeOf(f)), [500, 500, 500]);
+  const w = compile(project([path('a1', { start: 1 }, [E(1, 0), E(2, 0)]), { id: 'w', type: 'wait', name: 'w', droplet: '', after: 'a1', duration: 3000 }, path('a2', { after: 'w' }, [E(2, 0), E(4, 0)])]), rects);
+  assert.deepEqual(w.spans.get('w'), { from: 2, to: 3 }, 'from the hand-over frame');
+  assert.deepEqual([w.seq.timeOf(2), w.seq.timeOf(3)], [500, 2500], 'alone, its frame lasts the rest of it');
+  assert.deepEqual(w.spans.get('a2'), { from: 3, to: 5 });
 });
 
 test('“after”: an action starts in the last frame of the one it follows (+ delay)', () => {
@@ -111,46 +103,21 @@ test('an action linked after another should start where it ends, or the droplet 
   assert.equal(issues(r, 'jump')[0].id, 'a2');
 });
 
-test('a frame lasts as long as its longest step, and the actions held up are named', () => {
-  const r = compile(project([
-    pattern('hold', { start: 1 }, [[9]], { times: [5000] }),
-    path('move', { start: 1 }, [E(10, 6), E(14, 6)]),
-  ]), rects);
-  assert.equal(r.seq.timeOf(1), 5000);
-  assert.deepEqual(issues(r, 'waits'), [{ kind: 'waits', id: 'hold', frame: 1, time: 5000, ids: ['move'] }]);
-});
-
-test('no warning when the one waiting is just arriving (the droplet handed over to a hold)', () => {
-  const r = compile(project([
-    path('move', { start: 1 }, [E(1, 0), E(4, 0)]),
-    pattern('hold', { after: 'move' }, [[E(4, 0)]], { times: [60000] }),
-  ]), rects);
-  assert.equal(r.seq.timeOf(4), 60000);
-  assert.deepEqual(issues(r, 'waits'), []);
-});
-
-test('split: a long step stretches over the frames the others take, each step at least its time', () => {
-  const hold = pattern('hold', { start: 1 }, [[9]], { times: [5000], split: true });
+test('a Wait doesn’t hold the others up: it lasts over the frames they take, at least its time', () => {
+  const hold = { id: 'hold', type: 'wait', name: 'hold', droplet: '', start: 1, duration: 5000 };
   const r = compile(project([hold, path('move', { start: 1 }, [E(10, 6), E(14, 6)]), pattern('next', { after: 'hold' }, [[9, 10]])]), rects);
   assert.deepEqual(r.spans.get('move'), { from: 1, to: 5 });
-  assert.deepEqual(r.spans.get('hold'), { from: 1, to: 6 }, 'four frames of 0.5 s with the path, then the rest');
+  assert.deepEqual(r.spans.get('hold'), { from: 1, to: 6 }, 'five frames of 0.5 s with the path, then the rest');
   assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map((f) => r.seq.timeOf(f)), [500, 500, 500, 500, 500, 2500, 500]);
   assert.equal(r.seq.elapsed(6), 5000, 'the hold lasts its 5 s');
   assert.deepEqual(r.spans.get('next'), { from: 6, to: 6 }, 'what follows the hold starts when it ends');
-  assert.ok([1, 2, 3, 4, 5, 6].every((f) => r.seq.get(9, f)));
-  assert.deepEqual(issues(r, 'waits'), []);
 });
 
-test('split: a wait can overrun by up to one frame; split actions alone take turns ending', () => {
-  const r = compile(project([
-    pattern('hold', { start: 1 }, [[9]], { times: [1200], split: true }),
-    path('slow', { start: 1 }, [E(10, 6), E(14, 6)], { stepTime: 1000 }),
-  ]), rects);
+test('a Wait can overrun by up to one frame; Waits alone take turns ending', () => {
+  const wait = (id, ms) => ({ id, type: 'wait', name: id, droplet: '', start: 1, duration: ms });
+  const r = compile(project([wait('hold', 1200), path('slow', { start: 1 }, [E(10, 6), E(14, 6)])], { frameTime: 1000 }), rects);
   assert.deepEqual(r.spans.get('hold'), { from: 1, to: 2 }, '2 s for a 1.2 s hold');
-  const alone = compile(project([
-    pattern('long', { start: 1 }, [[9]], { times: [3000], split: true }),
-    pattern('short', { start: 1 }, [[20]], { times: [1000], split: true }),
-  ]), rects);
+  const alone = compile(project([wait('long', 3000), wait('short', 1000)]), rects);
   assert.deepEqual([alone.seq.timeOf(1), alone.seq.timeOf(2)], [1000, 2000]);
   assert.deepEqual(alone.spans.get('short'), { from: 1, to: 1 });
   assert.deepEqual(alone.spans.get('long'), { from: 1, to: 2 });
@@ -189,29 +156,38 @@ test('a cycle of links never starts', () => {
   assert.deepEqual(r.issues.map((i) => i.kind), ['link', 'link']);
 });
 
-test('importing an OpenDrop file and compiling it gives the same frames and times back', () => {
+test('importing an OpenDrop file and compiling it gives the same frames back; own frame times are left out', () => {
   const rand = random(5);
   for (const last of [1, 2, 17, 120, MAX_FRAMES]) {
     const seq = new Sequence();
     for (let f = 1; f <= last; f++) for (let e = 0; e < CELLS; e++) if (rand() < 0.05) seq.set(e, f, true);
     seq.set(Math.floor(rand() * CELLS), last, true);
     seq.frameTime = 400;
-    for (let f = 1; f <= last; f++) if (rand() < 0.2) seq.setTime(f, 100 + Math.floor(rand() * 5000));
     const text = encode(seq);
-    const { seq: loaded } = decode(text);
+    const { seq: loaded, warnings } = decode(text);
+    assert.deepEqual(warnings, []);
     const action = { id: 'a1', ...importSequence(loaded, 'file.json') };
     const r = compile(project([action], { frameTime: loaded.frameTime }), rects);
     assert.equal(encode(r.seq), text, `last frame ${last}`);
   }
+  const seq = new Sequence();
+  seq.set(9, 1, true);
+  seq.set(9, 2, true);
+  seq.frameTime = 400;
+  seq.setTime(2, 3000);
+  const { seq: loaded, warnings } = decode(encode(seq));
+  assert.match(warnings.join(' '), /1 frame\(s\) with a time of their own play at the default 0.4 s/);
+  const r = compile(project([{ id: 'a1', ...importSequence(loaded) }], { frameTime: loaded.frameTime }), rects);
+  assert.equal(r.seq.timeOf(2), 400);
 });
 
-test('an imported block keeps leading empty frames and their times', () => {
+test('an imported block keeps leading empty frames', () => {
   const seq = new Sequence();
   seq.set(9, 3, true);
   seq.setTime(1, 2000);
   const action = importSequence(seq, 'x');
   assert.deepEqual(action.frames, [[], [], [9]]);
-  assert.deepEqual(action.times, [2000, 0, 0]);
+  assert.equal(action.times, undefined);
   assert.equal(action.start, 1);
 });
 

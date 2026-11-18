@@ -3,7 +3,7 @@
 A browser app for drawing electrode sequences for the OpenDrop V4 digital-microfluidics platform
 and exporting them as the `.json` frame files used by GaudiLabs' **OpenDropController4_25**. It
 started as a port of that controller's editor and adds drag-to-draw droplet paths, templates for
-operations such as mixing or splitting, frame times, and undo. What you draw is kept as
+operations such as mixing or splitting, waits, and undo. What you draw is kept as
 **actions** (a path, a template, a dispense, a painted pattern) in a project file, shown in a
 **timeline** under the board, one track per droplet, like a video editor. Actions can be moved and
 reshaped later, and nothing is allowed to make two droplets touch by accident. The frames are
@@ -31,16 +31,16 @@ plain words, with worked process examples. It is kept up to date with every chan
 | Move something | ⌥/Alt + drag (any tool), **select** (**V**) + drag, or ⌥/Alt + arrow keys. Paths leading into and out of a template or pattern follow it, including one whose droplet got there early and waits (as at a merge), and what is linked after it moves in time. A move, turn or size change that would still leave a droplet behind (a mixer straight after a dispense, say) is refused. With Shift, everything that follows it moves too |
 | Turn it | **R** (Shift+R turns back), or the Turn buttons in Properties |
 | Move it in time | Drag its clip in the timeline, **[** / **]**, or the Starts field in Properties |
-| Change it | The **Properties** tab: name, droplet, when it starts (a frame, or after other actions), time per step, letting others keep moving, a mixer's size and rounds, which way a circle mix goes round, a pattern's frames, a path's waits |
-| Make a droplet wait on its way | Right-click the path's line on that electrode (on a Mac also Ctrl+click), type the seconds, Enter. **No wait** takes it off. Properties lists the path's waits; click one to see the droplet there |
+| Change it | The **Properties** tab: name, droplet, when it starts (a frame, or after other actions), a mixer's size and rounds, which way a circle mix goes round, a pattern's frames |
+| Make a droplet wait | A **Wait** tile in the process, placed on the board: it lasts its time while the others keep moving |
 | Delete it | Delete or Backspace, or **Delete** in Properties |
 | Switch electrodes on or off | Choose **paint** (**P**) and click or drag, as in the original; the first electrode decides on or off. What you paint is kept as a pattern. With paint, Shift+click goes to the next frame and switches an electrode on |
 | Undo / redo | ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y on Windows and Linux), or **undo** / **redo** on the left |
 | Change frame | ← / →, the mouse wheel (up = next), the arrows under the array, or click/drag the timeline's ruler |
 | Play / stop | Space or the **play** button; loops up to the last frame with anything on |
-| Change playback speed | Mouse wheel while playing (5–600 frames/min); this sets the default frame time |
-| Set frame times | The bar above the timeline: a default frame time, and the frame on screen's own time (empty = the default) |
-| See frame times | **Step time** instead of **Timeline** |
+| Change playback speed | Mouse wheel while playing (5–600 frames/min); this sets the frame time |
+| Set the frame time | **Properties** with nothing selected: **Frame time** (how long every step lasts) |
+| See how long frames last | **Step time** instead of **Timeline** |
 | Drop a template | Drag it from the Templates tab onto the electrode the droplet is on; **R** turns it, **Esc** cancels |
 | Make a template | **+ New** in the Templates tab, or ✎ on a template to change it (or a copy of a built-in one) |
 | Add an OpenDrop file to the project | **Add file…** above the timeline: it comes in as one block from the frame on screen |
@@ -183,8 +183,10 @@ everything drawn so far.
     at the top says.
 - **Run** (at the top) goes through the process from Start:
   - Each stretch plays on the board with its frame times, and the running tile glows. With
-    **on the OpenDrop** ticked and the device connected, the device follows live and is switched
-    all off at the end.
+    **live** on (the board's switch under play, or the Device tab) and the device connected, the
+    device follows the run and is switched all off at the end.
+  - **play** on the board is only a preview: it goes through the timeline without asking anything
+    (the top bar says "Previewing"). **▶ Run** is the real run.
   - Measure and Ask tiles ask you. Decisions and Repeat choose the way.
   - The log at the bottom right lists the values, decisions and times; **Pause** and **Stop** are
     at the top.
@@ -234,24 +236,17 @@ touching droplets shows them as problems.
 
 ## Frame times and the chart
 
-- Each frame lasts the **default frame time** (0.5 s, the original's 120 frames/min) unless an
-  action in it says otherwise: its **time per step**, a wait on a path, or the time set for that
-  frame in the bar above the timeline. That time goes on the selected action if it runs in the
-  frame, otherwise on the actions in the frame. Times are undoable like drawing; the default is a
-  setting.
-- A **wait** on a path comes on top of its step: the droplet arrives, then stays that much longer
-  (a 3 s wait with 0.5 s steps holds it there 3.5 s), so a wait always shows, however slow the steps
-  are. Right-click the line to set one; the board shows it as an orange diamond with "+3 s" beside
-  it, and it stays on its electrode when the path is reshaped. A frame time set in the bar on a
-  path becomes the wait that makes the frame that long.
-- A frame lasts as long as the longest step in it. When that makes other actions wait, the bar
-  says so and offers **Let the others keep moving**: the long step then stretches over as
-  many frames as the others take (it may end up to one frame later than asked). **Make them wait**
-  turns that off.
+- Every step lasts the **frame time** (0.5 s, the original's 120 frames/min; **Properties** with
+  nothing selected). There are no times per step or per frame: to make something wait, add a
+  **Wait** tile to the process and place it. It switches nothing on and doesn't hold up the others, which keep moving at the
+  frame time; when nothing else runs, its frame lasts the rest of the wait. Waiting for the heaters
+  works the same way.
+- Older project files with times of their own (time per step, a frame's own time, waits on a
+  path's points, "let the others keep moving") open with those left out, and say so.
 - Playback holds every frame for its time.
-- **Step time** (instead of the timeline) shows each step's time against the step number (gray =
-  default, blue = its own). Hover for the numbers and the total so far; click or drag to go to a
-  step. The bar above shows the total time.
+- **Step time** (instead of the timeline) shows each frame's time against its number (gray = a
+  step, blue = a wait). Hover for the numbers and the total so far; click or drag to go to a frame.
+  The bar above shows the total time.
 
 ## Heaters and magnets
 
@@ -304,7 +299,7 @@ frame on and stay that way until set again, so they can change during a process.
   the view moves to its last frame. Where it doesn't fit (off the array) it
   shows red and nothing is added.
 - **+ New** sets the project aside and gives you a blank board: draw the operation from frame 1
-  with any tool (own frame times are kept), name it and save it. The project comes back as it was.
+  with any tool, name it and save it. The project comes back as it was.
   Changing a template opens it as a pattern that paint edits.
 - Your templates are kept in the browser. **Export…** writes them to a file and **Import…** reads
   one back, to move them to another browser or computer or to share them.
@@ -330,7 +325,7 @@ the port.
   board and the Device tab counts them.
 - **Temperatures** (temperature adapter): the three readings, and their targets (20–120 °C,
   25 to start with, as the original), kept between visits.
-- **Sequence on the device:** **Send to device**, **Run** and **Stop** load the whole sequence,
+- **Sequence on the device:** **Send to device**, **Run on the device** and **Stop** load the whole sequence,
   with each frame's time, into the device and run it on its own clock, with progress. Today's
   firmware can't do that: it only follows live frames, so these stay off and say so. The protocol a
   new firmware would need is written up in `docs/device-protocol.md`, which also describes the
@@ -375,8 +370,7 @@ What **save** writes and **load** opens. JSON, one field per line:
       "name": "Sample to mixer",
       "droplet": "Sample",
       "after": "a1",
-      "points": [{"e":9},{"e":41,"wait":5000},{"e":44}],
-      "stepTime": 500
+      "points": [{"e":9},{"e":41},{"e":44}]
     },
     {
       "id": "a3",
@@ -386,8 +380,7 @@ What **save** writes and **load** opens. JSON, one field per line:
       "after": "a2",
       "template": "circle-2x2",
       "at": 44,
-      "turns": 0,
-      "split": true
+      "turns": 0
     },
     {
       "id": "a4",
@@ -395,23 +388,18 @@ What **save** writes and **load** opens. JSON, one field per line:
       "name": "old.json",
       "droplet": "",
       "start": 1,
-      "frames": [[8,9],[16,128],[]],
-      "times": [0,2000,0]
+      "frames": [[8,9],[16,128],[]]
     }
   ]
 }
 ```
 
 - `openDropGeneratorProject` is the format version; `layout` the cartridge layout; `frameTime`
-  the default frame time in ms; `templates` copies of the templates the actions use.
+  the frame time in ms; `templates` copies of the templates the actions use.
 - Every action has an `id`, a `type`, a `name` and a `droplet` name, and **either** `start` (its
   first frame, from 1) **or** `after` (the id of the action it follows, or a list of ids: it starts in
   the last frame of the one that ends last) with an optional `delay` in frames.
-- Optional on every action: `stepTime` (ms per step; default `frameTime`), `times` (own ms per step,
-  0 = default; templates, dispenses and patterns), and `split: true` (long steps stretch over frames
-  instead of making the others wait).
-- `path`: `points` are electrodes (`e` = column × 8 + row), joined by straight pieces; `wait` is how
-  much longer the droplet stays on that point than a step, in ms.
+- `path`: `points` are electrodes (`e` = column × 8 + row), joined by straight pieces.
 - `template`: dropped with its anchor on electrode `at`, turned `turns` quarter turns clockwise;
   `template` is a key into `templates`, whose frames list `[column, row]` offsets from the anchor.
   A built-in mixer also has `params`, e.g. `{"kind":"circle","size":3,"rounds":5}`; a circle mix
@@ -461,10 +449,11 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
 - `"yR"` is row R (0 = top). Character k of it is column k, `1` = on. Electrode ID = column × 8 + row.
 - Columns 0 and 15 are the left and right reservoirs, 1–14 the 14 × 8 grid, and 16–17 control
   lines (16 drives the magnets in the magnet layout).
-- `"time"` is how long the frame lasts, in milliseconds. The original controller and the device
-  firmware don't read it yet: the original ignores it, so files still open there. When loading, the
-  most common time becomes the default frame time and the others the frames' own times; files
-  without times keep the current default.
+- `"time"` is how long the frame lasts, in milliseconds (longer for a frame a Wait makes longer).
+  The original controller and the device firmware don't read it yet: the original ignores it, so
+  files still open there. When loading, the most common time becomes the frame time; frames with
+  another time play at it too (with a warning: add a Wait where it should pause). Files without
+  times keep the current frame time.
 - `"temp"` (only when the project sets a heater) is the heater targets in °C, `null` for one it
   doesn't set; `"waitTemp"` marks a frame that waits for them, with the tolerance in °C. The
   original ignores both. Loading turns them back into temperature settings.
@@ -474,11 +463,11 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
 ## Differences from the original
 
 - What you draw is kept as actions in a project file, shown in a timeline, and can be moved,
-  reshaped or retimed; droplets can't be made to touch by accident; the frames are exported
+  reshaped or moved in time; droplets can't be made to touch by accident; the frames are exported
   separately.
 - Dragging draws droplet paths (freehand or straight) that are added when you let go; the original
   drag is the **paint** tool. A click selects; paint switches single electrodes.
-- Undo and redo, templates, and frame times with a chart.
+- Undo and redo, templates, Wait blocks, and a chart of how long frames last.
 - Works without a device too. Its "life" button is **live** here; connecting, feedback and
   temperatures work as in the original, the temperatures in the Device tab. Connecting lines the
   byte stream up first, and live, disconnecting and closing switch everything off.

@@ -116,6 +116,8 @@
     const warnings = [];
     if (tooHigh) warnings.push(`${tooHigh} frame(s) after frame ${MAX_FRAMES} were skipped`);
     if (tooLong) warnings.push(`columns after column ${COLS - 1} were skipped`);
+    const own = [...times.values()].filter((ms) => ms !== seq.frameTime).length;
+    if (own) warnings.push(`${own} frame(s) with a time of their own play at the default ${+(seq.frameTime / 1000).toFixed(3)} s: add a Wait where it should pause`);
     return { seq, frames, warnings, timed: times.size > 0 };
   }
 
