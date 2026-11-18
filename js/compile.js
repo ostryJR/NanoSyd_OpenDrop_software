@@ -3,11 +3,11 @@
  * change, and on export. No DOM here. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./model.js'), require('./paths.js'), require('./templates.js'), require('./lines.js'));
+    module.exports = factory(require('./model.js'), require('./paths.js'), require('./templates.js'), require('./lines.js'), require('./heat.js'));
   } else {
-    (root.OD = root.OD || {}).compile = factory(root.OD.model, root.OD.paths, root.OD.templates, root.OD.lines);
+    (root.OD = root.OD || {}).compile = factory(root.OD.model, root.OD.paths, root.OD.templates, root.OD.lines, root.OD.heat);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, paths, templates, lines) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, paths, templates, lines, heat) {
   'use strict';
 
   const { CELLS, MAX_FRAMES, DEFAULT_FRAME_TIME, Sequence } = model;
@@ -70,6 +70,14 @@
       case 'wait':
         // A hold: nothing switched on for its time; the others keep moving meanwhile.
         return { steps: [{ cells: [], time: Math.max(1, Math.round(action.duration || 0)) }] };
+      case 'temp':
+        // Sets heater targets from its frame on. Waiting for them, it lasts as long as the heaters
+        // are estimated to take (worked out where it starts); the others keep moving meanwhile.
+        if (!Array.isArray(action.targets) || !action.targets.some((t) => typeof t === 'number')) return { error: 'it sets no temperature' };
+        return { steps: [{ cells: [], time: 0 }] };
+      case 'magnet':
+        // Switches a magnet on or off from its frame on; it doesn't hold anything up.
+        return { steps: [{ cells: [], time: 0 }] };
       default:
         return { error: `this version can't show “${action.type}” actions (kept in the file)`, unknown: true };
     }
@@ -95,7 +103,12 @@
   // always does that. `arrive` lists droplets coming in from the stretch before: actions of type
   // 'arrive' ({ id, droplet, cells }) that rest on their electrodes from frame 1, switch nothing on
   // and don't set frame times; others can follow them (after: their id) and mustn't touch them.
-  function compile(project, rects, { arrive = [] } = {}) {
+  // `controls` are the heater targets and magnets coming in (heat.emptyControls() if none):
+  // 'temp' and 'magnet' actions change them from the frame they start in, magnets that are on
+  // switch their electrodes (128/129) on in every frame, and seq.controls has them per frame.
+  // A 'temp' action that waits makes its last frame a hold (seq.holds): played live, that frame
+  // lasts until the heaters get there. `rates` (°C/min) give the estimate it lasts otherwise.
+  function compile(project, rects, { arrive = [], controls = null } = {}) {
     const ctx = lines.context(rects);
     const frameTime = project.frameTime || DEFAULT_FRAME_TIME;
     const seq = new Sequence();
@@ -106,7 +119,11 @@
     const expanded = new Map();
     const actions = arrive.length ? [...arrive, ...project.actions] : project.actions;
     const coming = (a) => a.type === 'arrive';
-    const split = (a) => a.split || a.type === 'wait';
+    // Settings that take no time: a magnet, a temperature that doesn't wait.
+    const marker = (a) => a.type === 'magnet' || (a.type === 'temp' && !a.wait);
+    const split = (a) => a.split || a.type === 'wait' || a.type === 'temp' || a.type === 'magnet';
+    const state = controls ? heat.copyControls(controls) : heat.emptyControls();
+    const rates = heat.cleanRates(project.heatRates);
     const byId = new Map(actions.map((a) => [a.id, a]));
     const nameOf = (id) => (byId.has(id) ? `“${byId.get(id).name}”` : id);
 
@@ -146,10 +163,25 @@
       if (started.has(a.id)) return null;
       started.add(a.id);
       const r = { a, steps: expanded.get(a.id).steps, k: 0, from: f, remaining: 0 };
-      r.remaining = stepTime(r);
+      if (marker(a)) r.remaining = 0;
+      else if (a.type === 'temp') {
+        // Waiting for the heaters: at least a frame, however close they are already.
+        const want = state.targets.map((t, i) => (a.targets[i] === null || a.targets[i] === undefined ? null : a.targets[i]));
+        r.remaining = Math.max(frameTime, heat.estimateMs(state.targets, want, rates));
+        r.steps = [{ cells: [], time: r.remaining }];
+      } else r.remaining = stepTime(r);
+      if (a.type === 'temp' || a.type === 'magnet') heat.apply(state, a);
       running.push(r);
       return r;
     };
+    // The controls in frame f; magnets that are on switch their electrodes on.
+    const record = (f) => {
+      seq.controls[f] = heat.copyControls(state);
+      state.magnets.forEach((on, i) => {
+        if (on) seq.set(heat.MAGNETS[i].e, f, true);
+      });
+    };
+    const anyControls = heat.usesControls(state) || actions.some((a) => a.type === 'temp' || a.type === 'magnet');
 
     // Frames run until nothing is running or waiting to start (or the guard is reached).
     const lastStart = Math.max(0, ...starts.keys());
@@ -158,7 +190,10 @@
       active[f] = [];
       for (const a of starts.get(f) || []) begin(a, f);
       for (const a of scheduled.get(f) || []) begin(a, f);
-      if (!running.length) continue;
+      if (!running.length) {
+        if (anyControls) record(f);
+        continue;
+      }
 
       let time = 0;
       let by = null; // the non-split action whose step sets the frame time
@@ -170,7 +205,10 @@
           by = r;
         }
       }
-      if (!by) time = Math.min(...running.map((r) => r.remaining));
+      if (!by) {
+        const rest = running.filter((r) => !marker(r.a)).map((r) => r.remaining);
+        time = rest.length ? Math.min(...rest) : frameTime;
+      }
 
       // Actions that end in this frame start their followers here too (once all that a follower
       // waits for have ended); those can only make the frame longer, which may end more split
@@ -204,6 +242,7 @@
         active[f].push({ id: r.a.id, step: r.k });
       }
       seq.setTime(f, time === frameTime ? 0 : time);
+      if (anyControls) record(f);
 
       // Actions held up by a longer step: not split, not on their last step (arrived), and with a
       // shorter step of their own.
@@ -224,6 +263,9 @@
         r.k++;
         if (r.k >= r.steps.length) {
           spans.set(r.a.id, { from: r.from, to: f });
+          if (r.a.type === 'temp' && r.a.wait) {
+            seq.holds.set(f, { id: r.a.id, targets: r.a.targets.map((t) => (typeof t === 'number' ? t : null)), tolerance: heat.cleanTolerance(r.a.tolerance) });
+          }
           continue;
         }
         if (split(r.a)) r.remaining = stepTime(r);
@@ -232,6 +274,7 @@
       running = next;
     }
 
+    for (const s of spans.values()) seq.end = Math.max(seq.end, s.to);
     for (const r of running) {
       spans.set(r.a.id, { from: r.from, to: MAX_FRAMES, cut: true });
       issues.push({ kind: 'cut', id: r.a.id, text: `it runs past frame ${MAX_FRAMES} and is cut short there` });
@@ -341,7 +384,7 @@
     for (const r of resting) if (r.to === end) put(r.id, r.cells);
     const left = [...leftBy].map(([droplet, cells]) => ({ droplet, cells })).sort((x, y) => (x.droplet < y.droplet ? -1 : x.droplet > y.droplet ? 1 : 0));
 
-    return { seq, spans, active, expanded, resting, touches: new Set(touches.keys()), left, issues, frameTime };
+    return { seq, spans, active, expanded, resting, touches: new Set(touches.keys()), left, issues, frameTime, controls: state, rates };
   }
 
   // A sequence (e.g. a loaded OpenDrop file) as one pattern action covering frame 1 to its last
@@ -361,5 +404,27 @@
     return action;
   }
 
-  return { compile, expand, importSequence, predsOf, RESERVOIR_STEPS, RESERVOIR_NAMES };
+  // A loaded sequence's heater targets as temperature actions, one where they change (from frame
+  // `first` on, starting at frame 1 + `shift`). A frame the file waits in makes its setting wait.
+  function importControls(seq, { first = 1, shift = 0 } = {}) {
+    const out = [];
+    let before = [null, null, null];
+    let open = null;
+    for (let f = first; f <= seq.controls.length - 1; f++) {
+      const c = seq.controls[f];
+      if (c && JSON.stringify(c.targets) !== JSON.stringify(before)) {
+        const targets = c.targets.map((t, i) => (t !== before[i] ? t : null));
+        if (targets.some((t) => t !== null)) {
+          open = { type: 'temp', name: 'Temperature', droplet: '', start: f - first + 1 + shift, targets };
+          out.push(open);
+        }
+        before = c.targets.slice();
+      }
+      const hold = seq.holds.get(f);
+      if (hold && open && !open.wait) Object.assign(open, { wait: true, tolerance: hold.tolerance });
+    }
+    return out;
+  }
+
+  return { compile, expand, importSequence, importControls, predsOf, RESERVOIR_STEPS, RESERVOIR_NAMES };
 });

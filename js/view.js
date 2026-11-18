@@ -143,6 +143,8 @@
       this.speedLabel = label('', 18, 16);
 
       this.electrodeLayer = el('g', { class: 'electrodes' }, svg);
+      // Over the electrodes: an outline in each heater's colour round the electrodes over it.
+      this.zoneLayer = el('g', { class: 'heat-zones' }, svg);
       // Rings where a droplet waits on an electrode that isn't on: left there, or coming in.
       this.ringLayer = el('g', { class: 'rings' }, svg);
       this.ringsKey = '';
@@ -168,6 +170,13 @@
 
       this.numberLayer = el('g', { class: 'numbers' }, svg);
 
+      // Under the board: the heaters (target, and what the device measures) and the magnets in the
+      // frame on screen.
+      this.heatStrip = el('g', { class: 'heat-strip' }, svg);
+      this.heatKey = '';
+      // Magnet electrodes (magnet layout): labelled M1 and M2.
+      this.magnetLabels = el('g', { class: 'magnet-labels' }, svg);
+
       const controls = el('g', { class: 'controls' }, svg);
       const box = (u, v, parent = controls) =>
         el('rect', { x: px(u), y: py(v), width: BOX, height: BOX, fill: COLOR.button }, parent);
@@ -192,6 +201,9 @@
       tip(34, -3, 9, this.feedbackGroup).textContent = 'Show where the device senses droplets';
       this.connectBox = box(-43.5, 14.5);
       this.connectLabel = label('connect', -41, 16, controls);
+      // Which port to pick in the browser's list: the OpenDrop shows up as a Feather M0.
+      this.connectHint = label('look for “Feather M0”', -43.5, 18.6, controls);
+      this.connectHint.setAttribute('class', 'connect-hint');
       this.connectTip = tip(-43.5, 14.5, 12, controls);
       this.deviceDot = el('circle', { class: 'device-dot', cx: px(-44.5), cy: py(-18.5), r: BOX / 4 }, controls);
       this.deviceTip = el('title', {}, this.deviceDot);
@@ -251,6 +263,68 @@
       this.linesKey = '';
       this.pathLayer.style.display = 'none';
       this.reservoirButtons.style.display = lay.hasReservoirs ? '' : 'none';
+      this.layoutId = lay.id;
+      this.heatKey = '';
+      this.magnetLabels.replaceChildren();
+      for (const m of OD.heat.MAGNETS) {
+        const r = lay.rects.find((x) => x.e === m.e);
+        if (r) el('text', { x: px(r.x + r.h / 2), y: py(r.y + r.v / 2) }, this.magnetLabels).textContent = `M${m.n}`;
+      }
+    }
+
+    // heat: { targets: [°C or null ×3], magnets: [bool, bool], temps: [°C or null ×3] from a
+    // device (or null), waiting (a hold being waited for: { targets }) , show } or null.
+    renderHeat(info) {
+      const key = JSON.stringify(info);
+      if (key === this.heatKey) return;
+      this.heatKey = key;
+      const strip = this.heatStrip;
+      strip.replaceChildren();
+      this.zoneLayer.replaceChildren();
+      if (!info || !info.show) return;
+      const H = OD.heat;
+
+      // Zones: an outline round each heater's electrodes, in the colour of its target (only on
+      // the layouts of the cartridge the heaters are known for).
+      const zones = H.HEATER_LAYOUTS.includes(this.layoutId);
+      info.targets.forEach((t, i) => {
+        const zone = H.HEATER_ZONES[i];
+        if (!zones || !zone || t === null) return;
+        const boxes = this.rects.filter((r) => zone.includes(r.e)).map((r) => ['x', 'y', 'width', 'height'].map((k) => Number(r.node.getAttribute(k))));
+        if (!boxes.length) return;
+        const x0 = Math.min(...boxes.map((b) => b[0]));
+        const y0 = Math.min(...boxes.map((b) => b[1]));
+        const x1 = Math.max(...boxes.map((b) => b[0] + b[2]));
+        const y1 = Math.max(...boxes.map((b) => b[1] + b[3]));
+        el('rect', { x: x0 - 3, y: y0 - 3, width: x1 - x0 + 6, height: y1 - y0 + 6, rx: 6, style: `stroke:${H.colour(t)}` }, this.zoneLayer);
+      });
+
+      // The strip: one pill per heater and magnet, centred under the board.
+      const pills = [];
+      info.targets.forEach((t, i) => {
+        const now = info.temps && typeof info.temps[i] === 'number' ? info.temps[i] : null;
+        const text = t === null ? (now === null ? `T${i + 1}  —` : `T${i + 1}  ${now.toFixed(1)} °C`) : `T${i + 1}  ${t} °C${now === null ? '' : `  ·  ${now.toFixed(1)}`}`;
+        const there = t !== null && now !== null && Math.abs(now - t) <= (info.tolerance || H.DEFAULT_TOLERANCE);
+        pills.push({ text, colour: t === null ? null : H.colour(t), cls: t === null ? 'off' : there ? 'there' : '', title: t === null ? `T${i + 1}: not set by the sequence` : `T${i + 1}: target ${t} °C${now === null ? '' : `, measured ${now.toFixed(1)} °C`}` });
+      });
+      info.magnets.forEach((on, i) => pills.push({ text: `M${i + 1}  ${on ? 'on' : 'off'}`, colour: on ? '#52514e' : null, cls: on ? 'magnet on' : 'magnet off', title: `Magnet ${i + 1} ${on ? 'on' : 'off'}` }));
+      const charW = 15;
+      const widths = pills.map((p) => 44 + p.text.length * charW);
+      const gap = 16;
+      const total = widths.reduce((a, b) => a + b, 0) + gap * (pills.length - 1);
+      let x = G.CX - total / 2;
+      const y = py(21.2);
+      pills.forEach((p, k) => {
+        const g = el('g', { class: `pill ${p.cls}` }, strip);
+        el('title', {}, g).textContent = p.title;
+        el('rect', { x, y, width: widths[k], height: 40, rx: 20 }, g);
+        el('circle', { cx: x + 22, cy: y + 20, r: 8, style: p.colour ? `fill:${p.colour}` : '' }, g);
+        el('text', { x: x + 38, y: y + 21 }, g).textContent = p.text;
+        x += widths[k] + gap;
+      });
+      if (info.waiting) {
+        el('text', { x: G.CX, y: y + 66, class: 'heat-wait' }, strip).textContent = `Waiting for the heaters: ${H.targetsText(info.waiting.targets)}…`;
+      }
     }
 
     at(e) {
@@ -276,6 +350,7 @@
       this.feedbackBox.setAttribute('fill', d.feedback ? COLOR.active : COLOR.button);
       this.connectBox.setAttribute('fill', on ? COLOR.active : COLOR.button);
       this.connectLabel.textContent = d.state === 'connecting' ? 'connecting…' : on ? 'disconnect' : 'connect';
+      this.connectHint.style.display = on ? 'none' : '';
       this.connectTip.textContent = on ? 'Disconnect the OpenDrop (everything is switched off first)' : 'Connect the OpenDrop over USB (Chrome or Edge)';
       this.deviceDot.setAttribute('class', `device-dot ${d.state}`);
       const states = { off: 'Not connected', connecting: 'Connecting…', on: d.name || 'Connected', silent: `${d.name || 'The device'} is not answering` };
@@ -299,8 +374,9 @@
       }
     }
 
-    render(ed, { numbers = false, lines = true, device = null, rings = [] } = {}) {
+    render(ed, { numbers = false, lines = true, device = null, rings = [], heat = null } = {}) {
       this.renderDevice(device);
+      this.renderHeat(heat);
       this.renderRings(rings);
       const shown = ed.shown;
       const { seq } = shown;

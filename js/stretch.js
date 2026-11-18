@@ -44,14 +44,26 @@
       const info = stretchInfo(st.of.get(tileId));
       return info ? info.compiled.left : [];
     }
+    // The heaters and magnets coming in, the same way (the first way in, not round a loop).
+    const controlsInto = (tileId) => {
+      const ins = g.into.get(tileId).filter((l) => !back.has(linkKey(l)));
+      return ins.length ? controlsOutOf(ins[0].from) : null;
+    };
+    function controlsOutOf(tileId) {
+      const t = g.byId.get(tileId);
+      if (isStop(t)) return t.kind === 'start' ? null : controlsInto(tileId);
+      const info = stretchInfo(st.of.get(tileId));
+      return info ? info.compiled.controls : null;
+    }
     function stretchInfo(sid) {
       if (byStretch.has(sid)) return byStretch.get(sid);
       if (making.has(sid)) return null; // going round: no answer this way
       making.add(sid);
       const s = st.list.find((x) => x.id === sid);
       const state = stateInto(s.start);
-      const compiled = compile(stretchProject(doc, s.tiles), rects, { arrive: arrivals(state) });
-      const info = { id: sid, tiles: s.tiles, start: s.start, state, compiled, problems: [] };
+      const controls = controlsInto(s.start);
+      const compiled = compile(stretchProject(doc, s.tiles), rects, { arrive: arrivals(state), controls });
+      const info = { id: sid, tiles: s.tiles, start: s.start, state, controls, compiled, problems: [] };
       byStretch.set(sid, info);
       making.delete(sid);
       return info;

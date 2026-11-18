@@ -7,20 +7,21 @@
   if (typeof module === 'object' && module.exports) {
     module.exports = factory(
       require('./model.js'), require('./layout.js'), require('./paths.js'), require('./templates.js'),
-      require('./lines.js'), require('./compile.js'), require('./project.js'), require('./process.js'), require('./stretch.js')
+      require('./lines.js'), require('./compile.js'), require('./project.js'), require('./process.js'), require('./stretch.js'),
+      require('./heat.js')
     );
   } else {
     const OD = root.OD;
-    (root.OD = root.OD || {}).editor = factory(OD.model, OD.layout, OD.paths, OD.templates, OD.lines, OD.compile, OD.project, OD.process, OD.stretch);
+    (root.OD = root.OD || {}).editor = factory(OD.model, OD.layout, OD.paths, OD.templates, OD.lines, OD.compile, OD.project, OD.process, OD.stretch, OD.heat);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, layout, paths, templates, lines, compiler, projects, processes, stretches) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, layout, paths, templates, lines, compiler, projects, processes, stretches, heat) {
   'use strict';
 
   const { CELLS, MAX_FRAMES, clampTime } = model;
   const { hitTest, inArray, inRect } = layout;
   const { PathDraft, electrodeAt, straightRoute } = paths;
   const { place } = templates;
-  const { compile, expand, importSequence, predsOf, RESERVOIR_STEPS, RESERVOIR_NAMES } = compiler;
+  const { compile, expand, importSequence, importControls, predsOf, RESERVOIR_STEPS, RESERVOIR_NAMES } = compiler;
 
   const DROPLET_CELLS = 128; // electrodes below this carry droplets; 128-143 are control lines
 
@@ -93,6 +94,11 @@
       this.doc = project;
       this.scope = null; // with a process: { tile, stretch, tiles: Set of tile ids }
       this.arrive = []; // the droplets coming into that stretch (actions of type 'arrive')
+      this.controlsIn = null; // the heaters and magnets coming into it (null: nothing set)
+      // The heaters' temperatures from a live device (°C or null ×3), or null without one: the page
+      // sets it. Playing, a frame that waits for the heaters then lasts until they get there.
+      this.readings = () => null;
+      this.holding = null; // the hold playback is waiting in ({ targets, tolerance }), if any
       this.frozen = null; // why nothing can be changed now (a run is going), or null
       this.project.layout = lay.id;
       this.frame = 1;
@@ -122,7 +128,7 @@
       this.flush();
       this.syncNames();
       this.revision = (this.revision || 0) + 1; // goes up with every change, for keeping the work
-      this.compiled = compile(this.project, this.layout.rects, { arrive: this.arrive });
+      this.compiled = compile(this.project, this.layout.rects, { arrive: this.arrive, controls: this.controlsIn });
       if (this.playing) this.playLast = this.compiled.seq.lastFrame();
     }
 
@@ -150,6 +156,7 @@
       this.doc.actions = out;
       this.doc.templates = this.project.templates;
       this.doc.frameTime = this.project.frameTime;
+      if (this.project.heatRates) this.doc.heatRates = this.project.heatRates;
     }
 
     // One name per step: an action of a tile that does one kind of thing is called by the tile's
@@ -213,7 +220,7 @@
 
     // Opens tile id's stretch on the board, the droplets coming in where the stretch before leaves
     // them (or as `state` says, in a run). False if it is a stop (nothing on the board).
-    openTile(id, { state = null } = {}) {
+    openTile(id, { state = null, controls = null } = {}) {
       if (!this.doc.process) return false;
       this.cancel();
       const info = this.analyze();
@@ -222,6 +229,7 @@
       const s = info.stretch.get(sid);
       this.scope = { tile: id, stretch: sid, tiles: new Set(s.tiles) };
       this.arrive = stretches.arrivals(state || s.state);
+      this.controlsIn = controls || s.controls;
       this.project = this.workingProject();
       if (this.selection && !this.action(this.selection)) this.selection = null;
       this.recompile();
@@ -236,6 +244,7 @@
         if (this.scope) {
           this.scope = null;
           this.arrive = [];
+          this.controlsIn = null;
           this.project = this.doc;
           this.recompile();
         }
@@ -247,18 +256,20 @@
       if (st.list.length && this.openTile(st.list[0].start)) return;
       this.scope = { tile: null, stretch: null, tiles: new Set() };
       this.arrive = [];
+      this.controlsIn = null;
       this.project = this.workingProject();
       this.recompile();
     }
 
     // A run shows stretch `sid` with the droplets as they really are.
-    showStretch(sid, state) {
+    showStretch(sid, state, controls = null) {
       this.flush();
       const s = processes.stretches(this.doc.process).list.find((x) => x.id === sid);
       if (!s) return false;
       this.cancel();
       this.scope = { tile: s.start, stretch: sid, tiles: new Set(s.tiles) };
       this.arrive = stretches.arrivals(state);
+      this.controlsIn = controls;
       this.project = this.workingProject();
       this.selection = null;
       this.recompile();
@@ -307,6 +318,19 @@
           if (a.tile !== id) continue;
           if (a.type === 'dispense' && fields.reservoir && RESERVOIR_STEPS[fields.reservoir]) a.reservoir = fields.reservoir;
           if (a.type === 'wait' && Number.isFinite(fields.seconds)) a.duration = Math.max(1, Math.round(fields.seconds * 1000));
+          if (a.type === 'temp') {
+            if (fields.targets !== undefined && heat.cleanTargets(fields.targets).some((x) => x !== null)) a.targets = heat.cleanTargets(fields.targets);
+            if (fields.wait !== undefined) {
+              if (fields.wait) a.wait = true;
+              else delete a.wait;
+            }
+            if (a.wait) a.tolerance = heat.cleanTolerance(fields.tolerance !== undefined ? fields.tolerance : a.tolerance);
+            else delete a.tolerance;
+          }
+          if (a.type === 'magnet') {
+            if (fields.magnet !== undefined) a.magnet = fields.magnet === 2 ? 2 : 1;
+            if (fields.on !== undefined) a.on = Boolean(fields.on);
+          }
         }
         if (droplet !== undefined && t.kind === 'dispense') {
           // The droplet it makes: renamed down its chain once placed; until then just the tile's.
@@ -354,6 +378,7 @@
         if (shared.process) this.doc.process = shared.process;
         else delete this.doc.process;
         if (shared.frameTime) this.doc.frameTime = shared.frameTime;
+        if (shared.heatRates) this.doc.heatRates = shared.heatRates;
       }, { check: false });
       if (this.doc.process && tile && this.openTile(tile)) {
         // the same tile
@@ -440,6 +465,15 @@
           const seconds = Math.max(0.01, Number(t.seconds) || 1);
           const done = this.change(() => this.addAction({ type: 'wait', name: t.name || 'Wait', droplet: '', duration: Math.round(seconds * 1000) }, this.frame, []));
           return done ? { kind: 'added', text: `${t.name}: everything waits ${seconds} s here` } : null;
+        }
+        case 'temperature': {
+          const targets = heat.cleanTargets(t.targets);
+          const a = this.addTemp(this.frame, { targets, wait: Boolean(t.wait), tolerance: t.tolerance, name: t.name || 'Temperature' });
+          return a ? { kind: 'added', text: `${t.name}: ${heat.targetsText(targets)}${t.wait ? ', waiting until the heaters get there' : ''}` } : null;
+        }
+        case 'magnet': {
+          const a = this.addMagnet(this.frame, t.magnet, t.on !== false, { name: t.name || 'Magnet' });
+          return a ? { kind: 'added', text: `${t.name}: magnet ${t.magnet === 2 ? 2 : 1} ${t.on !== false ? 'on' : 'off'}` } : null;
         }
         case 'mix':
         case 'merge':
@@ -595,7 +629,7 @@
     tryChanges(changes, extra = [], templatesToo = null) {
       const actions = this.project.actions.map((a) => changes.get(a.id) || a).concat(extra);
       const trial = { ...this.project, actions, templates: templatesToo ? { ...this.project.templates, ...templatesToo } : this.project.templates };
-      const compiled = compile(trial, this.layout.rects);
+      const compiled = compile(trial, this.layout.rects, { controls: this.controlsIn });
       const ids = new Set([...changes.keys(), ...extra.map((a) => a.id)]);
       const bad = compiled.issues.find((i) => ids.has(i.id) && i.kind === 'invalid');
       const reason = bad ? `It can't go there: ${bad.text}` : this.blockReason(compiled, actions);
@@ -668,6 +702,82 @@
       this.project.actions.push(a);
       this.selection = a.id;
       return a;
+    }
+
+    // --- heaters and magnets ----------------------------------------------------------------------
+    // A 'temp' action sets heater targets from its frame on (and can wait until they are reached),
+    // a 'magnet' action switches a magnet; both last until the next one.
+
+    // The heaters and magnets in frame f (what the frame before had, past the end).
+    controlsAt(f) {
+      const seq = this.seq;
+      for (let k = Math.min(f, seq.controls.length - 1); k >= 1; k--) if (seq.controls[k]) return seq.controls[k];
+      return this.controlsIn ? heat.copyControls(this.controlsIn) : heat.emptyControls();
+    }
+
+    // Adds a temperature setting in frame `frame`: { targets, wait, tolerance }. Undoable.
+    addTemp(frame, { targets, wait = false, tolerance = heat.DEFAULT_TOLERANCE, name = 'Temperature' } = {}) {
+      if (this.locked) {
+        this.notice = this.locked;
+        return null;
+      }
+      const clean = heat.cleanTargets(targets);
+      if (!clean.some((t) => t !== null)) {
+        this.notice = 'Set at least one heater';
+        return null;
+      }
+      const fields = { type: 'temp', name, droplet: '', targets: clean };
+      if (wait) Object.assign(fields, { wait: true, tolerance: heat.cleanTolerance(tolerance) });
+      let added = null;
+      const done = this.change(() => {
+        added = this.addAction(fields, Math.max(1, Math.round(frame)), []);
+      });
+      return done ? added : null;
+    }
+
+    // Switches magnet n (1 or 2) on or off from frame `frame`. Undoable.
+    addMagnet(frame, n, on, { name = 'Magnet' } = {}) {
+      if (this.locked) {
+        this.notice = this.locked;
+        return null;
+      }
+      let added = null;
+      const done = this.change(() => {
+        added = this.addAction({ type: 'magnet', name, droplet: '', magnet: n === 2 ? 2 : 1, on: Boolean(on) }, Math.max(1, Math.round(frame)), []);
+      });
+      return done ? added : null;
+    }
+
+    // A temperature or magnet action's settings (targets, wait, tolerance; magnet, on). Undoable.
+    setControl(id, fields) {
+      const a = this.action(id);
+      if (!a || (a.type !== 'temp' && a.type !== 'magnet')) return false;
+      const next = { ...a };
+      if (a.type === 'temp') {
+        if (fields.targets !== undefined) next.targets = heat.cleanTargets(fields.targets);
+        if (!next.targets.some((t) => t !== null)) {
+          this.notice = 'A temperature setting needs at least one heater: delete it instead';
+          return false;
+        }
+        if (fields.wait !== undefined) next.wait = Boolean(fields.wait);
+        if (fields.tolerance !== undefined) next.tolerance = fields.tolerance;
+        if (next.wait) next.tolerance = heat.cleanTolerance(next.tolerance);
+        else {
+          delete next.wait;
+          delete next.tolerance;
+        }
+      } else {
+        if (fields.magnet !== undefined) next.magnet = fields.magnet === 2 ? 2 : 1;
+        if (fields.on !== undefined) next.on = Boolean(fields.on);
+      }
+      return this.commit(this.tryChanges(new Map([[id, next]])));
+    }
+
+    // How fast the heaters are assumed to warm up and cool down (°C/min), for estimating waits
+    // when no device says. A setting of the project, like the default frame time.
+    setHeatRates(rates) {
+      this.project.heatRates = heat.cleanRates({ ...heat.cleanRates(this.project.heatRates), ...rates });
+      this.recompile();
     }
 
     // --- pointer --------------------------------------------------------------------------------
@@ -1829,7 +1939,7 @@
       this.flush();
       if (!this.saved) {
         this.saved = {
-          project: this.doc, scope: this.scope, arrive: this.arrive,
+          project: this.doc, scope: this.scope, arrive: this.arrive, controlsIn: this.controlsIn,
           frame: this.frame, undoStack: this.undoStack, redoStack: this.redoStack, selection: this.selection,
         };
       }
@@ -1837,6 +1947,7 @@
       this.doc = this.project;
       this.scope = null;
       this.arrive = [];
+      this.controlsIn = null;
       this.selection = null;
       if (seq) {
         const a = { id: projects.nextId(this.project), ...importSequence(seq, 'Template') };
@@ -1901,6 +2012,7 @@
       this.saved = null;
       this.scope = null;
       this.arrive = [];
+      this.controlsIn = null;
       Object.assign(this, mainState);
       this.doc = this.project;
       if (this.doc.process && !(tile && this.openTile(tile))) this.rescope();
@@ -1908,9 +2020,10 @@
         const { warnings: w2, tile: unused, ...makingState } = making;
         void unused;
         this.flush();
-        this.saved = { ...mainState, project: this.doc, scope: this.scope, arrive: this.arrive, frame: this.frame, selection: this.selection };
+        this.saved = { ...mainState, project: this.doc, scope: this.scope, arrive: this.arrive, controlsIn: this.controlsIn, frame: this.frame, selection: this.selection };
         this.scope = null;
         this.arrive = [];
+        this.controlsIn = null;
         Object.assign(this, makingState);
         this.doc = this.project;
         w1.push(...w2);
@@ -1923,7 +2036,7 @@
       if (!this.saved) return;
       this.cancel();
       this.saved.project.frameTime = this.project.frameTime; // the default frame time is a setting
-      ({ project: this.doc, scope: this.scope, arrive: this.arrive, frame: this.frame, undoStack: this.undoStack, redoStack: this.redoStack, selection: this.selection } = this.saved);
+      ({ project: this.doc, scope: this.scope, arrive: this.arrive, controlsIn: this.controlsIn, frame: this.frame, undoStack: this.undoStack, redoStack: this.redoStack, selection: this.selection } = this.saved);
       this.project = this.scope ? this.workingProject() : this.doc;
       if (this.scope) this.project.frameTime = this.doc.frameTime;
       this.saved = null;
@@ -2099,7 +2212,18 @@
     // Advances playback, each frame staying for its own time; returns true when the frame
     // changed. Loops back to frame 1.
     tick(now) {
-      if (!this.playing || now - this.playStart <= this.frameMs) return false;
+      if (!this.playing) {
+        this.holding = null;
+        return false;
+      }
+      const hold = this.seq.holds.get(this.frame);
+      const temps = hold ? this.readings() : null;
+      // With a live device, a frame waiting for the heaters lasts until they get there.
+      const waiting = Boolean(temps) && !heat.reached(temps, hold.targets, hold.tolerance);
+      this.holding = waiting ? hold : null;
+      if (waiting) return false;
+      // (once there, it lasts at least the default frame time; without a device, its estimate)
+      if (now - this.playStart <= (temps ? this.seq.frameTime : this.frameMs)) return false;
       this.playStart = now;
       this.frame = this.frame < this.playLast ? this.frame + 1 : 1;
       return true;
@@ -2226,6 +2350,7 @@
       this.flush();
       this.scope = null;
       this.arrive = [];
+      this.controlsIn = null;
       this.project = this.doc;
     }
 
@@ -2237,6 +2362,8 @@
       this.change(() => {
         const empty = seq.lastFrame() === 1 && seq.isEmpty(1);
         this.project.actions = empty ? [] : [{ id: 'a1', ...importSequence(seq, name) }];
+        // Heater targets in the file become temperature settings where they change.
+        for (const t of importControls(seq)) this.project.actions.push({ id: projects.nextId(this.project), ...t });
         this.project.templates = {};
         delete this.project.process;
         this.selection = null;

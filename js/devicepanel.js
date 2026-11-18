@@ -71,7 +71,10 @@
 
     // After each picture: the frame on screen goes to the device when live; the tab is updated.
     paint() {
-      if (this.session.connected) this.session.show(cellsIn(this.ed.seq, this.ed.frame));
+      if (this.session.connected) {
+        const c = this.ed.controlsAt(this.ed.frame);
+        this.session.show(cellsIn(this.ed.seq, this.ed.frame), c.targets.some((t) => t !== null) ? c.targets : null);
+      }
       this.render();
     }
 
@@ -361,7 +364,7 @@
       const b = this.boardState();
       const seq = this.ed.seq;
       const n = seq.lastFrame();
-      const key = JSON.stringify([b, s.temps, s.targets, s.protocol, s.run, this.portLabel, n, seq.elapsed(n), this.busy]);
+      const key = JSON.stringify([b, s.temps, s.targets, s.sentTargets, s.live, s.protocol, s.run, this.portLabel, n, seq.elapsed(n), this.busy]);
       if (key === this.key) return;
       this.key = key;
       const d = this.dom;
@@ -376,6 +379,7 @@
       d.state.textContent = states[b.state];
       d.port.textContent = on ? `${this.portLabel}${s.protocol ? ` · protocol ${s.protocol}` : ''}` : serial.supported() ? 'USB, Chrome or Edge' : '';
       d.connect.hidden = on;
+      document.getElementById('device-pick-hint').hidden = on;
       d.connect.disabled = this.busy || !serial.supported();
       d.disconnect.hidden = !on;
       d.live.checked = s.live;
@@ -385,9 +389,15 @@
       d.feedback.checked = b.feedback;
       d.sensed.textContent = b.feedback ? (s.sensed.length ? `Senses ${plural(s.sensed.length, 'electrode')}` : 'Senses nothing') : '';
       d.tempsPart.hidden = !(on && s.board && s.board.temperature);
+      const sent = s.sentTargets;
       s.temps.forEach((t, i) => {
         this.tempNow[i].textContent = t === null ? '—' : `${t.toFixed(1)} °C`;
-        if (document.activeElement !== this.tempInputs[i]) this.tempInputs[i].value = String(s.targets[i]);
+        // Live, a heater the sequence sets follows the frame on screen.
+        const bySeq = Boolean(s.live && s.frameTargets && typeof s.frameTargets[i] === 'number');
+        const input = this.tempInputs[i];
+        input.disabled = bySeq;
+        input.title = bySeq ? 'Set by the sequence while live (frame on screen)' : '';
+        if (document.activeElement !== input) input.value = String(bySeq ? sent[i] : s.targets[i]);
       });
       d.seq.textContent = `${plural(n, 'frame')}, ${this.app.formatTime(seq.elapsed(n))}`;
       d.load.disabled = !s.canLoad || Boolean(s.run);

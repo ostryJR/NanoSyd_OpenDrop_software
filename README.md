@@ -237,6 +237,41 @@ touching droplets shows them as problems.
   default, blue = its own). Hover for the numbers and the total so far; click or drag to go to a
   step. The bar above shows the total time.
 
+## Heaters and magnets
+
+The temperature adapter has three heaters (T1–T3); the board has two magnets. Both are set from a
+frame on and stay that way until set again, so they can change during a process.
+
+- **Temperature** shows them against time, under the board (the third view next to Timeline and
+  Step time): each heater's target (solid), how warm it is estimated to be (dashed), what a live
+  device measured (dots), frames that wait for the heaters (hatched), and the magnets as two lanes
+  underneath. Pick T1, T2 or T3 above it, then **click** in the plot to set that heater from that
+  frame on (a click in a frame that already has a setting adds the heater to it). **Drag** a point
+  up or down to change its temperature, sideways to move it to another frame. **Click a magnet
+  lane** to switch that magnet from that frame on; clicking a switch's frame again takes it away.
+- A setting is an action on the timeline (tracks *Heaters*, *Magnet 1*, *Magnet 2*); Properties
+  shows its heaters (empty = stays as it was), and **Wait until the heaters get there** with how
+  close is close enough. Settings take no time and hold nothing up, except one that waits: it lasts
+  as long as the heaters are estimated to take (the warming and cooling rates, °C/min, above the
+  chart, kept with the project), while the other actions keep moving.
+- Played **live** (or in a run on the OpenDrop), a frame that waits lasts until the device reads
+  every set heater within the tolerance, however long that takes; without a device it lasts the
+  estimate. The device gets each frame's targets; heaters the sequence doesn't set keep the targets
+  in the Device tab, which shows which ones the sequence sets.
+- In the **process**: the *Temperature* and *Magnet* tiles (group *Heat and magnets*) are placed as
+  such settings. What they set carries on into the following steps, past Measure and Ask stops,
+  the way droplets do.
+- Under the board, a strip shows each heater's target and reading (green ring: there) and each
+  magnet, for the frame on screen, once the project sets any or a device with the adapter is
+  connected. On the standard and magnet layouts, the electrodes over each heater get a halo in the
+  colour of its target: T1 under electrodes 25 and 26, T2 under 57 and 58, T3 under 97 and 98.
+  That is where GaudiLabs' heater cartridge (`OpenDropV4/Electronics/DIMMCartridge_heaters` in
+  their repository) has each heater's two resistors and its thermistor, under pads FLUXL_4_2/4_3,
+  FLUXL_8_2/8_3 and FLUXL_13_2/13_3; the universal adapter wires them as T1–T3
+  (`HEATER_ZONES` in `js/heat.js`).
+- Magnets are the control lines 129 (magnet 1) and 128 (magnet 2); the magnet layout labels them
+  M1 and M2 on the board.
+
 ## Templates
 
 - Built in, in two groups: **Merge and split** (merge two droplets, split in two) and **Mixers**
@@ -414,6 +449,9 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
   firmware don't read it yet: the original ignores it, so files still open there. When loading, the
   most common time becomes the default frame time and the others the frames' own times; files
   without times keep the current default.
+- `"temp"` (only when the project sets a heater) is the heater targets in °C, `null` for one it
+  doesn't set; `"waitTemp"` marks a frame that waits for them, with the tolerance in °C. The
+  original ignores both. Loading turns them back into temperature settings.
 - If some actions won't come out as drawn, the first press of **export** says so; press it again
   within 10 s to export anyway.
 

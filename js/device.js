@@ -324,6 +324,7 @@
       this.feedback = false;
       this.targets = [DEFAULT_TEMP, DEFAULT_TEMP, DEFAULT_TEMP];
       this.cells = []; // the frame on screen
+      this.frameTargets = null; // heater targets the frame on screen sets (°C or null ×3), if any
       this.lastSent = null;
       this.pollTimer = null;
       this.run = null; // a sequence running on the device: { frames, frame, state }
@@ -346,7 +347,14 @@
 
     // The bytes the device should have now: the frame on screen when live, otherwise all off.
     bytes() {
-      return encodeFrame(this.live ? this.cells : [], { feedback: this.feedback && Boolean(this.board && this.board.feedback), temps: this.targets });
+      return encodeFrame(this.live ? this.cells : [], { feedback: this.feedback && Boolean(this.board && this.board.feedback), temps: this.sentTargets });
+    }
+
+    // The heater targets sent: live, those the frame on screen sets (the others as set here);
+    // otherwise those set here.
+    get sentTargets() {
+      const own = this.live && this.frameTargets;
+      return this.targets.map((t, i) => (own && typeof own[i] === 'number' ? clampTemp(own[i]) : t));
     }
 
     // Opens a session on `transport`. Live starts off; the device gets an all-off frame.
@@ -426,9 +434,11 @@
       if (link === this.link) this.schedule();
     }
 
-    // The frame on screen (its electrodes); sent at once when live.
-    show(cells) {
+    // The frame on screen (its electrodes, and the heater targets it sets, if any); sent at once
+    // when live.
+    show(cells, targets = null) {
       this.cells = cells;
+      this.frameTargets = targets;
       if (this.live && this.state === 'on') this.push();
     }
 

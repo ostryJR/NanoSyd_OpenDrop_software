@@ -1,9 +1,10 @@
 /* Save/load in the JSON format of OpenDropController4_25 (its fileSaved and fileLoad), plus each
- * frame's time. The original reads only "y0".."y7", so it still opens these files. */
+ * frame's time and, where the project sets them, heater targets ("temp") and waits for them
+ * ("waitTemp"). The original reads only "y0".."y7", so it still opens these files. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./model.js'));
-  else (root.OD = root.OD || {}).jsonio = factory(root.OD.model);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./model.js'), require('./heat.js'));
+  else (root.OD = root.OD || {}).jsonio = factory(root.OD.model, root.OD.heat);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, heat) {
   'use strict';
 
   const { ROWS, COLS, MAX_FRAMES, Sequence, clampTime } = model;
@@ -23,6 +24,13 @@
     for (let r = 0; r < ROWS; r++) lines.push(`${pad}"y${r}": "${rowString(seq, f, r)}"`);
     lines.push(`${pad}"frame": ${f}`);
     lines.push(`${pad}"time": ${seq.timeOf(f)}`);
+    // Our heater targets (°C, null = as before) and, where playing waits for them, the tolerance.
+    if (seq.heated) {
+      const c = seq.controlsAt(f);
+      if (c) lines.push(`${pad}"temp": [${c.targets.map((t) => (t === null ? 'null' : t)).join(', ')}]`);
+      const hold = seq.holds.get(f);
+      if (hold) lines.push(`${pad}"waitTemp": ${hold.tolerance}`);
+    }
     return `{\n${lines.join(',\n')}\n${' '.repeat(indent)}}`;
   }
 
@@ -87,10 +95,16 @@
         }
       }
       if (typeof item.time === 'number' && Number.isFinite(item.time) && item.time > 0) times.set(f, clampTime(item.time));
+      if (Array.isArray(item.temp)) {
+        const targets = heat.cleanTargets(item.temp);
+        if (targets.some((t) => t !== null)) seq.controls[f] = { targets, magnets: [false, false] };
+        if (typeof item.waitTemp === 'number') seq.holds.set(f, { targets, tolerance: heat.cleanTolerance(item.waitTemp) });
+      }
       frames = Math.max(frames, f);
     });
 
     if (!found) throw new Error('no frames found (expected objects with "y0" to "y7")');
+    if (seq.heated) seq.end = frames; // frames that only set the heaters count too
     if (times.size) {
       const counts = new Map();
       for (const ms of times.values()) counts.set(ms, (counts.get(ms) || 0) + 1);

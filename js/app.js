@@ -7,6 +7,8 @@
   const { Editor } = root.OD.editor;
   const { BoardView, dropletColour } = root.OD.view;
   const { TimingChart, formatTime } = root.OD.chart;
+  const { TempChart } = root.OD.tempChart;
+  const heat = root.OD.heat;
   const { Timeline } = root.OD.timeline;
   const { DevicePanel } = root.OD.devicePanel;
   const P = root.OD.process;
@@ -145,16 +147,36 @@
     }
     if (view === 'board') {
       board.setCutoutTitle(ed.makingTemplate ? 'Making a template' : openTileName() || 'Path Generator');
-      board.render(ed, { numbers: showNumbers, lines: showLines, device: device && device.boardState(), rings: rings() });
+      board.render(ed, { numbers: showNumbers, lines: showLines, device: device && device.boardState(), rings: rings(), heat: heatInfo() });
     } else if (processView) processView.render();
     if (ed.draft && ed.draft.moved) showDraft(ed.draft);
     showTiming();
     showProperties();
     if (ed.makingTemplate) showMakerInfo();
     if (device) device.paint(); // live: the frame on screen goes to the device
+    noteReading();
     showViewbar();
     noteWork();
     shareWork();
+  }
+
+  // The heaters and magnets in the frame on screen, for the strip under the board: shown once the
+  // project sets any, or a device with a temperature adapter is connected.
+  function heatInfo() {
+    const c = ed.controlsAt(ed.frame);
+    const s = device && device.session;
+    const adapter = Boolean(s && s.connected && s.board && s.board.temperature);
+    const used = ed.doc.actions.some((a) => a.type === 'temp' || a.type === 'magnet') || heat.usesControls(c);
+    const hold = ed.holding || (runner && runner.state && !runner.state.done && runner.state.heating) || null;
+    const hereHold = ed.seq.holds.get(ed.frame);
+    return {
+      show: used || adapter,
+      targets: c.targets,
+      magnets: c.magnets,
+      temps: adapter ? s.temps.slice() : null,
+      tolerance: hereHold ? hereHold.tolerance : heat.DEFAULT_TOLERANCE,
+      waiting: hold ? { targets: hold.targets } : null,
+    };
   }
 
   // A change here goes to the other tabs (also from a timer: a tab that isn't in front doesn't
@@ -674,6 +696,10 @@
       showTimeline();
       return;
     }
+    if (prefs.chart === 'temp') {
+      showTemps();
+      return;
+    }
     const times = [];
     const own = [];
     for (let f = 1; f <= Math.max(last, ed.frame); f++) {
@@ -739,11 +765,13 @@
   const viewButtons = [...document.querySelectorAll('#timing .segmented button')];
   const chartBox = $('chart');
   const timelineBox = $('timeline');
+  const tempBox = $('temp-box');
   function setChartView(view) {
-    prefs.chart = view === 'step' ? 'step' : 'timeline'; // older settings may say 'total' or 'table'
+    prefs.chart = view === 'step' || view === 'temp' ? view : 'timeline'; // older settings may say 'total' or 'table'
     for (const b of viewButtons) b.setAttribute('aria-pressed', String(b.dataset.view === prefs.chart));
     timelineBox.hidden = prefs.chart !== 'timeline';
-    chartBox.hidden = prefs.chart === 'timeline';
+    chartBox.hidden = prefs.chart !== 'step';
+    tempBox.hidden = prefs.chart !== 'temp';
     savePrefs();
     redraw();
   }
@@ -754,10 +782,145 @@
     });
   }
 
+  // --- temperatures and magnets ------------------------------------------------------------
+  // The Temperature view: heater targets, estimates and readings, and the magnets, against time;
+  // clicking and dragging in it adds and changes temperature and magnet settings.
+
+  const tempChart = new TempChart($('temp-chart'), {
+    pick(f) {
+      ed.frame = f;
+      redraw();
+    },
+    select(id) {
+      ed.select(id);
+      redraw();
+    },
+    add(frame, i, t) {
+      // A setting already starting in that frame gets the heater; otherwise a new one.
+      const there = ed.project.actions.find((a) => a.type === 'temp' && ed.span(a.id) && ed.span(a.id).from === frame);
+      if (there) {
+        const targets = there.targets.slice();
+        targets[i] = t;
+        propChange(ed.setControl(there.id, { targets }), () => `${quote(there)}: T${i + 1} ${t} °C from frame ${frame}`);
+        ed.select(there.id);
+        return;
+      }
+      const targets = [null, null, null];
+      targets[i] = t;
+      const a = ed.addTemp(frame, { targets });
+      if (a) setStatus(`T${i + 1} ${t} °C from frame ${frame}. Drag the point to change it; in Properties it can wait until the heater gets there`);
+      else showNotice();
+      redraw();
+    },
+    set(id, i, t) {
+      const a = ed.action(id);
+      if (!a) return;
+      const targets = a.targets.slice();
+      targets[i] = t;
+      propChange(ed.setControl(id, { targets }), () => `${quote(a)}: T${i + 1} ${t} °C`);
+    },
+    move(id, frame) {
+      if (ed.moveToFrame(id, frame)) setStatus(`${quote(ed.action(id))} from frame ${frame}`);
+      else showNotice();
+      redraw();
+    },
+    magnet(frame, n) {
+      // Switching it where a switch of that magnet already is takes that switch away.
+      const there = ed.project.actions.find((a) => a.type === 'magnet' && (a.magnet || 1) === n && ed.span(a.id) && ed.span(a.id).from === frame);
+      if (there) {
+        ed.select(there.id);
+        if (ed.deleteSelected()) setStatus(`Magnet ${n}: the switch in frame ${frame} is gone`);
+        redraw();
+        return;
+      }
+      const on = !ed.controlsAt(frame).magnets[n - 1];
+      const a = ed.addMagnet(frame, n, on);
+      if (a) setStatus(`Magnet ${n} ${on ? 'on' : 'off'} from frame ${frame}`);
+      else showNotice();
+      redraw();
+    },
+  });
+  for (const b of document.querySelectorAll('#temp-box [data-heater]')) {
+    b.addEventListener('click', () => {
+      const i = Number(b.dataset.heater);
+      for (const x of document.querySelectorAll('#temp-box [data-heater]')) x.setAttribute('aria-pressed', String(x === b));
+      tempChart.setHeater(i);
+      b.blur();
+    });
+  }
+  const rateUp = $('rate-up');
+  const rateDown = $('rate-down');
+  for (const [input, key] of [[rateUp, 'up'], [rateDown, 'down']]) {
+    editKeys(input);
+    input.addEventListener('change', () => {
+      const v = Number(input.value);
+      if (v > 0) {
+        ed.setHeatRates({ [key]: v });
+        setStatus(`The heaters are assumed to ${key === 'up' ? 'warm up' : 'cool down'} by ${heat.cleanRates(ed.project.heatRates)[key]} °C a minute`);
+      } else setStatus('Rates are in °C per minute, more than 0', 'warn');
+      redraw();
+    });
+  }
+
+  // What a live device measured while frames were on screen: { ms from frame 1's start, temps }.
+  let readings = [];
+  let readingFrom = { frame: 0, at: 0 };
+  function noteReading() {
+    const temps = liveReadings();
+    if (!temps) return;
+    const now = performance.now();
+    if (readingFrom.frame !== ed.frame) readingFrom = { frame: ed.frame, at: now };
+    const seq = ed.seq;
+    const ms = seq.elapsed(ed.frame - 1) + Math.min(seq.timeOf(ed.frame), now - readingFrom.at);
+    const last = readings[readings.length - 1];
+    if (last && last.ms === ms && JSON.stringify(last.temps) === JSON.stringify(temps)) return;
+    if (last && ms < last.ms) readings = []; // back to the start: a new curve
+    readings.push({ ms: Math.round(ms), temps: temps.map((t) => (typeof t === 'number' ? Math.round(t * 10) / 10 : null)) });
+    if (readings.length > 3000) readings = readings.slice(-3000);
+  }
+  // The heaters' temperatures when a live device measures them, otherwise null.
+  function liveReadings() {
+    const s = device && device.session;
+    if (!s || !s.live || !s.board || !s.board.temperature) return null;
+    return s.temps.some((t) => typeof t === 'number') ? s.temps.slice() : null;
+  }
+  ed.readings = liveReadings;
+
+  function showTemps() {
+    const { seq, compiled } = ed;
+    const frames = Math.max(1, seq.lastFrame(), ed.frame);
+    const times = [];
+    const controls = [];
+    for (let f = 1; f <= frames; f++) {
+      times.push(seq.timeOf(f));
+      controls[f] = seq.controlsAt(f);
+    }
+    const spanFrom = (a) => (compiled.spans.get(a.id) || { from: a.start || 1 }).from;
+    const holding = ed.holding ? [...seq.holds].find(([, h]) => h === ed.holding) : null;
+    const runHeat = runner && runner.state && runner.state.heating;
+    if (document.activeElement !== rateUp) rateUp.value = String(compiled.rates.up);
+    if (document.activeElement !== rateDown) rateDown.value = String(compiled.rates.down);
+    tempChart.update({
+      frames,
+      times,
+      current: ed.frame,
+      controls,
+      start: ed.controlsIn ? heat.copyControls(ed.controlsIn) : heat.emptyControls(),
+      holds: [...seq.holds].map(([frame, h]) => ({ frame, targets: h.targets })),
+      points: ed.project.actions.filter((a) => a.type === 'temp').map((a) => ({ id: a.id, frame: spanFrom(a), targets: a.targets, wait: Boolean(a.wait), selected: a.id === ed.selection })),
+      switches: ed.project.actions.filter((a) => a.type === 'magnet').map((a) => ({ id: a.id, frame: spanFrom(a), magnet: a.magnet || 1, on: a.on !== false, selected: a.id === ed.selection })),
+      readings,
+      rates: compiled.rates,
+      holding: holding ? { frame: holding[0] } : runHeat ? { frame: runHeat.frame } : null,
+    });
+  }
+
   // --- timeline --------------------------------------------------------------------------
   // One track per droplet, each action a clip; actions without a droplet name get a track each.
 
-  const KIND = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern' };
+  const KIND = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet' };
+  // Heater and magnet settings share a track each, under the droplets'.
+  const controlTrack = (a) => (a.type === 'temp' ? ['c:heat', 'Heaters', '°C'] : a.type === 'magnet' ? [`c:m${a.magnet || 1}`, `Magnet ${a.magnet || 1}`, `M${a.magnet || 1}`] : null);
   const timeline = new Timeline(timelineBox, {
     onSelect(id) {
       if (ed.dragging) return;
@@ -813,9 +976,9 @@
         id: a.id,
         name: step && !ed.namedByTile(a) ? `${step.name || P.KINDS[step.kind].name} · ${a.name}` : a.name,
         type: a.type,
-        track: a.droplet ? `d:${a.droplet}` : `a:${a.id}`,
-        trackName: a.droplet || a.name,
-        trackShort: a.droplet ? projects.shortDroplet(a.droplet) : '',
+        track: controlTrack(a) ? controlTrack(a)[0] : a.droplet ? `d:${a.droplet}` : `a:${a.id}`,
+        trackName: controlTrack(a) ? controlTrack(a)[1] : a.droplet || a.name,
+        trackShort: controlTrack(a) ? controlTrack(a)[2] : a.droplet ? projects.shortDroplet(a.droplet) : '',
         colour: dropletColour(a.droplet),
         from: span.from,
         to: span.to,
@@ -950,7 +1113,25 @@
     keep(stepField, a.stepTime ? seconds(a.stepTime) : '');
     stepField.placeholder = `${seconds(ed.project.frameTime)} (default)`;
     splitBox.checked = Boolean(a.split);
-    show($('prop-turn'), a.type !== 'dispense');
+    // Heaters and magnets have no droplet, no steps of their own and nothing to turn.
+    const control = a.type === 'temp' || a.type === 'magnet';
+    show(dropletField.closest('.field'), !control && a.type !== 'wait');
+    show(stepField.closest('.field'), !control && a.type !== 'wait');
+    show(splitBox.closest('.check'), !control && a.type !== 'wait');
+    show($('prop-temps-row'), a.type === 'temp');
+    show($('prop-heatwait-row'), a.type === 'temp');
+    show($('prop-tolerance-row'), a.type === 'temp' && Boolean(a.wait));
+    show($('prop-magnet-row'), a.type === 'magnet');
+    if (a.type === 'temp') {
+      a.targets.forEach((t, i) => keep(heaterFields[i], t === null ? '' : String(t)));
+      $('prop-heatwait').checked = Boolean(a.wait);
+      keep($('prop-tolerance'), String(a.tolerance || heat.DEFAULT_TOLERANCE));
+    }
+    if (a.type === 'magnet') {
+      $('prop-magnet').value = String(a.magnet || 1);
+      $('prop-magnet-on').value = a.on === false ? 'off' : 'on';
+    }
+    show($('prop-turn'), !['dispense', 'wait', 'temp', 'magnet'].includes(a.type));
     const p = a.type === 'template' && a.params ? a.params : null;
     const family = p && templates.FAMILIES[p.kind];
     const turnsRound = Boolean(family && family.choices && family.choices.dir);
@@ -974,6 +1155,7 @@
       showWaits(a);
     }
     const notes = ed.issuesOf(a.id).filter((i) => i.kind !== 'waits').map((i) => i.text);
+    if (a.type === 'temp' && a.wait && span) notes.push(`without a device it is estimated to take ${formatTime(ed.seq.elapsed(span.to) - ed.seq.elapsed(span.from - 1))}; live, the frame lasts until the heaters get there`);
     infoText.className = notes.length ? 'info' : 'info ok';
     if (!notes.length && a.type === 'dispense') notes.push('A dispense stays at its reservoir');
     infoText.textContent = notes.map((n) => n[0].toUpperCase() + n.slice(1)).join('. ');
@@ -999,6 +1181,39 @@
     afterDraft = null;
     propChange(ed.setAfter(a.id, preds, Number(delayField.value) || 0), () => `${quote(a)} starts after ${preds.map((id) => quote(ed.action(id))).join(' and ')}`);
   }
+
+  // Heaters and magnets.
+  const heaterFields = [$('prop-t1'), $('prop-t2'), $('prop-t3')];
+  heaterFields.forEach((input, i) => {
+    editKeys(input);
+    input.addEventListener('change', () => {
+      const a = ed.selected;
+      if (!a || a.type !== 'temp') return;
+      const v = input.value.trim();
+      const targets = a.targets.slice();
+      targets[i] = v === '' ? null : heat.clampTemp(Number(v));
+      if (v !== '' && !Number.isFinite(Number(v))) return;
+      propChange(ed.setControl(a.id, { targets }), () => `${quote(a)}: ${heat.targetsText(targets)}`);
+    });
+  });
+  $('prop-heatwait').addEventListener('change', (evt) => {
+    const a = ed.selected;
+    if (a && a.type === 'temp') propChange(ed.setControl(a.id, { wait: evt.target.checked }), () => (evt.target.checked ? `${quote(a)} waits until the heaters get there` : `${quote(a)} doesn't wait`));
+  });
+  editKeys($('prop-tolerance'));
+  $('prop-tolerance').addEventListener('change', (evt) => {
+    const a = ed.selected;
+    const v = Number(evt.target.value);
+    if (a && a.type === 'temp' && v > 0) propChange(ed.setControl(a.id, { tolerance: v }), () => `${quote(a)}: close enough within ${heat.cleanTolerance(v)} °C`);
+  });
+  $('prop-magnet').addEventListener('change', (evt) => {
+    const a = ed.selected;
+    if (a && a.type === 'magnet') propChange(ed.setControl(a.id, { magnet: Number(evt.target.value) }), () => `${quote(a)} switches magnet ${evt.target.value}`);
+  });
+  $('prop-magnet-on').addEventListener('change', (evt) => {
+    const a = ed.selected;
+    if (a && a.type === 'magnet') propChange(ed.setControl(a.id, { on: evt.target.value === 'on' }), () => `${quote(a)} switches it ${evt.target.value}`);
+  });
 
   nameField.addEventListener('change', () => {
     const a = ed.selected;
@@ -1643,7 +1858,7 @@
     else timingSection.style.removeProperty('--timeline-h');
     prefs.timelineHeight = h;
   }
-  const timelineHeight = () => ($('timeline').hidden ? $('chart') : $('timeline')).offsetHeight || 168;
+  const timelineHeight = () => ['timeline', 'chart', 'temp-box'].map($).find((x) => !x.hidden).offsetHeight || 168;
   let resizing = null;
   resizeEdge.addEventListener('pointerdown', (evt) => {
     if (evt.button !== 0) return;
@@ -1932,6 +2147,7 @@
 
   runner = new Runner({
     editor: ed,
+    readings: liveReadings,
     ask: (step) => askRun(stageArea, step, ed.doc.process),
     changed() {
       const s = runner.state;
