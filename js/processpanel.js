@@ -304,7 +304,18 @@
     }
     host.hidden = false;
     const mmss = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
-    host.append(node('h4', { text: state.done ? (state.done === 'end' ? 'Run: done' : state.done === 'stuck' ? 'Run: stopped, stuck' : 'Run: stopped') : state.paused ? 'Run: paused' : 'Run' }));
+    // The heading folds the log away (kept folded through re-renders and reloads).
+    const folded = localStorage.getItem('od.runLogFolded') === '1';
+    host.classList.toggle('folded', folded);
+    const title = state.done ? (state.done === 'end' ? 'Run: done' : state.done === 'stuck' ? 'Run: stopped, stuck' : 'Run: stopped') : state.paused ? 'Run: paused' : 'Run';
+    const head = node('h4', { text: `${folded ? '▸' : '▾'} ${title}` });
+    head.title = folded ? 'Show the run log' : 'Hide the run log';
+    head.addEventListener('click', () => {
+      localStorage.setItem('od.runLogFolded', folded ? '0' : '1');
+      renderLog(host, state);
+    });
+    host.append(head);
+    if (folded) return;
     const list = node('ol');
     for (const e of state.log.slice(-60)) list.append(node('li', {}, node('span', { class: 'when', text: mmss(e.ms) }), ` ${e.text}`));
     host.append(list);
