@@ -271,6 +271,22 @@
               firmware that takes a whole sequence (protocol 1, see docs/device-protocol.md). Today's
               firmware only follows live frames: use live and play instead.</p>
           </section>
+
+          <section class="device-part" id="device-log-part">
+            <h4>Traffic log</h4>
+            <label class="check"><input type="checkbox" id="serial-log-on"> Log what is sent and what comes back</label>
+            <label class="check"><input type="checkbox" id="serial-log-fold" checked> Fold repeats (the same packet
+              and answer again, temperature readings aside, e.g. the status check every second) into a count</label>
+            <div class="row">
+              <button type="button" id="serial-log-clear">Clear</button>
+              <button type="button" id="serial-log-copy">Copy</button>
+              <button type="button" id="serial-log-save">Save…</button>
+              <span id="serial-log-count" class="info"></span>
+            </div>
+            <div id="serial-log" class="serial-log" aria-label="Traffic log" tabindex="0"></div>
+            <p class="hint">→ sent, ← received, × no answer. Each entry: what it says (as the custom
+              firmware reads it), then the bytes in hex. Nothing is logged while this is off.</p>
+          </section>
         </div>
       </div>
 
@@ -339,6 +355,7 @@
   <script src="js/processview.js"></script>
   <script src="js/processpanel.js"></script>
   <script src="js/sync.js"></script>
+  <script src="js/seriallog.js"></script>
   <script src="js/devicepanel.js"></script>
   <script src="js/app.js"></script>
 </body>

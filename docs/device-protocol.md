@@ -27,7 +27,7 @@ holds what it was last sent until the next packet comes.
 | 23 | 0 (protocol 1: the command, see below) |
 | 24 | Feedback: 1 = sense where droplets are (V4.2) |
 | 25 | 1 = save the settings to flash (custom firmware; 0 = don't) |
-| 26–28 | Temperature targets T1–T3 in °C, for the temperature adapter. The original sends 25 unless they are set (20–120) |
+| 26–28 | Temperature targets T1–T3 in °C, for the temperature adapter (20–120; 0 = heater off). The original sends 25 unless they are set; this page sends 0, since the adapter's PID controller holds 25 °C by heating a cooler cartridge, while with 0 its output stays at 0. Not "0 = keep": applied every packet |
 | 29 | High voltage in V, 50–240 (custom firmware; 0 = keep the device's) |
 | 30 | Frequency / 10: 10–100 = 100–1000 Hz (custom firmware; 0 = keep) |
 | 31 | 1 = DC, 2 = AC (custom firmware; 0 = keep) |

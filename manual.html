@@ -955,12 +955,23 @@
         time; its sound and the feedback switch are saved with them. Needs the custom firmware
         (OpenDropVCustom).</li>
       <li><b>Temperatures</b> in the Device tab: the three readings and the targets for heaters the
-        sequence doesn't set.</li>
+        sequence doesn't set. Empty or 0 means <b>off</b>, which is how they start; a heater nothing sets
+        stays off. <span class="ui">Switch all off</span>, disconnecting and closing the page
+        switch the heaters off too.</li>
       <li><span class="ui">Reconnect automatically</span> finds the device again when the page opens or
         it is plugged back in. <span class="ui">Switch all off</span> turns every electrode off.</li>
       <li>Keep the page in front while playing live: a hidden tab stops playback.</li>
       <li><b>Without a device</b>, open <code>index.html#sim</code> and use
         <span class="ui">Simulated OpenDrop</span> in the Device tab to try it.</li>
+      <li><b>Traffic log</b> (bottom of the Device tab), for debugging: tick
+        <span class="ui">Log what is sent and what comes back</span> and every packet to the device
+        and every answer is listed: the time, → sent, ← received or × no answer, what it says in
+        words (electrodes, magnets, feedback, heater targets, screen message, high voltage) and the
+        bytes in hex. <span class="ui">Fold repeats</span> turns the status check sent every second
+        into one entry with a count; the temperature readings in the answers don't stop it folding
+        (it shows the latest). <span class="ui">Copy</span> or <span class="ui">Save…</span>
+        to send it to whoever is looking at the firmware. Only one program can have the port open,
+        so this is how you see the traffic while the page is connected.</li>
     </ul>
 
     <!-- ============================================================================== -->

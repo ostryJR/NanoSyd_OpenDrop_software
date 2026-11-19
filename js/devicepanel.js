@@ -27,7 +27,8 @@
         board: (b) => this.boardFound(b),
         lost: () => this.lost(),
       });
-      if (Array.isArray(this.prefs.targets)) this.session.targets = this.prefs.targets.slice(0, 3);
+      // Heaters start off on every visit (targets aren't kept: a reload mustn't start heating).
+      delete this.prefs.targets;
       this.portLabel = '';
       this.key = '';
       this.busy = false; // connecting
@@ -59,6 +60,12 @@
       };
       this.buildTemps();
       this.wire();
+      // The traffic log (off until switched on).
+      this.log = new OD.serialLog.SerialLog(
+        { on: $('serial-log-on'), fold: $('serial-log-fold'), clear: $('serial-log-clear'), copy: $('serial-log-copy'), save: $('serial-log-save'), list: $('serial-log'), count: $('serial-log-count') },
+        { setStatus: (text, kind) => this.app.setStatus(text, kind) }
+      );
+      this.session.tap = (e) => this.log.add(e);
 
       const d = this.dom;
       d.unsupported.hidden = serial.supported();
@@ -258,7 +265,7 @@
     allOff() {
       if (this.needsDevice()) return;
       this.session.allOff();
-      this.app.setStatus('Everything on the device is switched off; live is off');
+      this.app.setStatus('Everything on the device is switched off, the heaters too; live is off');
     }
 
     buildTemps() {
@@ -271,9 +278,9 @@
         const now = document.createElement('td');
         const target = document.createElement('td');
         const input = document.createElement('input');
-        Object.assign(input, { type: 'number', min: TEMP_RANGE[0], max: TEMP_RANGE[1], step: 1 });
-        input.setAttribute('aria-label', `T${i + 1} target, °C`);
-        input.addEventListener('change', () => this.setTarget(i, Number(input.value)));
+        Object.assign(input, { type: 'number', min: 0, max: TEMP_RANGE[1], step: 1, placeholder: 'off' });
+        input.setAttribute('aria-label', `T${i + 1} target, °C (empty or 0: off)`);
+        input.addEventListener('change', () => this.setTarget(i, input.value.trim() === '' ? null : Number(input.value)));
         input.addEventListener('keydown', (evt) => {
           if (evt.key === 'Enter' || evt.key === 'Escape') input.blur();
           evt.stopPropagation();
@@ -290,9 +297,8 @@
       const targets = this.session.targets.slice();
       targets[i] = value;
       this.session.setTargets(targets);
-      this.prefs.targets = this.session.targets.slice();
-      this.app.savePrefs();
-      this.app.setStatus(`T${i + 1} target: ${this.session.targets[i]} °C`);
+      const t = this.session.targets[i];
+      this.app.setStatus(t === null ? `T${i + 1} off` : `T${i + 1} target: ${t} °C`);
     }
 
     // --- a whole sequence (protocol 1) -----------------------------------------------------------
@@ -406,8 +412,9 @@
         const bySeq = Boolean(s.live && s.frameTargets && typeof s.frameTargets[i] === 'number');
         const input = this.tempInputs[i];
         input.disabled = bySeq;
-        input.title = bySeq ? 'Set by the sequence while live (frame on screen)' : '';
-        if (document.activeElement !== input) input.value = String(bySeq ? sent[i] : s.targets[i]);
+        input.title = bySeq ? 'Set by the sequence while live (frame on screen)' : `Empty or 0: off; ${TEMP_RANGE[0]}–${TEMP_RANGE[1]} °C to heat`;
+        const v = bySeq ? sent[i] : s.targets[i];
+        if (document.activeElement !== input) input.value = v === null ? '' : String(v);
       });
       // The project's high voltage (set in Properties).
       const hv = hvText(this.ed.project.hv);

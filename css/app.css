@@ -1581,6 +1581,44 @@ body.dragging-template * {
   font-size: 13px;
 }
 
+/* The traffic log: newest at the bottom, monospace bytes. */
+.serial-log {
+  max-height: 320px;
+  margin-top: 8px;
+  padding: 4px 6px;
+  overflow-y: auto;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 11.5px;
+}
+
+.serial-log:empty {
+  display: none;
+}
+
+.serial-log .log-entry {
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.serial-log .log-head {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.serial-log .out .log-head { color: #1d4ed8; }
+.serial-log .in .log-head { color: #1e7d32; }
+.serial-log .none .log-head,
+.serial-log .extra .log-head { color: #b00020; }
+.serial-log .text .log-head { color: #8a5a00; }
+
+.serial-log .log-bytes {
+  color: #6b6b6b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
+}
+
 #device-temps {
   border-collapse: collapse;
   font-size: 13px;

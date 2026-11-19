@@ -195,7 +195,7 @@
     warm() {
       if ((this.board & 0x0f) !== 2) return;
       this.temps = this.temps.map((t, i) => {
-        const goal = this.targets[i] || t;
+        const goal = this.targets[i] || 21.5; // 0: off, back to the room's temperature
         return Math.abs(goal - t) < 0.5 ? goal : t + Math.sign(goal - t) * 0.5;
       });
     }

@@ -250,6 +250,9 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
 
 ## 4. Heaters and magnets
 
+- Heaters nothing sets are **off** (sent as 0): the Device tab's targets start empty (= off) on
+  every visit; Switch all off, disconnecting and closing the page switch them off too. A heater
+  warming with nothing set means old firmware/app or a target typed in the Device tab.
 - Three heaters **T1–T3** (temperature adapter), targets 20–120 °C; two magnets **M1/M2**
   (magnet board). Set by **Temperature** and **Magnet** tiles or actions; they last until changed.
 - **Message** tiles put text on the OpenDrop's screen (custom firmware OpenDropVCustom only; older
@@ -272,6 +275,15 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
   everything off. Without a device: open `index.html#sim` and use **Simulated OpenDrop**.
 - Not in the list: wrong browser, another program has the port, or a charge-only USB cable.
 - Exported `.json` files open in the original controller, which only reads the first 200 frames.
+- **Traffic log** (Device tab, bottom): tick **Log what is sent and what comes back**, reproduce the
+  problem, then **Copy** or **Save…** and paste it. Each entry: time, → sent / ← answer / × no
+  answer, what it says in words (electrodes, magnets, feedback, targets, message, high voltage,
+  save) and the bytes in hex; "×N" = the same packet and answer N times (status checks; temperature readings
+  may differ, the latest is shown). Useful
+  readings: × no answer after → = the device isn't answering (wrong firmware, busy in its menu,
+  or the byte count is off); a message "…" packet followed by × = the firmware didn't read the
+  text bytes; the board id in ← answers says which board and adapter it reports. Ask the user
+  for this log when a device problem isn't clear from the photo.
 
 ---
 
