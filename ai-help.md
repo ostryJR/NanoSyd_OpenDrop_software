@@ -16,7 +16,7 @@ How to answer:
 - Photos of a laptop screen are often blurry. If a number or message you need can't be read, say
   what you can see and ask for that one thing (or for a screenshot).
 - If you can't tell from the photo, ask for the **project file**: **save** (top right of the board)
-  downloads a `*.odproj.json` file; its text describes everything (section 7).
+  downloads a `*.odproj` file; its text describes everything (section 7).
 - The app refuses anything that would make droplets touch, and shows why. It is almost always right
   about that; look for the reason before suspecting a bug. If it does look like a bug, say so and
   suggest saving the project file and reporting it.
@@ -378,7 +378,7 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
 
 ---
 
-## 8. The project file (`*.odproj.json`)
+## 8. The project file (`*.odproj`)
 
 If the person pastes it, read:
 

@@ -522,18 +522,18 @@
   // --- save / open / export --------------------------------------------------------------
 
   const withJson = (name) => (/\.json$/i.test(name) ? name : `${name}.json`);
-  const withProject = (name) => (/\.json$/i.test(name) ? name : `${name}${projects.EXTENSION}`);
-  const baseOf = (name) => name.replace(/\.odproj\.json$/i, '').replace(/\.json$/i, '');
+  const withProject = (name) => (/\.(odproj|json)$/i.test(name) ? name : `${name}${projects.EXTENSION}`);
+  const baseOf = (name) => name.replace(/\.odproj\.json$/i, '').replace(/\.(odproj|json)$/i, '');
 
   // Saves text with the browser's save dialog, or (Safari, Firefox) asks for a name and
   // downloads it. Returns the file name, or null if cancelled or failed (the status says why).
-  async function saveText(text, suggested, description, fixName = withJson) {
+  async function saveText(text, suggested, description, fixName = withJson, ext = '.json') {
     if (typeof root.showSaveFilePicker === 'function') {
       let handle;
       try {
         handle = await root.showSaveFilePicker({
           suggestedName: suggested,
-          types: [{ description, accept: { 'application/json': ['.json'] } }],
+          types: [{ description, accept: { 'application/json': [ext] } }],
         });
       } catch (err) {
         if (err.name !== 'AbortError') setStatus(`Could not save: ${err.message}`, 'error');
@@ -568,7 +568,7 @@
   async function save() {
     const suggested = withProject(ed.makingTemplate ? nameInput.value.trim() || 'template' : baseName || 'opendrop-project');
     ed.flush();
-    const name = await saveText(projects.serialize(ed.doc), suggested, 'OpenDrop Generator project', withProject);
+    const name = await saveText(projects.serialize(ed.doc), suggested, 'OpenDrop Generator project', withProject, projects.EXTENSION);
     if (!name) return;
     if (!ed.makingTemplate) baseName = baseOf(name);
     setStatus(`Saved ${name} (${plural(ed.doc.actions.length, 'action')}${ed.doc.process ? `, ${plural(ed.doc.process.tiles.length, 'tile')}` : ''})`);

@@ -376,9 +376,10 @@ steps, fewer are kept; if it can't be kept at all, the status line says so. To s
 **clear all** (it can be undone). This is per browser: in two tabs, the one changed last wins.
 It is no replacement for **save**: clearing the browser's data removes it.
 
-## Project files (`*.odproj.json`)
+## Project files (`*.odproj`)
 
-What **save** writes and **load** opens. JSON, one field per line:
+What **save** writes and **load** opens. JSON, one field per line (any text editor opens it).
+Projects saved before 2026-11-20 end in `.odproj.json`; they open as before:
 
 ```json
 {

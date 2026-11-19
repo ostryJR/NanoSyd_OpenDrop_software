@@ -30,7 +30,7 @@ heat, device, device-sim, runner, jsonio, layout) are tested in node; `view`, `c
 `tempchart`, `serial`, `devicepanel`, `seriallog`, `processview`, `processpanel`, `sync` and
 `app` are browser-only (`app.js` wires everything to the page).
 
-**Actions → frames.** A project (`js/project.js`, `*.odproj.json`) holds *actions*, not frames:
+**Actions → frames.** A project (`js/project.js`, `*.odproj`) holds *actions*, not frames:
 paths (kept as corner points, `js/lines.js`), templates (mixers, merge/split), dispenses, painted
 patterns, waits, and settings (`temp`, `magnet`, `message`). Actions start at a frame or `after`
 other actions. `js/compile.js` turns them into a `Sequence` (`js/model.js`: per-frame electrodes,

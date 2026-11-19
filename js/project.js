@@ -1,4 +1,4 @@
-/* The project file (*.odproj.json): what was drawn, kept as named actions, plus the layout, the
+/* The project file (*.odproj; JSON inside, and older ones end in .odproj.json): what was drawn, kept as named actions, plus the layout, the
  * default frame time, copies of the templates the actions use, and the process (tiles and
  * arrows; each action names the tile it belongs to). Reading checks and cleans a file; parts this
  * version doesn't know are kept as they are and written back. No DOM here. */
@@ -22,7 +22,7 @@
 
   const TAG = 'openDropGeneratorProject';
   const VERSION = 1;
-  const EXTENSION = '.odproj.json';
+  const EXTENSION = '.odproj'; // projects saved before 2026-11-20 end in .odproj.json and still open
   const TYPE_NAMES = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet', message: 'Message' };
   const MAX_WAIT = 24 * 3600 * 1000; // a wait (hold) may last up to a day
   // Key order in saved files; other keys follow in the order they came.
