@@ -69,7 +69,9 @@
         if (!Array.isArray(action.targets) || !action.targets.some((t) => typeof t === 'number')) return { error: 'it sets no temperature' };
         return { steps: [{ cells: [], time: 0 }] };
       case 'magnet':
-        // Switches a magnet on or off from its frame on; it doesn't hold anything up.
+      case 'message':
+        // Switches a magnet on or off, or puts text on the device's screen, from its frame on; it
+        // doesn't hold anything up.
         return { steps: [{ cells: [], time: 0 }] };
       default:
         return { error: `this version can't show “${action.type}” actions (kept in the file)`, unknown: true };
@@ -100,7 +102,11 @@
   // switch their electrodes (128/129) on in every frame, and seq.controls has them per frame.
   // A 'temp' action that waits makes its last frame a hold (seq.holds): played live, that frame
   // lasts until the heaters get there. `rates` (°C/min) give the estimate it lasts otherwise.
-  function compile(project, rects, { arrive = [], controls = null } = {}) {
+  // `context` lists droplets of other lanes running at the same time (not this project's to
+  // change): [{ id, droplet, on: { frame: electrodes switched on }, rest: { frame: electrodes it
+  // lies on } }]. Those on are switched on in the frames (up to the last one of this project's),
+  // those lying show as resting, and touching either counts like touching any droplet.
+  function compile(project, rects, { arrive = [], controls = null, context = [] } = {}) {
     const ctx = lines.context(rects);
     const frameTime = project.frameTime || DEFAULT_FRAME_TIME;
     const seq = new Sequence();
@@ -112,13 +118,15 @@
     const actions = arrive.length ? [...arrive, ...project.actions] : project.actions;
     const coming = (a) => a.type === 'arrive';
     // Settings that take no time: a magnet, a temperature that doesn't wait.
-    const marker = (a) => a.type === 'magnet' || (a.type === 'temp' && !a.wait);
+    const control = (a) => a.type === 'temp' || a.type === 'magnet' || a.type === 'message';
+    const marker = (a) => a.type === 'magnet' || a.type === 'message' || (a.type === 'temp' && !a.wait);
     // Settings and waits don't hold the others up: they last over the frames the others take.
-    const split = (a) => a.type === 'wait' || a.type === 'temp' || a.type === 'magnet';
+    const split = (a) => a.type === 'wait' || control(a);
     const state = controls ? heat.copyControls(controls) : heat.emptyControls();
     const rates = heat.cleanRates(project.heatRates);
     const byId = new Map(actions.map((a) => [a.id, a]));
-    const nameOf = (id) => (byId.has(id) ? `“${byId.get(id).name}”` : id);
+    const others = new Map(context.map((c) => [c.id, c]));
+    const nameOf = (id) => (byId.has(id) ? `“${byId.get(id).name}”` : others.has(id) ? `${others.get(id).droplet || 'a droplet'} (another lane)` : id);
 
     const runnable = [];
     for (const a of actions) {
@@ -163,7 +171,7 @@
         r.remaining = Math.max(frameTime, heat.estimateMs(state.targets, want, rates));
         r.steps = [{ cells: [], time: r.remaining }];
       } else r.remaining = stepTime(r);
-      if (a.type === 'temp' || a.type === 'magnet') heat.apply(state, a);
+      if (control(a)) heat.apply(state, a);
       running.push(r);
       return r;
     };
@@ -174,7 +182,7 @@
         if (on) seq.set(heat.MAGNETS[i].e, f, true);
       });
     };
-    const anyControls = heat.usesControls(state) || actions.some((a) => a.type === 'temp' || a.type === 'magnet');
+    const anyControls = heat.usesControls(state) || actions.some(control);
 
     // Frames run until nothing is running or waiting to start (or the guard is reached).
     const lastStart = Math.max(0, ...starts.keys());
@@ -330,12 +338,30 @@
       for (const { id, step } of active[f]) add(f, id, dropletCells(expanded.get(id).steps[step].cells));
     }
     for (const r of resting) for (let f = r.from; f <= r.to; f++) add(f, r.id, r.cells);
+    // Other lanes' droplets meanwhile (kept apart from this project's own resting droplets, which
+    // say where its droplets are at the end).
+    const contextResting = [];
+    const fromContext = new Set(context.map((c) => c.id));
+    for (const c of context) {
+      for (const [k, cells] of Object.entries(c.on || {})) {
+        const f = Number(k);
+        if (f < 1 || f > end) continue;
+        add(f, c.id, dropletCells(cells));
+        for (const e of cells) seq.set(e, f, true);
+      }
+      for (const [k, cells] of Object.entries(c.rest || {})) {
+        const f = Number(k);
+        if (f < 1 || f > end) continue;
+        add(f, c.id, cells);
+        contextResting.push({ id: c.id, droplet: c.droplet, cells, from: f, to: f });
+      }
+    }
     const touching = (xs, ys) => xs.some((x) => ys.some((y) => (near.get(x) ? near.get(x).has(y) : x === y)));
     // pair -> { a, b, frame, cells: { [id]: electrodes }, before: b was there the frame before }
     const touches = new Map();
     const note = (a, b, f, cellsA, cellsB, before = false) => {
       const k = key(a, b);
-      if (a === b || links.has(k) || touches.has(k)) return;
+      if (a === b || links.has(k) || touches.has(k) || (fromContext.has(a) && fromContext.has(b))) return;
       touches.set(k, { a, b, frame: f, cells: { [a]: cellsA, [b]: cellsB }, before });
     };
     for (let f = 1; f <= end; f++) {
@@ -368,7 +394,7 @@
     for (const r of resting) if (r.to === end) put(r.id, r.cells);
     const left = [...leftBy].map(([droplet, cells]) => ({ droplet, cells })).sort((x, y) => (x.droplet < y.droplet ? -1 : x.droplet > y.droplet ? 1 : 0));
 
-    return { seq, spans, active, expanded, resting, touches: new Set(touches.keys()), left, issues, frameTime, controls: state, rates };
+    return { seq, spans, active, expanded, resting: contextResting.length ? resting.concat(contextResting) : resting, touches: new Set(touches.keys()), left, issues, frameTime, controls: state, rates };
   }
 
   // A sequence (e.g. a loaded OpenDrop file) as one pattern action covering frame 1 to its last

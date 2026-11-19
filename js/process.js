@@ -28,8 +28,9 @@
     wait: { name: 'Wait', about: 'Holds the droplets where they are for a set time.', ports: ['next'], work: true },
     temperature: { name: 'Temperature', about: 'Sets the heaters (T1–T3); it can wait until they get there.', ports: ['next'], work: true },
     magnet: { name: 'Magnet', about: 'Switches a magnet on or off; it stays that way until another Magnet tile.', ports: ['next'], work: true },
-    measure: { name: 'Measure', about: 'The run stops and asks you for a measured value.', ports: ['next'], stop: true },
-    ask: { name: 'Ask', about: 'The run stops and asks you a question: yes or no, or a number.', ports: ['next'], stop: true },
+    message: { name: 'Message', about: 'Shows a short text on the OpenDrop’s screen (custom firmware) until another Message tile; empty clears it.', ports: ['next'], work: true },
+    measure: { name: 'Measure', about: 'The run stops for a measured value: a number, typed in by you.', ports: ['next'], stop: true },
+    ask: { name: 'Ask', about: 'The run stops and asks you a yes-or-no question.', ports: ['next'], stop: true },
     decision: { name: 'Decision', about: 'Goes the yes or the no way, by a measured or asked value.', ports: ['yes', 'no'], stop: true },
     repeat: { name: 'Repeat', about: 'Goes round what follows “again” a number of times, then on by “done”.', ports: ['again', 'done'], stop: true },
     parallel: { name: 'Parallel', about: 'Splits the way into lanes that run at the same time, on one board.', ports: null },
@@ -38,7 +39,7 @@
   // How they are listed in the palette, in groups.
   const PALETTE_GROUPS = [
     { name: 'On the board', kinds: ['step', 'dispense', 'move', 'mix', 'merge', 'split', 'wait'] },
-    { name: 'Heat and magnets', kinds: ['temperature', 'magnet'] },
+    { name: 'Heat, magnets, screen', kinds: ['temperature', 'magnet', 'message'] },
     { name: 'Measure and decide', kinds: ['measure', 'ask', 'decision', 'repeat'] },
     { name: 'Lanes', kinds: ['parallel', 'join'] },
     { name: 'Start and end', kinds: ['start', 'end'] },
@@ -56,6 +57,15 @@
   const portsOf = (t) => (t.kind === 'parallel' ? Array.from({ length: lanesOf(t) }, (_, i) => `lane${i + 1}`) : KINDS[t.kind].ports);
   const isStop = (t) => Boolean(KINDS[t.kind].stop);
   const hasWork = (t) => Boolean(KINDS[t.kind].work);
+  // What an Ask or Measure tile puts on the device's screen while a run waits at it (`screen`
+  // on): its own screen text, else its question or prompt; null if it shows nothing.
+  function screenText(t) {
+    if (!t || (t.kind !== 'ask' && t.kind !== 'measure') || !t.screen) return null;
+    const own = typeof t.screenText === 'string' ? t.screenText.replace(/\s+/g, ' ').trim().slice(0, 20).trim() : '';
+    if (own) return own;
+    if (t.kind === 'ask') return t.question || 'Go on?';
+    return t.prompt || `${t.value || 'Value'}${t.unit ? ` (${t.unit})` : ''}?`;
+  }
   const takesInput = (t) => KINDS[t.kind].input !== false;
   const portName = (port) => (/^lane\d+$/.test(port) ? `lane ${port.slice(4)}` : port);
   // Tiles where lanes end and that wait for all of them: a join, and a merge (one lane per droplet).
@@ -103,18 +113,20 @@
         return { name: 'Temperature', targets: [60, null, null], wait: true, tolerance: 1 };
       case 'magnet':
         return { name: 'Magnet', magnet: 1, on: true };
+      case 'message':
+        return { name: 'Message', text: 'Step 1' };
       case 'measure': {
         const used = new Set(process.tiles.map((t) => t.value));
         let value = 'conc';
         for (let i = 2; used.has(value); i++) value = `value${i}`;
-        return { name: 'Measure', value, unit: '' };
+        return { name: 'Measure', value, unit: '', source: 'typed', prompt: '', screen: true, screenText: `${value}?` };
       }
       case 'ask':
-        return { name: 'Ask', question: 'Go on?', answer: 'yesno', value: 'ok' };
+        return { name: 'Ask', question: 'Go on?', value: 'ok', screen: true, screenText: 'Go on?' };
       case 'decision': {
         const measured = process.tiles.filter((t) => (t.kind === 'measure' || t.kind === 'ask') && t.value);
         const last = measured[measured.length - 1];
-        if (last && last.kind === 'ask' && last.answer === 'yesno') return { value: last.value, op: 'is', than: 'yes' };
+        if (last && last.kind === 'ask') return { value: last.value, op: 'is', than: 'yes' };
         return { value: last ? last.value : '', op: '<', than: 0 };
       }
       case 'repeat':
@@ -415,31 +427,24 @@
       else if (!known.get(t.id).has(t.value)) add(t.id, `${t.value} isn't measured before this on every way here: a run will ask for it`);
     }
 
-    // Parallel lanes: they must end again, in a Wait for all or a Merge, with no stop on the way.
+    // Parallel lanes run on their own until a Wait for all or a Merge (or each until an End). A
+    // question in one of them stops everything while it is asked, the other lanes too.
     for (const t of process.tiles) {
       if (t.kind !== 'parallel') continue;
       const lanes = g.out.get(t.id);
       if (lanes.length < portsOf(t).length) continue; // reported above
-      let joins = 0;
-      let ended = false;
-      let stop = null;
+      let asks = null;
       const seen = new Set();
       const walk = (id) => {
         if (seen.has(id)) return;
         seen.add(id);
         const x = g.byId.get(id);
-        if (endsLanes(x)) {
-          joins++;
-          return;
-        }
-        if (x.kind === 'end') ended = true;
-        else if (isStop(x)) stop = stop || x;
-        if (isStop(x)) return;
+        if (endsLanes(x) || x.kind === 'end') return;
+        if (x.kind === 'measure' || x.kind === 'ask') asks = asks || x;
         for (const l of g.out.get(id)) if (!back.has(linkKey(l))) walk(l.to);
       };
       for (const l of lanes) walk(l.to);
-      if (stop) add(t.id, `${KINDS[stop.kind].name} can't be inside parallel lanes: put it after the lanes end, in a Wait for all or a Merge`, 'error');
-      else if (!joins || ended) add(t.id, "Its lanes don't join again: end them in a Wait for all, or in a Merge to put their droplets together", 'error');
+      if (asks) add(t.id, `“${asks.name || KINDS[asks.kind].name}” is in one of its lanes: while it asks, everything pauses, the other lanes too`);
     }
     for (const t of process.tiles) {
       if (t.kind !== 'join') continue;
@@ -452,8 +457,6 @@
     // A stretch leading to two places at once.
     const st = stretches(process, g, back);
     for (const s of st.list) {
-      const exits = exitsOf(s, g);
-      if (exits.length > 1) add(s.start, 'This part leads to two places at once: end its lanes first', 'error');
       // Two Dispense tiles of one part naming their droplets the same: one track, mixed up.
       const makes = s.tiles.map((id) => g.byId.get(id)).filter((t) => t.kind === 'dispense' && t.droplet);
       for (const t of makes) if (makes.some((o) => o !== t && o.droplet === t.droplet)) add(t.id, `Another Dispense in this part also makes “${t.droplet}”`);
@@ -683,7 +686,7 @@
   }
 
   return {
-    KINDS, PALETTE, PALETTE_GROUPS, OPS, MAX_LANES, emptyProcess, isTile, portsOf, portName, lanesOf, isStop, hasWork,
+    KINDS, PALETTE, PALETTE_GROUPS, OPS, MAX_LANES, emptyProcess, isTile, portsOf, portName, lanesOf, isStop, hasWork, screenText,
     takesInput, endsLanes, inputsOf, sizeOf, tileById, addTile, moveTile, removeTile, link, unlink, setLanes, graph,
     linkKey, backLinks, stretches, exitsOf, conditionText, evaluate, loops, check, tidy, Walk, COL, ROW, GAP_X, GAP_Y, LOOP,
   };

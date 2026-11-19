@@ -73,7 +73,7 @@ test('straight routes turn the other way when a corner electrode is missing', ()
 
 test('freehand drafts ignore electrodes a droplet cannot get to', () => {
   const rects = getLayout('electrodes_magnet').rects;
-  const draft = new PathDraft(rects, 'freehand', 9, 1, { mx: -13, my: -5 });
+  const draft = new PathDraft(rects, 9, 1, { mx: -13, my: -5 });
   draft.moveTo(-5, 10); // ends on magnet 128
   assert.ok(draft.steps > 0);
   assert.ok(!draft.cells.includes(128));

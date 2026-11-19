@@ -21,27 +21,75 @@
   const DEFAULT_TEMP = 25; // the original controller's starting targets, sent to every board
   const TEMP_RANGE = [20, 120];
   const NO_SENSOR = 150;
-  // Positions in a packet: the firmware's ControlBytesIn[i] is byte 16 + i.
-  const OUT = { feedback: 24, temps: 26, command: 31 };
+  // Positions in a packet: the firmware's ControlBytesIn[i] is byte 16 + i. The custom firmware
+  // (OpenDropVCustom) reads the high voltage: volts, frequency / 10 and 1 DC / 2 AC, where 0 keeps
+  // what the device has; and `save` = 1 writes its settings (high voltage, sound, feedback) to
+  // flash. Ordinary frames send 0 in all four, so they change nothing; older firmware ignores
+  // them. `message` (ControlBytesIn[1]) shows text on the device's screen: N = 1-254 text bytes
+  // follow the packet, 255 clears it, 0 leaves it (so electrodes 136-143 can't be sent: that byte
+  // was their column). Protocol 1's command is in byte 23 (ControlBytesIn[7], unused).
+  const OUT = { message: 17, command: 23, feedback: 24, save: 25, temps: 26, volts: 29, freq: 30, mode: 31 };
+  const MESSAGE_SHOWN = 20; // characters the screen shows (the firmware cuts the rest)
+  const MESSAGE_CLEAR = 255;
+  const VOLTS = [50, 240];
+  const FREQ = [100, 1000]; // Hz, in steps of 10
+  const MODES = { dc: 1, ac: 2 };
   // Positions in an answer.
   const IN = { protocol: 16, temps: 17, board: 23, result: 24, state: 25, frame: 26, stored: 27, crc: 28 };
   const COMMAND = { frame: 0, load: 1, run: 2, stop: 3, status: 4 };
   const RESULTS = ['ok', 'bad checksum', 'too long', 'busy', 'unknown command', 'nothing loaded'];
   const RUN_STATES = ['idle', 'running', 'done'];
 
+  // High-voltage settings as sent: { volts, hz, mode } each null (keep the device's) or in range.
+  function cleanHV(hv) {
+    const out = { volts: null, hz: null, mode: null };
+    if (!hv || typeof hv !== 'object') return out;
+    const v = Number(hv.volts);
+    if (hv.volts !== null && hv.volts !== '' && Number.isFinite(v) && v > 0) out.volts = Math.min(VOLTS[1], Math.max(VOLTS[0], Math.round(v)));
+    const f = Number(hv.hz);
+    if (hv.hz !== null && hv.hz !== '' && Number.isFinite(f) && f > 0) out.hz = Math.min(FREQ[1], Math.max(FREQ[0], Math.round(f / 10) * 10));
+    if (hv.mode === 'dc' || hv.mode === 'ac') out.mode = hv.mode;
+    return out;
+  }
+
+  // Text for the device's screen: plain ASCII (accents dropped, anything else a ?), one line, at
+  // most MESSAGE_SHOWN characters. '' clears the screen's message.
+  function cleanMessage(text) {
+    return String(text === null || text === undefined ? '' : text)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/[^\x20-\x7e]/g, '?')
+      .trim()
+      .slice(0, MESSAGE_SHOWN);
+  }
+
   const clampTemp = (t) => (Number.isFinite(t) ? Math.min(TEMP_RANGE[1], Math.max(TEMP_RANGE[0], Math.round(t))) : DEFAULT_TEMP);
 
   // --- bytes ----------------------------------------------------------------------------------
 
   // A packet: electrodes `cells` on (0-143: byte = column, bit = row), the feedback switch, the
-  // three temperature targets (°C) and the command (0 = a frame to show, as today's firmware
-  // knows it; others are protocol 1).
-  function encodeFrame(cells = [], { feedback = false, temps = null, command = COMMAND.frame } = {}) {
-    const out = new Uint8Array(PACKET);
-    for (const e of cells) if (Number.isInteger(e) && e >= 0 && e < CELLS) out[e >> 3] |= 1 << (e & 7);
+  // three temperature targets (°C), the high voltage (cleanHV; unset = 0, keep), whether the
+  // device saves its settings, a message for its screen (a string, cleanMessage; '' clears it;
+  // undefined or null leaves it: then the packet is 32 bytes, otherwise the text follows) and the
+  // command (0 = a frame to show, as today's firmware knows it; others are protocol 1).
+  function encodeFrame(cells = [], { feedback = false, temps = null, hv = null, save = false, message = null, command = COMMAND.frame } = {}) {
+    const text = message === null || message === undefined ? null : cleanMessage(message);
+    const out = new Uint8Array(PACKET + (text ? text.length : 0));
+    // Columns 0-16: byte 17, once electrodes 136-143, is the message's length.
+    for (const e of cells) if (Number.isInteger(e) && e >= 0 && e < OUT.message * 8) out[e >> 3] |= 1 << (e & 7);
     out[OUT.feedback] = feedback ? 1 : 0;
     for (let i = 0; i < 3; i++) out[OUT.temps + i] = clampTemp(temps ? temps[i] : DEFAULT_TEMP);
     out[OUT.command] = command;
+    const h = cleanHV(hv);
+    out[OUT.volts] = h.volts || 0;
+    out[OUT.freq] = h.hz ? h.hz / 10 : 0;
+    out[OUT.mode] = h.mode ? MODES[h.mode] : 0;
+    out[OUT.save] = save ? 1 : 0;
+    if (text !== null) {
+      out[OUT.message] = text.length || MESSAGE_CLEAR;
+      for (let i = 0; i < text.length; i++) out[PACKET + i] = text.charCodeAt(i);
+    }
     return out;
   }
 
@@ -325,6 +373,10 @@
       this.targets = [DEFAULT_TEMP, DEFAULT_TEMP, DEFAULT_TEMP];
       this.cells = []; // the frame on screen
       this.frameTargets = null; // heater targets the frame on screen sets (°C or null ×3), if any
+      this.frameMessage = null; // the message the frame on screen puts on the device's screen, if any
+      this.note = null; // a message shown meanwhile (a run's question), over the frame's; null: none
+      this.shown = null; // what the device's screen shows, as far as is known ('' = nothing; null: unknown)
+      this.sending = null; // a message on its way (not sent again meanwhile)
       this.lastSent = null;
       this.pollTimer = null;
       this.run = null; // a sequence running on the device: { frames, frame, state }
@@ -345,9 +397,26 @@
       this.on.change();
     }
 
-    // The bytes the device should have now: the frame on screen when live, otherwise all off.
+    // The bytes the device should have now: the frame on screen when live, otherwise all off; and
+    // the message for its screen if that has to change.
     bytes() {
-      return encodeFrame(this.live ? this.cells : [], { feedback: this.feedback && Boolean(this.board && this.board.feedback), temps: this.sentTargets });
+      const message = this.messageToSend;
+      return encodeFrame(this.live ? this.cells : [], { feedback: this.feedback && Boolean(this.board && this.board.feedback), temps: this.sentTargets, message });
+    }
+
+    // What the device's screen should say: a note (a run's question), else live the frame's
+    // message; with neither, a message put there before is cleared ('' ). null: leave it alone.
+    get wantedMessage() {
+      if (this.note !== null) return this.note;
+      if (this.live && this.frameMessage !== null) return this.frameMessage;
+      return this.shown ? '' : null;
+    }
+
+    // The message to send with the next packet: only when the screen should change, and not while
+    // the same one is on its way.
+    get messageToSend() {
+      const want = this.wantedMessage;
+      return want === null || want === this.shown || want === this.sending ? null : cleanMessage(want);
     }
 
     // The heater targets sent: live, those the frame on screen sets (the others as set here);
@@ -367,6 +436,7 @@
       this.live = false;
       this.lastSent = null;
       this.run = null;
+      this.shown = null; // a message left from before stays until one is sent
       this.setState('connecting');
       const ok = (await link.sync()) && this.link === link && (await this.push(true));
       if (this.link !== link) return false;
@@ -386,16 +456,28 @@
     async push(always = false) {
       const link = this.link;
       if (!link || this.run) return true;
+      const message = this.messageToSend;
       const bytes = this.bytes();
       if (!always && sameBytes(bytes, this.lastSent)) return true;
       this.lastSent = bytes;
+      if (message !== null) this.sending = message;
       const answer = await link.send(bytes);
-      if (answer === undefined || link !== this.link) return true; // a newer frame took its place
+      if (message !== null && this.sending === message) this.sending = null;
+      if (link !== this.link) return true;
+      if (answer === undefined) {
+        // A newer frame took its place before it went: that one was made without the text.
+        if (message !== null) {
+          this.lastSent = null;
+          this.push();
+        }
+        return true;
+      }
       if (!answer) {
         this.lastSent = null;
         if (this.state === 'on') this.setState('silent');
         return false;
       }
+      if (message !== null) this.shown = message; // the next packet goes without the text
       this.take(answer);
       if (this.state === 'silent') this.setState('on');
       return true;
@@ -434,12 +516,20 @@
       if (link === this.link) this.schedule();
     }
 
-    // The frame on screen (its electrodes, and the heater targets it sets, if any); sent at once
-    // when live.
-    show(cells, targets = null) {
+    // The frame on screen (its electrodes, and the heater targets and screen message it sets, if
+    // any); sent at once when live.
+    show(cells, targets = null, message = null) {
       this.cells = cells;
       this.frameTargets = targets;
+      this.frameMessage = message === null || message === undefined ? null : cleanMessage(message);
       if (this.live && this.state === 'on') this.push();
+    }
+
+    // A message over the frame's (a run's question), or null to take it away; sent at once.
+    setNote(text) {
+      this.note = text === null || text === undefined ? null : cleanMessage(text);
+      if (this.state === 'on') this.push();
+      this.on.change();
     }
 
     setLive(on) {
@@ -465,9 +555,27 @@
       this.on.change();
     }
 
-    // Live off, everything off on the device.
+    // Sends the high voltage (cleanHV; unset parts keep what the device has) once, with what the
+    // device should have now; with `save`, the device also writes its settings to flash, so they
+    // are there after it is switched off and on (the feedback switch too). Ordinary frames after
+    // it send 0 there again: the device keeps these. Resolves with { ok, reason }.
+    async sendHV(hv, { save = false } = {}) {
+      const link = this.link;
+      if (!link || this.state !== 'on') return { ok: false, reason: 'no device is connected' };
+      if (this.run) return { ok: false, reason: 'a sequence is running on the device' };
+      const bytes = encodeFrame(this.live ? this.cells : [], { feedback: this.feedback && Boolean(this.board && this.board.feedback), temps: this.sentTargets, hv, save });
+      const answer = await link.exchange(bytes, REPLY);
+      if (link !== this.link) return { ok: false, reason: 'the device went away' };
+      this.lastSent = null; // the next frame goes as usual
+      if (!answer) return { ok: false, reason: "the device didn't answer" };
+      this.take(answer);
+      return { ok: true };
+    }
+
+    // Live off, everything off on the device (a message the page put on its screen too).
     allOff() {
       this.live = false;
+      this.note = null;
       const done = this.link ? this.push() : Promise.resolve(true);
       this.on.change();
       return done;
@@ -479,6 +587,7 @@
       this.timers.clearTimeout(this.pollTimer);
       if (!link) return;
       this.live = false;
+      this.note = null;
       if (allOff && !link.closed) {
         if (this.run) await this.command(COMMAND.stop);
         this.run = null;
@@ -495,7 +604,7 @@
       if (!link || link.closed) return;
       this.timers.clearTimeout(this.pollTimer);
       try {
-        const done = link.transport.write(this.run ? encodeFrame([], { command: COMMAND.stop }) : encodeFrame([], { temps: this.targets }));
+        const done = link.transport.write(this.run ? encodeFrame([], { command: COMMAND.stop }) : encodeFrame([], { temps: this.targets, message: this.shown ? '' : null }));
         if (done && done.catch) done.catch(() => {});
       } catch {
         // the page is going anyway
@@ -513,6 +622,8 @@
     reset() {
       this.live = false;
       this.run = null;
+      this.shown = null;
+      this.sending = null;
       this.board = null;
       this.protocol = 0;
       this.sensed = [];
@@ -592,8 +703,8 @@
   }
 
   return {
-    BAUD, PACKET, REPLY, STATUS, COLUMNS, CELLS, MAX_FRAMES, DEFAULT_TEMP, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND,
-    RESULTS, RUN_STATES, encodeFrame, cellsIn, boardInfo, decodeReply, crc16, encodeSequence, decodeSequence, sameBytes,
+    BAUD, PACKET, REPLY, STATUS, COLUMNS, CELLS, MAX_FRAMES, DEFAULT_TEMP, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND, VOLTS, FREQ, cleanHV,
+    MESSAGE_SHOWN, cleanMessage, RESULTS, RUN_STATES, encodeFrame, cellsIn, boardInfo, decodeReply, crc16, encodeSequence, decodeSequence, sameBytes,
     textLine, Link, Session,
   };
 });

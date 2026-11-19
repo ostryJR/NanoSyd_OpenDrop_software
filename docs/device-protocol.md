@@ -3,7 +3,8 @@
 How OpenDrop Generator talks to an OpenDrop V4 from the browser (Web Serial, Chrome or Edge), and
 a proposal for firmware that can take a whole sequence. The first part is what today's firmware
 does: it was read from GaudiLabs' `OpenDropController4_25.pde` (`transmit()`) and
-`OpenDropV4/Software/OpenDropV42/OpenDropV42.ino` (`loop()`). Nothing in the firmware was changed.
+`OpenDropV4/Software/OpenDropV42/OpenDropV42.ino` (`loop()`), plus the high-voltage bytes the
+custom firmware (OpenDropVCustom) adds.
 
 The code is in `js/device.js` (bytes, lining up, the session), `js/serial.js` (Web Serial) and
 `js/device-sim.js` (a simulated device that counts bytes the way the firmware does).
@@ -21,12 +22,34 @@ holds what it was last sent until the next packet comes.
 |---|---|
 | 0–15 | Electrode columns 0–15: one byte per column, bit r = row r (electrode e = column × 8 + row) |
 | 16 | Control lines, electrodes 128–135. The V4.2 firmware reads bit 0x2 as magnet 1 (electrode 129) and 0x1 as magnet 2 (electrode 128) |
-| 17 | Electrodes 136–143 (not used by the V4.2 firmware) |
-| 18–23 | 0 |
+| 17 | Message on the device's screen (custom firmware): N = 1–254 text bytes follow the packet, 255 clears it, 0 leaves it. Once electrodes 136–143, which the V4.2 firmware doesn't use |
+| 18–22 | 0 |
+| 23 | 0 (protocol 1: the command, see below) |
 | 24 | Feedback: 1 = sense where droplets are (V4.2) |
-| 25 | 0 |
+| 25 | 1 = save the settings to flash (custom firmware; 0 = don't) |
 | 26–28 | Temperature targets T1–T3 in °C, for the temperature adapter. The original sends 25 unless they are set (20–120) |
-| 29–31 | 0 |
+| 29 | High voltage in V, 50–240 (custom firmware; 0 = keep the device's) |
+| 30 | Frequency / 10: 10–100 = 100–1000 Hz (custom firmware; 0 = keep) |
+| 31 | 1 = DC, 2 = AC (custom firmware; 0 = keep) |
+
+**Message (byte 17, `ControlBytesIn[1]`):** with N = 1–254, N plain ASCII bytes come straight after
+byte 31 and the device reads them all (within 1 s) before it acts on the packet and answers. Its
+screen shows the first 20 characters, centred in a white bar, until another message or a clear
+(255, no text); its "INSERT CARTRIDGE" and "UNDER VOLTAGE!" warnings are drawn over it. The page
+sends at most 20 characters (accents dropped, other characters as ?), and only when the screen
+should change: a frame whose Message action sets other text (live), a run's question (an Ask or
+Measure tile set to show on the device), or a clear when there is nothing to show any more (live
+off, Switch all off, disconnecting, the page closing). Every other packet has 0 there.
+
+Bytes 25 and 29–31 are read by the custom firmware (`firmware_custom/…/OpenDropVCustom.ino`,
+`ControlBytesIn[9]` and `[13..15]`): it clamps 29–31 and calls `set_voltage()` when one differs from
+what it has; 0 keeps the current setting. With byte 25 = 1 it then calls `save_settings()`, which
+writes the high voltage, sound and feedback (byte 24 of that packet) to flash, only if they differ
+from what is stored. The original firmware and controller send and ignore 0 there.
+
+The page sends 0 in bytes 25 and 29–31 in ordinary frames. The project's high voltage (Properties,
+under the frame time) goes in one packet when the device connects and whenever it changes; the
+Device tab's **Save to device** sends it once more with byte 25 = 1.
 
 In the firmware, bytes 16–31 are `ControlBytesIn[0..15]`; the controller sends bytes 18–31 as
 `control_data_out[0..13]`.
@@ -96,9 +119,10 @@ take them for electrode data.
 
 ### Commands
 
-A command is a 32-byte packet like a frame, with the **command in byte 31**: 0 = a frame to show
+A command is a 32-byte packet like a frame, with the **command in byte 23** (`ControlBytesIn[7]`,
+unused; bytes 25 and 31 are the custom firmware's save flag and AC/DC): 0 = a frame to show
 (as today), 1 = load a sequence, 2 = run it, 3 = stop, 4 = status. For commands 1–4 the electrode
-bytes are ignored; feedback and the temperature targets (bytes 24–28) apply as for a frame.
+bytes are ignored; feedback and the temperature targets (bytes 24, 26–28) apply as for a frame; the high-voltage bytes are 0.
 
 A frame (command 0) is answered with 24 bytes, as today. Commands 1–4 are answered with 32 bytes:
 the usual 24, then:
@@ -144,8 +168,8 @@ On top of today's `loop()`:
 
 ```text
 on the 32nd byte of a packet:
-  command = ControlBytesIn[15]
-  feedback, temperature targets as today
+  command = ControlBytesIn[7]
+  feedback, temperature targets, high voltage as today
   if command == 0: if not running: drive the frame as today. Answer 24 bytes (byte 16 = 1).
   if command == 1: if running: answer busy; else the next bytes are a block: read 4, check
                    "OD", format 1, N <= 200 (else answer "too long" and go back to packets);

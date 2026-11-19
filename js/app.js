@@ -94,6 +94,7 @@
 
   function setStatus(text, kind = 'info') {
     statusText.textContent = text;
+    statusText.title = text; // whole on hover, if it is cut short
     statusText.className = kind;
   }
 
@@ -107,6 +108,11 @@
     setStatus(ed.notice, 'warn');
     ed.notice = null;
     return true;
+  }
+
+  // While a run is going (here or in another tab) nothing in the project changes: says so, true.
+  function refused() {
+    return ed.refused() && showNotice();
   }
 
   // While a path is being drawn, the status line counts its steps.
@@ -145,6 +151,7 @@
       if (sync) sync.settle(ed.doc);
       syncRev = ed.revision;
     }
+    svg.classList.toggle('running', Boolean(ed.readOnly)); // a run is going: its red frame greyed a bit
     if (view === 'board') {
       board.render(ed, { numbers: showNumbers, lines: showLines, device: device && device.boardState(), rings: rings(), heat: heatInfo(), frameOffset: offset() });
     } else if (processView) processView.render();
@@ -153,10 +160,35 @@
     showProperties();
     if (ed.makingTemplate) showMakerInfo();
     if (device) device.paint(); // live: the frame on screen goes to the device
+    sendProjectHV();
     noteReading();
     showViewbar();
+    showReadOnly();
     noteWork();
     shareWork();
+  }
+
+  // While a run is going, the fields and buttons that change the project are greyed out (the
+  // editor refuses changes anyway; this says so before they are tried). Properties are filled in
+  // anew as the selection changes, so they are gone over at every paint.
+  const EDITING = '#props input, #props select, #props button, #time-default, #hv-volts, #hv-hz, #hv-mode, #rate-up, #rate-down, #add-file, #layout, #template-new';
+  let shownReadOnly = null;
+  function showReadOnly() {
+    const why = ed.readOnly;
+    if (!why && !shownReadOnly) return;
+    for (const el of document.querySelectorAll(EDITING)) {
+      if (why) {
+        if (!('wasTitle' in el.dataset)) el.dataset.wasTitle = el.title;
+        el.disabled = true;
+        el.title = why;
+      } else if ('wasTitle' in el.dataset) {
+        el.disabled = false;
+        el.title = el.dataset.wasTitle;
+        delete el.dataset.wasTitle;
+      }
+    }
+    shownReadOnly = why;
+    document.body.classList.toggle('read-only', Boolean(why));
   }
 
   // The heaters and magnets in the frame on screen, for the strip under the board: shown once the
@@ -165,13 +197,14 @@
     const c = ed.controlsAt(ed.frame);
     const s = device && device.session;
     const adapter = Boolean(s && s.connected && s.board && s.board.temperature);
-    const used = ed.doc.actions.some((a) => a.type === 'temp' || a.type === 'magnet') || heat.usesControls(c);
+    const used = ed.doc.actions.some((a) => a.type === 'temp' || a.type === 'magnet' || a.type === 'message') || heat.usesControls(c);
     const hold = ed.holding || (runner && runner.state && !runner.state.done && runner.state.heating) || null;
     const hereHold = ed.seq.holds.get(ed.frame);
     return {
       show: used || adapter,
       targets: c.targets,
       magnets: c.magnets,
+      message: typeof c.message === 'string' ? c.message : null,
       temps: adapter ? s.temps.slice() : null,
       tolerance: hereHold ? hereHold.tolerance : heat.DEFAULT_TOLERANCE,
       waiting: hold ? { targets: hold.targets } : null,
@@ -224,13 +257,14 @@
     const drawing = ed.dragging; // during a drag, undo and redo just cancel it
     if (kind === 'undo') ed.undo();
     else ed.redo();
-    clearDraftStatus(drawing ? 'Cancelled' : ''); // whatever the status said may no longer be true
+    if (!showNotice()) clearDraftStatus(drawing ? 'Cancelled' : ''); // whatever the status said may no longer be true
     redraw();
   }
 
   function deleteSelected() {
     const a = ed.selected;
     if (a && ed.deleteSelected()) setStatus(`Deleted ${quote(a)}`);
+    else showNotice();
     redraw();
   }
 
@@ -244,7 +278,10 @@
   // Actions that open a browser dialog (a file).
   const DIALOGS = {
     save: () => save(),
-    load: () => fileInput.click(),
+    load: () => {
+      if (refused()) return;
+      fileInput.click();
+    },
     export: () => exportFrames(),
   };
   let pendingDialog = null;
@@ -358,6 +395,7 @@
       if (Math.abs(wheelTotal) < 40) return;
       ed.wheel(Math.sign(wheelTotal));
       wheelTotal = 0;
+      showNotice(); // a run is going: frames can't be scrolled through
       redraw();
     },
     { passive: false }
@@ -428,12 +466,15 @@
     switch (key) {
       case 'ArrowRight':
         ed.nextFrame();
+        showNotice();
         break;
       case 'ArrowLeft':
         ed.prevFrame();
+        showNotice();
         break;
       case ' ':
         if (!evt.repeat) ed.togglePlay(performance.now());
+        showNotice();
         break;
       case 'n':
         setNumbers(!showNumbers);
@@ -443,9 +484,6 @@
         break;
       case 'f':
         setTool('freehand');
-        break;
-      case 's':
-        setTool('straight');
         break;
       case 'p':
         setTool('paint');
@@ -565,17 +603,22 @@
   }
 
   function switchLayout(lay) {
+    if (!ed.setLayout(lay)) {
+      layoutSelect.value = current.id;
+      showNotice();
+      return false;
+    }
     current = lay;
-    ed.setLayout(lay);
     board.setLayout(lay);
     layoutSelect.value = lay.id;
     savePrefs();
+    return true;
   }
 
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files[0];
     fileInput.value = ''; // so choosing the same file again still triggers a load
-    if (!file) return;
+    if (!file || refused()) return;
     const text = await file.text();
     let data;
     try {
@@ -635,6 +678,7 @@
   function showTiming() {
     const { seq } = ed;
     if (document.activeElement !== defaultInput) defaultInput.value = seconds(seq.frameTime);
+    showHV();
     const off = offset();
     frameNo.textContent = off + ed.frame;
     // With a process: the whole of it, along the way the timeline shows.
@@ -669,14 +713,55 @@
   defaultInput.addEventListener('change', () => {
     const ms = readSeconds(defaultInput);
     if (ms) {
-      ed.setDefaultTime(ms);
-      setStatus(`Frame time: ${formatTime(ed.seq.frameTime)}`);
+      if (ed.setDefaultTime(ms)) setStatus(`Frame time: ${formatTime(ed.seq.frameTime)}`);
+      else showNotice();
     } else {
       setStatus('The frame time is in seconds, more than 0', 'warn');
     }
     defaultInput.value = seconds(ed.seq.frameTime); // shows a clamped value, or undoes a bad one
     redraw();
   });
+
+  // The project's high voltage, beside the frame time: empty = the device's own setting.
+  const hvInputs = { volts: $('hv-volts'), hz: $('hv-hz'), mode: $('hv-mode') };
+  function showHV() {
+    const hv = ed.project.hv || {};
+    for (const [key, input] of Object.entries(hvInputs)) {
+      if (document.activeElement !== input) input.value = hv[key] === null || hv[key] === undefined ? '' : String(hv[key]);
+    }
+    if (!ed.readOnly) hvInputs.hz.disabled = hv.mode === 'dc'; // DC has no frequency
+  }
+  const hvText = (hv) =>
+    hv ? [hv.volts ? `${hv.volts} V` : '', hv.mode ? hv.mode.toUpperCase() : '', hv.hz && hv.mode !== 'dc' ? `${hv.hz} Hz` : ''].filter(Boolean).join(', ') : '';
+  for (const [key, input] of Object.entries(hvInputs)) {
+    input.addEventListener('change', () => {
+      const v = input.value.trim();
+      if (!ed.setHV({ [key]: v === '' ? null : key === 'mode' ? v : Number(v) })) showNotice();
+      else setStatus(ed.project.hv ? `High voltage for this project: ${hvText(ed.project.hv)}` : 'High voltage: the device keeps its own settings');
+      showHV(); // shows a clamped value, or undoes a refused one
+      redraw();
+    });
+  }
+
+  // A connected device gets the project's high voltage once when it connects, and again when the
+  // project's changes (another project opened, a field changed). Ordinary frames leave it alone.
+  let hvSent = null;
+  function sendProjectHV() {
+    const s = device && device.session;
+    if (!s || s.state !== 'on' || s.run || typeof s.sendHV !== 'function') {
+      if (!s || !s.connected) hvSent = null;
+      return;
+    }
+    const hv = ed.project.hv || null;
+    const key = JSON.stringify(hv);
+    if (key === hvSent) return;
+    hvSent = key;
+    if (!hv) return; // nothing set: the device keeps its own
+    s.sendHV(hv).then((r) => {
+      if (r && r.ok) setStatus(`Sent to the device: ${hvText(hv)}`);
+      else if (r) setStatus(`High voltage not sent: ${r.reason} (it goes again when the device reconnects or the setting changes)`, 'warn');
+    });
+  }
 
   // Enter keeps the value and gives the keys back to the board; Esc puts the old value back.
   function editKeys(input) {
@@ -687,6 +772,7 @@
     });
   }
   editKeys(defaultInput);
+  for (const input of Object.values(hvInputs)) editKeys(input);
 
   const viewButtons = [...document.querySelectorAll('#timing .segmented button')];
   const chartBox = $('chart');
@@ -714,6 +800,7 @@
 
   const tempChart = new TempChart($('temp-chart'), {
     pick(f) {
+      if (ed.frameHeld()) return showNotice();
       ed.frame = f;
       redraw();
     },
@@ -780,8 +867,8 @@
     editKeys(input);
     input.addEventListener('change', () => {
       const v = Number(input.value);
-      if (v > 0) {
-        ed.setHeatRates({ [key]: v });
+      if (v > 0 && !ed.setHeatRates({ [key]: v })) showNotice();
+      else if (v > 0) {
         setStatus(`The heaters are assumed to ${key === 'up' ? 'warm up' : 'cool down'} by ${heat.cleanRates(ed.project.heatRates)[key]} °C a minute`);
       } else setStatus('Rates are in °C per minute, more than 0', 'warn');
       redraw();
@@ -842,9 +929,10 @@
   }
 
   // One track per droplet, each action a clip; actions without a droplet name get a track each.
-  const KIND = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet' };
-  // Heater and magnet settings share a track each, under the droplets'.
-  const controlTrack = (a) => (a.type === 'temp' ? ['c:heat', 'Heaters', '°C'] : a.type === 'magnet' ? [`c:m${a.magnet || 1}`, `Magnet ${a.magnet || 1}`, `M${a.magnet || 1}`] : null);
+  const KIND = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet', message: 'Message' };
+  // Heater, magnet and screen settings share a track each, under the droplets'.
+  const controlTrack = (a) =>
+    a.type === 'temp' ? ['c:heat', 'Heaters', '°C'] : a.type === 'magnet' ? [`c:m${a.magnet || 1}`, `Magnet ${a.magnet || 1}`, `M${a.magnet || 1}`] : a.type === 'message' ? ['c:screen', 'Screen', '▭'] : null;
   // --- the whole process on the timeline -------------------------------------------------
   // With a process, the timeline shows all of it: the stretches one after another along the way a
   // run goes on (stretch.route: on at every decision, Repeats all their rounds). The board edits
@@ -859,7 +947,7 @@
     const key = `${ed.revision}|${ed.layout.id}`;
     if (key !== wholeKey) {
       wholeKey = key;
-      wholeRoute = OD.stretch.route(ed.doc, ed.layout.rects);
+      wholeRoute = OD.schedule.route(ed.doc, ed.layout.rects);
     }
     return wholeRoute;
   }
@@ -884,7 +972,7 @@
   function openPart(part, tile = null) {
     const keep = ed.scope && ed.scope.tile;
     const id = tile && part.tiles.includes(tile) ? tile : keep && part.tiles.includes(keep) ? keep : part.tile;
-    if (!ed.openTile(id, { state: part.state, controls: part.controls })) return false;
+    if (!ed.openTile(id, { state: part.state, controls: part.controls, context: part.context })) return false;
     visit = part.visit;
     selectedTile = id;
     if (processPanel) processPanel.show(id);
@@ -893,6 +981,7 @@
 
   // Frame g of the whole timeline: the stretch it is in opens on the board.
   function goToFrame(g) {
+    if (ed.frameHeld()) return showNotice(); // a run is going: the board follows it
     const w = whole();
     const here = boardPart();
     if (w && here && !ed.frozen) {
@@ -901,6 +990,14 @@
     }
     ed.frame = Math.max(1, g - offset());
   }
+
+  // Opening a step any other way: the droplets, heaters and other lanes as the timeline has them.
+  ed.contextOf = (sid) => {
+    const w = whole();
+    const mine = w ? w.parts.filter((p) => p.kind === 'stretch' && p.stretch === sid) : [];
+    const part = mine.find((p) => p.visit === visit) || mine[0];
+    return part ? { state: part.state, controls: part.controls, context: part.context } : null;
+  };
 
   // Playing on from the end of a stretch into the next one (from the last, back to the first).
   ed.onPlayEnd = () => {
@@ -1018,7 +1115,7 @@
     const w = whole();
     const here = boardPart();
     const off = here ? here.from - 1 : 0;
-    const clips = clipsOf(project.actions, compiled, off, (a) => ({ dim: Boolean(opened && a.tile !== opened) }));
+    const clips = clipsOf(project.actions, compiled, off, (a) => ({ dim: Boolean(opened && a.tile !== opened), locked: Boolean(ed.readOnly) }));
     const bands = [];
     const stops = [];
     otherClips = new Map();
@@ -1166,12 +1263,17 @@
     afterList.replaceChildren(...rows);
 
     // Heaters and magnets have no droplet, no steps of their own and nothing to turn.
-    const control = a.type === 'temp' || a.type === 'magnet';
+    const control = a.type === 'temp' || a.type === 'magnet' || a.type === 'message';
     show(dropletField.closest('.field'), !control && a.type !== 'wait');
     show($('prop-temps-row'), a.type === 'temp');
     show($('prop-heatwait-row'), a.type === 'temp');
     show($('prop-tolerance-row'), a.type === 'temp' && Boolean(a.wait));
     show($('prop-magnet-row'), a.type === 'magnet');
+    show($('prop-message-row'), a.type === 'message');
+    if (a.type === 'message') {
+      keep($('prop-message'), a.text || '');
+      $('prop-message-count').textContent = `${$('prop-message').value.length} / ${heat.MESSAGE_LENGTH}`;
+    }
     if (a.type === 'temp') {
       a.targets.forEach((t, i) => keep(heaterFields[i], t === null ? '' : String(t)));
       $('prop-heatwait').checked = Boolean(a.wait);
@@ -1181,7 +1283,7 @@
       $('prop-magnet').value = String(a.magnet || 1);
       $('prop-magnet-on').value = a.on === false ? 'off' : 'on';
     }
-    show($('prop-turn'), !['dispense', 'wait', 'temp', 'magnet'].includes(a.type));
+    show($('prop-turn'), !['dispense', 'wait', 'temp', 'magnet', 'message'].includes(a.type));
     const p = a.type === 'template' && a.params ? a.params : null;
     const family = p && templates.FAMILIES[p.kind];
     const turnsRound = Boolean(family && family.choices && family.choices.dir);
@@ -1252,6 +1354,14 @@
   $('prop-magnet').addEventListener('change', (evt) => {
     const a = ed.selected;
     if (a && a.type === 'magnet') propChange(ed.setControl(a.id, { magnet: Number(evt.target.value) }), () => `${quote(a)} switches magnet ${evt.target.value}`);
+  });
+  editKeys($('prop-message'));
+  $('prop-message').addEventListener('input', (evt) => ($('prop-message-count').textContent = `${evt.target.value.length} / ${heat.MESSAGE_LENGTH}`));
+  $('prop-message').addEventListener('change', (evt) => {
+    const a = ed.selected;
+    if (!a || a.type !== 'message') return;
+    const text = heat.cleanText(evt.target.value);
+    propChange(ed.setControl(a.id, { text }), () => (text ? `${quote(a)} shows “${text}” on the device's screen` : `${quote(a)} clears the device's screen`));
   });
   $('prop-magnet-on').addEventListener('change', (evt) => {
     const a = ed.selected;
@@ -1325,6 +1435,7 @@
   const addFileInput = $('add-file-input');
   $('add-file').addEventListener('click', (evt) => {
     evt.currentTarget.blur();
+    if (refused()) return;
     addFileInput.click();
   });
   addFileInput.addEventListener('change', async () => {
@@ -1457,7 +1568,7 @@
   let carried = null;
 
   function startTemplateDrag(evt, t, li) {
-    if (evt.button !== 0 || !evt.isPrimary || evt.target.closest('button') || ed.makingTemplate) return;
+    if (evt.button !== 0 || !evt.isPrimary || evt.target.closest('button') || ed.makingTemplate || refused()) return;
     evt.preventDefault();
     li.setPointerCapture(evt.pointerId);
     carried = { template: t };
@@ -1532,7 +1643,10 @@
 
   function openMaker(t) {
     if (ed.makingTemplate) return;
-    ed.startTemplate(t ? templates.toSequence(t) : null);
+    if (!ed.startTemplate(t ? templates.toSequence(t) : null)) {
+      showNotice();
+      return;
+    }
     editing = t && !t.builtIn ? t : null;
     nameInput.value = t ? (t.builtIn ? `${t.name} (copy)` : t.name) : `Template ${myTemplates.length + 1}`;
     makerTitle.textContent = editing ? 'Change the template' : t ? 'Copy of a built-in template' : 'New template';
@@ -1841,7 +1955,11 @@
     else setStatus(text);
   }
 
-  addEventListener('pagehide', () => keepWork());
+  addEventListener('pagehide', () => {
+    keepWork();
+    // A run that goes with this tab: the other tab can change things again.
+    if (runner && runner.running && sync) sync.run({ tile: null, stretch: null, frame: 0, frames: 0, done: 'closed' });
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') keepWork();
   });
@@ -1862,6 +1980,10 @@
     },
     run(state) {
       remoteRun = state;
+      // Nothing changes here either until it ends (or its tab closes).
+      const was = ed.runElsewhere;
+      ed.runElsewhere = state && !state.done ? 'A run is going in the other tab: stop it there to change things' : null;
+      if (!was && ed.readOnly) ed.cancel(); // a drag going on here is dropped
       redraw();
     },
     holdsDevice: () => Boolean(device && device.session.connected),
@@ -1916,7 +2038,7 @@
 
   // Opens tile id on the board and puts its operation there.
   function placeOnBoard(id) {
-    if (!ed.openTile(id)) return;
+    if (refused() || !ed.openTile(id)) return;
     selectedTile = id;
     setView('board');
     const done = ed.placeTile();
@@ -1941,12 +2063,13 @@
     open: openOnBoard,
     status: setStatus,
     changed() {
+      showNotice(); // a change that was refused says why
       processPanel.key = '';
       redraw();
     },
     running: () => (runner && runner.running ? { tile: runner.state.tile, stretch: runner.state.stretch } : remoteRun && !remoteRun.done ? remoteRun : null),
   });
-  processPanel = new ProcessPanel($('tile-props'), { editor: ed, analysis, status: setStatus, changed: () => redraw(), open: openOnBoard, place: placeOnBoard });
+  processPanel = new ProcessPanel($('tile-props'), { editor: ed, analysis, status: setStatus, changed: () => (showNotice(), redraw()), open: openOnBoard, place: placeOnBoard });
 
   function setView(next) {
     if (next === 'process' && !ed.doc.process) {
@@ -1954,7 +2077,10 @@
         setStatus('Save or cancel the template first', 'warn');
         return;
       }
-      ed.makeProcess();
+      if (!ed.makeProcess()) {
+        showNotice();
+        return;
+      }
       setStatus('This project now has a process: what was drawn is in “Step 1”. Add tiles from the left, connect them, and double-click a step to draw it on the board');
     }
     view = next;
@@ -2012,6 +2138,8 @@
     } else if (remoteRun && !remoteRun.done) state.textContent = `Running in the other tab: frame ${remoteRun.frame || 0}`;
     else if (ed.playing && ed.doc.process) state.textContent = 'Previewing: play goes through the timeline without asking anything; ▶ Run asks';
     else state.textContent = '';
+    where.title = where.textContent; // whole on hover, if it is cut short
+    state.title = state.textContent;
     $('open-tab').textContent = view === 'process' ? 'Board in a new tab ↗' : 'Process in a new tab ↗';
     renderLog(runLog, view === 'process' && runner ? runner.state : null);
   }
@@ -2019,7 +2147,17 @@
   runner = new Runner({
     editor: ed,
     readings: liveReadings,
-    ask: (step) => askRun(stageArea, step, ed.doc.process),
+    ask: async (step) => {
+      // An Ask or Measure set to show on the device: its text on the OpenDrop's screen meanwhile.
+      const note = P.screenText(step.tile);
+      const s = device && device.session;
+      if (note && s && s.connected) s.setNote(note);
+      try {
+        return await askRun(stageArea, step, ed.doc.process);
+      } finally {
+        if (note && s) s.setNote(null);
+      }
+    },
     changed() {
       const s = runner.state;
       if (s) sync.run({ tile: s.tile, stretch: s.stretch, frame: s.frame, frames: s.frames, done: s.done });
@@ -2028,6 +2166,7 @@
   });
   $('run-start').addEventListener('click', async (evt) => {
     evt.currentTarget.blur();
+    if (refused()) return; // one run at a time, also over two tabs
     const errors = P.check(ed.doc.process).filter((i) => i.level === 'error');
     if (errors.length) {
       setStatus(`The process can't run yet: ${errors[0].text}`, 'warn');

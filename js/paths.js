@@ -142,7 +142,7 @@
     return null;
   }
 
-  // Route for the straight tool: along `first`, then the other axis; if the layout has no such
+  // Route for Shift+click corners: along `first`, then the other axis; if the layout has no such
   // route, the other way round; failing that, the shortest route.
   function straightRoute(graph, from, to, first) {
     return (
@@ -155,16 +155,14 @@
   // The path being drawn: the start electrode in the start frame, then the next electrode in
   // each following frame. Nothing goes into the sequence until the editor adds it.
   class PathDraft {
-    constructor(rects, mode, start, frame, point) {
+    constructor(rects, start, frame, point) {
       this.rects = rects;
       this.graph = electrodeGraph(rects);
-      this.mode = mode; // 'freehand' or 'straight'
       this.frame = frame;
       this.cells = [start];
       this.maxSteps = MAX_FRAMES - frame;
       this.limited = false; // the path was cut short at the MAX_FRAMES guard
       this.moved = false; // the pointer has been over another electrode
-      this.axis = null; // straight tool: direction of the first line, from the drag's start
       this.point = point; // last pointer position, { mx, my }
     }
 
@@ -185,20 +183,16 @@
     }
 
     moveTo(mx, my) {
-      if (this.mode === 'straight') {
-        this.aimAt(electrodeAt(this.rects, mx, my), mx, my);
-      } else {
-        const { mx: x0, my: y0 } = this.point;
-        const n = Math.max(1, Math.ceil(Math.hypot(mx - x0, my - y0) / SAMPLE_STEP));
-        for (let i = 1; i <= n; i++) {
-          const e = electrodeAt(this.rects, x0 + ((mx - x0) * i) / n, y0 + ((my - y0) * i) / n);
-          if (e !== null) this.enter(e);
-        }
+      const { mx: x0, my: y0 } = this.point;
+      const n = Math.max(1, Math.ceil(Math.hypot(mx - x0, my - y0) / SAMPLE_STEP));
+      for (let i = 1; i <= n; i++) {
+        const e = electrodeAt(this.rects, x0 + ((mx - x0) * i) / n, y0 + ((my - y0) * i) / n);
+        if (e !== null) this.enter(e);
       }
       this.point = { mx, my };
     }
 
-    // Freehand: the pointer has entered electrode e.
+    // The pointer has entered electrode e.
     enter(e) {
       const { cells } = this;
       const last = cells[cells.length - 1];
@@ -220,27 +214,6 @@
         }
         cells.push(next);
       }
-    }
-
-    // Straight: horizontal and vertical lines from the start to electrode e (null = between
-    // electrodes, which keeps the current route).
-    aimAt(e, mx, my) {
-      if (e === null) return;
-      if (e === this.start) {
-        this.cells = [this.start];
-        this.axis = null; // back on the start: the next direction picks the first line again
-        this.limited = false;
-        return;
-      }
-      this.moved = true;
-      if (!this.axis) {
-        const c = this.graph.centres.get(this.start);
-        this.axis = axisOf(mx - c.x, my - c.y);
-      }
-      const route = straightRoute(this.graph, this.start, e, this.axis);
-      if (!route) return;
-      this.limited = route.length - 1 > this.maxSteps;
-      this.cells = route.slice(0, this.maxSteps + 1);
     }
   }
 

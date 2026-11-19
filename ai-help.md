@@ -69,19 +69,19 @@ It imitates GaudiLabs' original OpenDropController window.
     the message (which may be later than the frame on screen).
   - A white badge "N steps" = fine; let go to add it.
 - **Left side** (labels with square boxes; the chosen one is white): **drag:** **freehand**,
-  **straight**, **paint**, **select** (what dragging on the array does), then **undo**, **redo**.
+  **paint**, **select** (what dragging on the array does), then **undo**, **redo**.
   The two boxes nearer the array on each side are the **reservoir buttons** (dispense a droplet
   from that reservoir).
-- **Right side**: **play**, **live**, **feedback** (only shown with a V4.2 board connected), then
+- **Right side**: **simulate** (plays the frames on screen), **live** (the only live switch; the Device tab has none), **feedback** (only shown with a V4.2 board connected), then
   **copy last frame**, **clear frame**, **clear all**.
 - **Top of the board**: "OpenDrop Generator" with a small **dot** before it = the device:
   grey = not connected, amber = connecting, green = connected and answering, red = not answering.
   **export**, **save**, **load** at the top right.
 - **Bottom of the board**: **frame_no:** the frame on screen (with a process, counted over the
   whole process), **frames/min:** playback speed, and a row of dots with ◀ ▶ arrows to step frames.
-- **Pills under the board**: **T1 T2 T3** (heater targets, "–" = not set by the sequence) and
+- **Pills at the top of the board** (in the white dip of the red frame): **T1 T2 T3** (heater targets, "–" = not set by the sequence) and
   **M1 / M2 on/off**. A green ring on a heater pill = the live reading has reached the target.
-  "Waiting for the heaters: …" appears while playback waits for them.
+  "Waiting for the heaters: …" appears in white under them while playback waits for them.
 
 ### Timeline panel (under the board)
 
@@ -108,10 +108,14 @@ It imitates GaudiLabs' original OpenDropController window.
 
 - **Properties**: the selected action's settings (name, droplet, when it starts, mixer size and
   rounds, a pattern's frames, heater targets, magnet). With nothing selected: a summary
-  ("N actions · N frames · X s") and **Project → Frame time** (how long every step lasts).
+  ("N actions · N frames · X s") and **Project → Frame time** (how long every step lasts), then the project's **Voltage**,
+  **Frequency** and **Mode** (high voltage; empty = the device's own; sent to a connected device
+  with the custom firmware when it connects or they change).
   In the Process view it shows the selected tile's settings and its problems instead.
 - **Templates**: built-in mixers, merge and split, plus your own; drag one onto the array.
-- **Device**: **Connect…**, board type, live/feedback, temperatures, **Send to device** and
+- **Device**: **Connect…**, board type, live/feedback, **High voltage** (shows the project's
+  settings from Properties; **Save to device** keeps them on the device after it is switched off,
+  with its sound and feedback; needs the custom firmware OpenDropVCustom), temperatures, **Send to device** and
   **Run on the device** (the device plays the sent sequence on its own, without the page; not the
   same as ▶ Run), **Switch all off**.
 
@@ -158,7 +162,7 @@ A flowchart on a canvas (palette of tiles on the left, settings in Properties on
   included**, would flow together. Also counted: stepping next to an electrode another droplet
   was on **in the frame before**. Anything that would cause that is refused. Only a **Merge**
   joins droplets on purpose.
-- **Live**: the connected device shows the frame on screen; **play** plays the frames;
+- **Live**: the connected device shows the frame on screen; **simulate** plays the frames;
   **▶ Run** runs a process for real (asks the questions, follows the answers).
 
 ---
@@ -180,8 +184,9 @@ A flowchart on a canvas (palette of tiles on the left, settings in Properties on
 | Wait | holds the droplets for a set time; the way to pause | work |
 | Temperature | sets heaters T1–T3; can wait until reached | work |
 | Magnet | switches a magnet on/off until the next Magnet tile | work |
-| Measure | the run stops and asks for a measured value | stop |
-| Ask | the run stops and asks a question (yes/no, or a number) | stop |
+| Message | shows up to 20 characters on the OpenDrop's screen (custom firmware) until the next Message tile; empty clears it | work |
+| Measure | the run stops for a measured number, typed in by you (its **Ask with** text is shown; a connected instrument comes later) | stop |
+| Ask | the run stops and asks a yes/no question (Ask and Measure: **Show it on the device's screen** puts its **Screen text**, up to 20 characters, on the OpenDrop's screen while the run waits) | stop |
 | Decision | goes the yes or no way, by a measured or asked value | stop |
 | Repeat | goes round "again" N times, then on by "done" | stop |
 | Parallel | splits the way into lanes that run at the same time | lanes |
@@ -226,7 +231,7 @@ along **one way through it**, with frames counted from Start:
 - Each stretch starts with the droplets, heaters and magnets the one before left.
 
 The board edits the stretch the red frame line is in; moving the line (or clicking a faded clip
-or a band) into another stretch opens it. **play** goes through all of it as a **preview** (asks
+or a band) into another stretch opens it. **simulate** goes through all of it as a **preview** (asks
 nothing). A step on a branch the timeline doesn't follow opens on its own.
 
 ### 3.5 Running
@@ -234,7 +239,11 @@ nothing). A step on a branch the timeline doesn't follow opens on its own.
 **▶ Run** goes from Start: each stretch plays, **Measure**/**Ask** ask (a yes/no question also
 takes keys **1** or **,** = yes, **2** or **.** = no), decisions and Repeats choose the way.
 With **live** on and the device connected, the device follows and is switched off at the end.
-Nothing can be edited while a run goes. A hidden browser tab runs slowly.
+Nothing in the project can be changed while a run goes, in this tab or a second one: the board,
+tiles, Properties (greyed out), frame time, high voltage, heater rates, layout, opening or adding a file, undo,
+and starting a template are all refused. The Device tab's **Send to device** and **Run on the
+device** are greyed out too, and the red frame of the board is greyed a bit. Frames can't be stepped through either (wheel,
+←/→, Space, ◀ ▶, clicking the timeline or charts): the board follows the run. A hidden browser tab runs slowly.
 
 ---
 
@@ -242,6 +251,10 @@ Nothing can be edited while a run goes. A hidden browser tab runs slowly.
 
 - Three heaters **T1–T3** (temperature adapter), targets 20–120 °C; two magnets **M1/M2**
   (magnet board). Set by **Temperature** and **Magnet** tiles or actions; they last until changed.
+- **Message** tiles put text on the OpenDrop's screen (custom firmware OpenDropVCustom only; older
+  firmware ignores it). It is only sent while **live** is on or in a run. Nothing on the screen?
+  Check live is on, the firmware is the custom one, and the text isn't hidden by its "INSERT
+  CARTRIDGE" / "UNDER VOLTAGE!" warnings, which are drawn over it. Accents are dropped.
 - A temperature that **waits**: offline, it lasts the estimated time (ramp rates in the
   Temperature view: warms/cools °C per minute); live, playback holds that frame until the
   readings are within the tolerance.
@@ -276,6 +289,9 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
 | "… would run past frame 100000" | Too long. | Shorten it. |
 | "Open a step of the process first: double-click it in the process view" | With a process, drawing needs an open step. | Open a work tile. |
 | "A run is going: stop it to change things" | Editing during a run. | **■ Stop** first. |
+| "A run is going: the board follows it, so frames can’t be stepped through until it stops" | Scrolling, arrow keys, ◀ ▶ or clicking the timeline during a run. | Wait, or **■ Stop** the run. |
+| "High voltage not sent: …" / "Not saved: …" | No device connected, it didn't answer, or a sequence is running on it. | Connect (Device tab) and try again; the project's settings go again on reconnecting. |
+| "A run is going in the other tab: stop it there to change things" | Another tab of the page is running the process. | Stop it in that tab (closing that tab ends the lock too). |
 | "This layout has no reservoirs" | Dispense on a layout without reservoirs. | Choose another **Layout**. |
 | "*N* frame(s) with a time of their own play at the default *t* s: add a Wait where it should pause" | A loaded OpenDrop file had frames of different lengths. | Add Wait tiles where it should pause. |
 | "*N* action(s) had times of their own …: every step now lasts the default frame time" | An older project used per-step times, which no longer exist. | Add Waits where needed. |
@@ -339,7 +355,7 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
 - **"A tile has an orange !"** Usually "not placed yet". A red ! is an error (section 6).
 - **"The timeline shows the loop only once / not the other branch."** By design (3.4); Run follows
   the real answers.
-- **"play doesn't ask my question."** play is a preview; use **▶ Run**.
+- **"simulate doesn't ask my question."** simulate is a preview; use **▶ Run**.
 - **"The device doesn't do anything."** Dot by the title green? **live** on? Chrome/Edge? Port free
   (OpenDropController closed)? Cable carries data?
 - **"Frames last different times."** Only Waits and heater waits make frames longer (see **Step

@@ -10,7 +10,7 @@
     JSON.stringify(value, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((key) => [key, v[key]])) : v));
 
   // What tabs share of a project (the layout and the rest of the view are each tab's own).
-  const shared = (doc) => ({ actions: doc.actions, templates: doc.templates, process: doc.process || null, frameTime: doc.frameTime, heatRates: doc.heatRates || null });
+  const shared = (doc) => ({ actions: doc.actions, templates: doc.templates, process: doc.process || null, frameTime: doc.frameTime, heatRates: doc.heatRates || null, hv: doc.hv || null });
 
   class TabSync {
     // on: { doc(shared) — another tab changed the project; run(state) — a run in another tab;

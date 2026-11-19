@@ -4,24 +4,30 @@
  * version doesn't know are kept as they are and written back. No DOM here. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./model.js'), require('./templates.js'), require('./compile.js'), require('./process.js'), require('./heat.js'));
+    module.exports = factory(require('./model.js'), require('./templates.js'), require('./compile.js'), require('./process.js'), require('./heat.js'), require('./device.js'));
   } else {
-    (root.OD = root.OD || {}).project = factory(root.OD.model, root.OD.templates, root.OD.compile, root.OD.process, root.OD.heat);
+    (root.OD = root.OD || {}).project = factory(root.OD.model, root.OD.templates, root.OD.compile, root.OD.process, root.OD.heat, root.OD.device);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, templates, compiler, processes, heat) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (model, templates, compiler, processes, heat, device) {
   'use strict';
 
   const { CELLS, MAX_FRAMES, DEFAULT_FRAME_TIME, clampTime } = model;
   const { RESERVOIR_STEPS } = compiler;
 
+  // A project's high voltage, cleaned (the device's limits): null when nothing is set.
+  function cleanHV(raw) {
+    const hv = device.cleanHV(raw);
+    return hv.volts === null && hv.hz === null && hv.mode === null ? null : hv;
+  }
+
   const TAG = 'openDropGeneratorProject';
   const VERSION = 1;
   const EXTENSION = '.odproj.json';
-  const TYPE_NAMES = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet' };
+  const TYPE_NAMES = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet', message: 'Message' };
   const MAX_WAIT = 24 * 3600 * 1000; // a wait (hold) may last up to a day
   // Key order in saved files; other keys follow in the order they came.
   const KEY_ORDER = ['id', 'type', 'name', 'droplet', 'tile', 'start', 'after', 'delay', 'points', 'template', 'at', 'turns',
-    'reservoir', 'frames', 'duration', 'targets', 'wait', 'tolerance', 'magnet', 'on'];
+    'reservoir', 'frames', 'duration', 'targets', 'wait', 'tolerance', 'magnet', 'on', 'text'];
   const TILE_ORDER = ['id', 'kind', 'name', 'x', 'y'];
 
   function newProject({ layout = 'electrodes', frameTime = DEFAULT_FRAME_TIME } = {}) {
@@ -144,6 +150,11 @@
         a.on = a.on !== false;
         a.droplet = '';
         break;
+      case 'message':
+        // Text on the device's screen ('' clears it).
+        a.text = heat.cleanText(a.text);
+        a.droplet = '';
+        break;
       default:
         break; // kept as it is: a later version may know it
     }
@@ -168,6 +179,16 @@
       ids.add(t.id);
       const tile = { ...t, x: Number.isFinite(t.x) ? Math.round(t.x) : 0, y: Number.isFinite(t.y) ? Math.round(t.y) : 0 };
       if (typeof tile.name !== 'string') delete tile.name;
+      // Ask used to take a number too; that is a Measure now (typed in, its question as the prompt).
+      if (tile.kind === 'ask' && tile.answer === 'number') {
+        tile.kind = 'measure';
+        tile.prompt = typeof tile.question === 'string' ? tile.question : '';
+        tile.unit = '';
+        tile.source = 'typed';
+        if (tile.name === 'Ask') tile.name = 'Measure';
+        delete tile.question;
+      }
+      if (tile.kind === 'ask' || tile.kind === 'measure') delete tile.answer;
       // The droplet a Dispense tile makes.
       if (tile.droplet !== undefined) {
         const ok = tile.kind === 'dispense' && typeof tile.droplet === 'string' && tile.droplet.trim();
@@ -209,6 +230,13 @@
     project.layout = typeof data.layout === 'string' ? data.layout : 'electrodes';
     project.frameTime = goodTime(data.frameTime) ? clampTime(data.frameTime) : DEFAULT_FRAME_TIME;
     if (data.heatRates !== undefined) project.heatRates = heat.cleanRates(data.heatRates);
+    // The high voltage the experiment uses (volts, hz, mode; null = the device's own), if set.
+    delete project.hv;
+    if (data.hv !== undefined) {
+      const hv = cleanHV(data.hv);
+      if (hv) project.hv = hv;
+      else if (data.hv !== null) warn('its high-voltage settings are unusable and were left out');
+    }
 
     project.templates = {};
     if (data.templates && typeof data.templates === 'object' && !Array.isArray(data.templates)) {
@@ -339,6 +367,6 @@
 
   return {
     TAG, VERSION, EXTENSION, TYPE_NAMES, newProject, isProject, parse, serialize, nextId, nextName, nextDroplet, shortDroplet,
-    embedTemplate,
+    embedTemplate, cleanHV,
   };
 });

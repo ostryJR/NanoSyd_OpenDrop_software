@@ -105,6 +105,16 @@
             <label class="field" title="How long every step lasts (a Wait, or waiting for the heaters, lasts its own time)">Frame time
               <span class="with-unit"><input type="number" id="time-default" min="0.01" max="3600" step="any"
                      inputmode="decimal"> s</span></label>
+            <div class="hv-fields" title="The electrodes' high voltage for this project (custom firmware OpenDropVCustom). Empty: the device keeps its own setting. Sent to a connected device when it changes or connects">
+              <label class="field">Voltage
+                <span class="with-unit"><input type="number" id="hv-volts" min="50" max="240" step="1"
+                       placeholder="device's" inputmode="numeric"> V</span></label>
+              <label class="field">Frequency
+                <span class="with-unit"><input type="number" id="hv-hz" min="100" max="1000" step="10"
+                       placeholder="device's" inputmode="numeric"> Hz</span></label>
+              <label class="field">Mode
+                <select id="hv-mode"><option value="">device's own</option><option value="ac">AC</option><option value="dc">DC</option></select></label>
+            </div>
           </div>
           <div id="props" hidden>
             <h3 id="prop-kind">Selected</h3>
@@ -164,6 +174,9 @@
                 <select id="prop-magnet-on"><option value="on">on</option><option value="off">off</option></select>
               </span>
             </div>
+            <label class="field" id="prop-message-row" title="Shown on the OpenDrop's screen (custom firmware) from this frame on, while live or in a run; empty clears it">Text on the device's screen (up to 20 characters)
+              <input type="text" id="prop-message" maxlength="20" placeholder="empty: clears the screen" autocomplete="off">
+              <small id="prop-message-count" class="hint">0 / 20</small></label>
             <datalist id="droplet-names"></datalist>
             <p id="prop-info" class="info"></p>
             <div class="maker-buttons">
@@ -212,8 +225,8 @@
 
           <section class="device-part" id="device-live-part">
             <h4>Live</h4>
-            <label class="check"><input type="checkbox" id="device-live"> The device shows the frame on screen:
-              stepping, playing and editing go straight to it</label>
+            <p class="hint">Switch live on and off with the red <b>live</b> box on the board, under
+              simulate: the device then shows the frame on screen.</p>
             <div class="row">
               <button type="button" id="device-alloff" title="Live off, and every electrode off on the device">Switch all off</button>
             </div>
@@ -224,6 +237,17 @@
             <label class="check"><input type="checkbox" id="device-feedback"> Show where the device senses
               droplets (dots on the board)</label>
             <p id="device-sensed" class="info"></p>
+          </section>
+
+          <section class="device-part" id="device-hv-part">
+            <h4>High voltage</h4>
+            <p id="device-hv-now" class="info"></p>
+            <div class="row">
+              <button type="button" id="device-hv-save" title="The device takes the project's voltage, frequency and mode and keeps them after it is switched off (written to its memory, with its sound and feedback settings)">Save to device</button>
+            </div>
+            <p class="hint">Set them for the project in Properties, under the frame time; they go to the device
+              when it connects and whenever they change, until it is switched off. <b>Save to device</b> keeps
+              them on it for good. Needs the custom firmware (OpenDropVCustom).</p>
           </section>
 
           <section class="device-part" id="device-temps-part" hidden>
@@ -271,7 +295,7 @@
     <label>Lines <kbd>L</kbd> <input type="checkbox" id="lines"></label>
     <span id="status" role="status" aria-live="polite"></span>
     <span id="help">
-      Drag: path (<kbd>F</kbd> freehand, <kbd>S</kbd> straight, <kbd>P</kbd> paint, <kbd>V</kbd> select) ·
+      Drag: path (<kbd>F</kbd> freehand, <kbd>P</kbd> paint, <kbd>V</kbd> select) ·
       Click: select · drag the selected path's line to reshape it · <kbd>Shift</kbd>+click: corner by corner ·
       <kbd>⌥</kbd>+drag / <kbd>⌥</kbd>+arrows: move · <kbd>Shift</kbd>+drag: with what follows · <kbd>R</kbd>: turn ·
       <kbd>[</kbd><kbd>]</kbd>: earlier/later · <kbd>Del</kbd>: delete · <kbd>Esc</kbd>: cancel ·
@@ -296,11 +320,12 @@
   <script src="js/compile.js"></script>
   <script src="js/process.js"></script>
   <script src="js/stretch.js"></script>
+  <script src="js/schedule.js"></script>
+  <script src="js/device.js"></script>
   <script src="js/project.js"></script>
   <script src="js/editor.js"></script>
   <script src="js/runner.js"></script>
   <script src="js/jsonio.js"></script>
-  <script src="js/device.js"></script>
   <script src="js/device-sim.js"></script>
   <script src="js/serial.js"></script>
   <script src="js/view.js"></script>

@@ -185,3 +185,40 @@ test('a Dispense tile keeps the name of the droplet it makes; an unusable one is
   assert.deepEqual(again.project.process, project.process, 'saving again changes nothing');
   assert.match(P.serialize(project), /"reservoir":"reservoirLeftTop","droplet":"Sample"\}/, 'after the other settings');
 });
+
+test('an older Ask that took a number opens as a Measure, typed in, its question as the prompt', () => {
+  const p = sample();
+  p.process = {
+    tiles: [
+      { id: 'p1', kind: 'start', x: 0, y: 0 },
+      { id: 'p2', kind: 'ask', name: 'Ask', x: 0, y: 100, question: 'How much is left?', answer: 'number', value: 'left' },
+      { id: 'p3', kind: 'ask', name: 'Ready?', x: 0, y: 200, question: 'Go on?', answer: 'yesno', value: 'ok' },
+    ],
+    links: [{ from: 'p1', port: 'next', to: 'p2' }, { from: 'p2', port: 'next', to: 'p3' }],
+  };
+  const { project, warnings } = P.parse(P.serialize(p));
+  assert.deepEqual(warnings, []);
+  const [, measure, ask] = project.process.tiles;
+  assert.deepEqual(
+    { kind: measure.kind, name: measure.name, prompt: measure.prompt, unit: measure.unit, source: measure.source, value: measure.value, question: measure.question, answer: measure.answer },
+    { kind: 'measure', name: 'Measure', prompt: 'How much is left?', unit: '', source: 'typed', value: 'left', question: undefined, answer: undefined }
+  );
+  assert.equal(ask.kind, 'ask');
+  assert.equal(ask.answer, undefined, 'an Ask is always yes or no now');
+  assert.equal(project.process.links.length, 2, 'its arrows stay');
+});
+
+test('the project keeps its high voltage, cleaned to the device’s limits; none set, none kept', () => {
+  const p = sample();
+  p.hv = { volts: 300, hz: 333, mode: 'ac' };
+  const { project, warnings } = P.parse(P.serialize(p));
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(project.hv, { volts: 240, hz: 330, mode: 'ac' });
+  assert.equal(P.serialize(P.parse(P.serialize(project)).project), P.serialize(project), 'saving again changes nothing');
+  const none = sample();
+  none.hv = { volts: '', mode: 'x' };
+  const back = P.parse(P.serialize(none));
+  assert.equal(back.project.hv, undefined);
+  assert.match(back.warnings.join(' '), /high-voltage settings are unusable/);
+  assert.equal(P.parse(P.serialize(sample())).project.hv, undefined, 'a project without one stays without');
+});

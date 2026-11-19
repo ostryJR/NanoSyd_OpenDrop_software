@@ -394,7 +394,6 @@
     <table>
       <tr><th>Tool</th><th>Key</th><th>A drag…</th></tr>
       <tr><td><b>freehand</b></td><td><kbd>F</kbd></td><td>draws a droplet path through every electrode you pass</td></tr>
-      <tr><td><b>straight</b></td><td><kbd>S</kbd></td><td>draws a path along a row or column, turning once to the blue end electrode</td></tr>
       <tr><td><b>paint</b></td><td><kbd>P</kbd></td><td>switches electrodes on or off in this frame, like the original controller</td></tr>
       <tr><td><b>select</b></td><td><kbd>V</kbd></td><td>picks what is drawn and moves it, or reshapes a path</td></tr>
     </table>
@@ -493,6 +492,12 @@
       <li><b>Frame time:</b> how long every step lasts. Change it in <span class="ui">Properties</span>
         with nothing selected (click empty space on the board or press <kbd>Esc</kbd>), under
         <b>Project</b>. There are no separate times for single steps or frames.</li>
+      <li><b>High voltage:</b> under the frame time, <b>Voltage</b> (50–240 V), <b>Frequency</b>
+        (100–1000 Hz, used with AC) and <b>Mode</b> (AC or DC) belong to the project and are saved in
+        its file. Leave a field empty to keep the device's own setting. A connected OpenDrop with the
+        custom firmware (OpenDropVCustom) gets them when it connects, when you change them, and when
+        you open another project; ordinary frames leave them alone. They can't be changed during a
+        run.</li>
       <li><b>A pause:</b> a <b>Wait</b> tile in the process, placed on the board, waits its seconds.
         It switches nothing on, and the other droplets keep moving meanwhile; when nothing else
         moves, its frame simply lasts the rest of the wait. Waiting for the heaters works the same way.</li>
@@ -504,7 +509,7 @@
     </ul>
 
     <h3 id="play">Playing</h3>
-    <p><kbd>Space</kbd> or the <span class="ui">play</span> button plays the frames, each for its
+    <p><kbd>Space</kbd> or the <span class="ui">simulate</span> button plays the frames, each for its
       time; <kbd>←</kbd> / <kbd>→</kbd> or the mouse wheel step through them. While playing, the mouse
       wheel changes the speed. With a process, playing goes from step to step through the whole
       process.</p>
@@ -524,7 +529,7 @@
         it waits until the readings get there; without a device it waits the estimated time, worked
         out from the <span class="ui">Warms</span> and <span class="ui">cools</span> rates (°C per
         minute) above the chart. The other droplets keep moving meanwhile.</li>
-      <li><b>On the board:</b> the strip under the array shows each heater's target and reading and
+      <li><b>On the board:</b> the strip at the top of the board, in the dip of the red frame, shows each heater's target and reading and
         each magnet. On the standard and magnet layouts, the electrodes over each heater get a coloured
         outline: T1 over electrodes 25 and 26, T2 over 57 and 58, T3 over 97 and 98.</li>
       <li><b>In a process:</b> use the <b>Temperature</b> and <b>Magnet</b> tiles (see
@@ -562,8 +567,9 @@
       <tr><td><b>Wait</b></td><td>Holds the droplets where they are for a time (the way to pause)</td><td>Wait (s)</td></tr>
       <tr><td><b>Temperature</b></td><td>Sets the heaters, optionally waits until they get there</td><td>T1–T3 (°C), Wait until the heaters get there, Close enough within (°C)</td></tr>
       <tr><td><b>Magnet</b></td><td>Switches a magnet on or off until the next Magnet tile</td><td>Magnet 1 or 2, on or off</td></tr>
-      <tr><td><b>Measure</b></td><td>The run stops and asks you to type in a measured value</td><td>Value (a name, e.g. <code>conc</code>), Unit</td></tr>
-      <tr><td><b>Ask</b></td><td>The run stops and asks you a question</td><td>Question, Answer (yes or no, or a number), Value</td></tr>
+      <tr><td><b>Message</b></td><td>Shows a short text on the OpenDrop's screen (custom firmware) until the next Message tile; empty clears it</td><td>Text (up to 20 characters, plain letters)</td></tr>
+      <tr><td><b>Measure</b></td><td>The run stops for a measured number: you type it in (reading it from a connected instrument comes later)</td><td>Value (a name, e.g. <code>conc</code>), Unit, Get it by, Ask with (the text shown when it asks), Show it on the device's screen, Screen text (up to 20 characters)</td></tr>
+      <tr><td><b>Ask</b></td><td>The run stops and asks you a yes-or-no question</td><td>Question, Value, Show it on the device's screen, Screen text (up to 20 characters)</td></tr>
       <tr><td><b>Decision</b></td><td>Goes the <b>yes</b> or <b>no</b> way by a measured or asked value</td><td>Value, Is / Compared, With</td></tr>
       <tr><td><b>Repeat</b></td><td>Goes round what follows <b>again</b> a number of times, then on by <b>done</b></td><td>Times</td></tr>
       <tr><td><b>Parallel</b></td><td>Splits the way into lanes that run at the same time</td><td>Lanes</td></tr>
@@ -639,7 +645,7 @@
         hover it to see which. <b>■</b> marks End.</li>
       <li><b>To work on another step,</b> click its band or one of its faded bars, or move the red line
         into its frames: that step opens on the board.</li>
-      <li><b>Play</b> (<kbd>Space</kbd>) runs through all the steps, one after another. It is a
+      <li><b>Simulate</b> (<kbd>Space</kbd>) runs through all the steps, one after another. It is a
         <b>preview</b>: it asks nothing and goes on at every decision (the top bar says
         “Previewing”). <span class="ui">▶ Run</span> is the real run.</li>
       <li>At a <b>decision</b>, the timeline follows the way that goes on, so a loop that waits for
@@ -652,20 +658,24 @@
     <h3 id="run">Running it</h3>
     <ol class="steps">
       <li>Press <span class="ui">▶ Run</span> in the top bar. To have the OpenDrop do it for real,
-        connect it first and switch <span class="ui">live</span> on (under <span class="ui">play</span>
-        on the board, or in the Device tab): the device follows the run and is switched off at the
+        connect it first and switch <span class="ui">live</span> on (under <span class="ui">simulate</span>
+        on the board): the device follows the run and is switched off at the
         end.</li>
       <li>Each step plays on the board, frame by frame; the running tile glows in the process
         view.</li>
       <li>At a <b>Measure</b> tile you type in the value and press <span class="ui">Go on</span>. At an
         <b>Ask</b> tile you answer <span class="ui">Yes</span> / <span class="ui">No</span> (or with
-        the keys: <kbd>1</kbd> or <kbd>,</kbd> for yes, <kbd>2</kbd> or <kbd>.</kbd> for no) or type a
-        number. <span class="ui">Stop the run</span> ends it there.</li>
+        the keys: <kbd>1</kbd> or <kbd>,</kbd> for yes, <kbd>2</kbd> or <kbd>.</kbd> for no).
+        <span class="ui">Stop the run</span> ends it there.</li>
       <li>Decisions and Repeats choose the way by themselves.</li>
       <li>The <b>run log</b> at the bottom right of the process view lists the values, decisions and
         times. Click its heading to fold it away.</li>
       <li><span class="ui">⏸ Pause</span> and <span class="ui">■ Stop</span> are in the top bar. Nothing
-        can be changed while a run goes. Keep the page in front: a hidden tab runs slowly.</li>
+        in the project can be changed while a run goes: not the board, the tiles, Properties, the
+        frame time, the layout, opening or adding a file, undo, or a new template. Those fields are
+        greyed out, and so are <span class="ui">Send to device</span> and <span class="ui">Run on the device</span>
+        in the Device tab; the board's red frame is greyed a bit. You can't step
+        or scroll through frames either (wheel, arrow keys, the timeline or charts): the board follows the run. A second tab of the page is locked too until the run ends. Keep the page in front: a hidden tab runs slowly.</li>
     </ol>
     <p>A run changes nothing in your project: afterwards the board is back where it was.</p>
 
@@ -786,8 +796,9 @@
           <li>Run it. After each mix it asks "Measure conc (mM) and type it in". Type the number and
             press <span class="ui">Go on</span>: 7 mixes again, 3 ends the run.</li>
         </ol>
-        <p>Comparisons can be &lt;, ≤, &gt;, ≥, = or ≠. An <b>Ask</b> tile with <b>Answer</b> <i>a
-          number</i> works the same way as Measure.</p>
+        <p>Comparisons can be &lt;, ≤, &gt;, ≥, = or ≠. To change what the run says when it asks,
+          fill in <b>Ask with</b>, e.g. "Read the absorbance at 450 nm". Ask is only for yes or no;
+          any number comes from a Measure.</p>
       </div>
     </section>
 
@@ -854,7 +865,7 @@
       </div>
       <div>
         <ol class="steps">
-          <li>Make the chain of tiles shown on the left (palette group <b>Heat and magnets</b> for
+          <li>Make the chain of tiles shown on the left (palette group <b>Heat, magnets, screen</b> for
             Temperature and Magnet).</li>
           <li><b>Temperature:</b> <b>T1 (°C)</b> <i>60</i>, leave T2 and T3 empty (they stay as they
             are), tick <span class="ui">Wait until the heaters get there</span>.</li>
@@ -930,12 +941,17 @@
       <li>In the browser's list, pick the device. It is usually called <b>Feather M0</b>. The dot by
         the title turns green while it answers, and the Device tab shows the board type (V4.1 or V4.2,
         with magnets or the temperature adapter).</li>
-      <li>Switch on <span class="ui">live</span> (under play): the device now shows the frame on
+      <li>Switch on <span class="ui">live</span> (under simulate, the red box on the board): the device now shows the frame on
         screen. Stepping, playing and drawing go straight to it. Switching live off switches everything
         on the device off.</li>
     </ol>
     <ul>
       <li><b>feedback</b> (V4.2): shows where the device senses droplets as dark dots on the board.</li>
+      <li><b>High voltage</b> in the Device tab: shows the project's voltage, frequency and mode (set
+        in Properties, under the frame time). The device uses them until it is switched off.
+        <span class="ui">Save to device</span> writes them to its memory, so it starts with them next
+        time; its sound and the feedback switch are saved with them. Needs the custom firmware
+        (OpenDropVCustom).</li>
       <li><b>Temperatures</b> in the Device tab: the three readings and the targets for heaters the
         sequence doesn't set.</li>
       <li><span class="ui">Reconnect automatically</span> finds the device again when the page opens or
@@ -967,8 +983,8 @@
     <h2 id="keys">Keyboard shortcuts</h2>
     <table>
       <tr><th>Key</th><th>Does</th></tr>
-      <tr><td><kbd>F</kbd> <kbd>S</kbd> <kbd>P</kbd> <kbd>V</kbd></td><td>Freehand, straight, paint, select tool</td></tr>
-      <tr><td><kbd>Space</kbd></td><td>Play / stop</td></tr>
+      <tr><td><kbd>F</kbd> <kbd>P</kbd> <kbd>V</kbd></td><td>Freehand, paint, select tool</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Simulate (play) / stop</td></tr>
       <tr><td><kbd>←</kbd> <kbd>→</kbd>, mouse wheel</td><td>Previous / next frame (while playing the wheel changes the speed)</td></tr>
       <tr><td><kbd>⌘Z</kbd> / <kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
       <tr><td><kbd>⇧⌘Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Redo</td></tr>

@@ -54,11 +54,16 @@
   const cleanTolerance = (t) => (goodTemp(t) && t > 0 ? Math.min(MAX_TOLERANCE, Math.round(t * 10) / 10) : DEFAULT_TOLERANCE);
 
   // What the heaters and magnets are set to: targets (°C, or null: not set by the project) and
-  // magnets on or off.
+  // magnets on or off; and once a Message action has run, `message`, the text on the device's
+  // screen ('' = cleared).
   const emptyControls = () => ({ targets: [null, null, null], magnets: [false, false] });
-  const copyControls = (c) => ({ targets: c.targets.slice(), magnets: c.magnets.slice() });
+  const copyControls = (c) => ({ targets: c.targets.slice(), magnets: c.magnets.slice(), ...(typeof c.message === 'string' ? { message: c.message } : {}) });
   const sameControls = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  const usesControls = (c) => c.targets.some((t) => t !== null) || c.magnets.some(Boolean);
+  const usesControls = (c) => c.targets.some((t) => t !== null) || c.magnets.some(Boolean) || typeof c.message === 'string';
+  // A Message action's text, as kept: one line, at most MESSAGE_LENGTH characters (the screen
+  // shows 20; the device keeps plain ASCII of it).
+  const MESSAGE_LENGTH = 20;
+  const cleanText = (t) => String(t === null || t === undefined ? '' : t).replace(/\s+/g, ' ').trim().slice(0, MESSAGE_LENGTH).trim();
 
   // Applies a temperature or magnet action to controls `c` (in place).
   function apply(c, action) {
@@ -68,6 +73,8 @@
       });
     } else if (action.type === 'magnet') {
       c.magnets[(action.magnet === 2 ? 2 : 1) - 1] = action.on !== false;
+    } else if (action.type === 'message') {
+      c.message = cleanText(action.text);
     }
     return c;
   }
@@ -130,7 +137,7 @@
 
   return {
     HEATERS, TEMP_RANGE, AMBIENT, DEFAULT_TOLERANCE, DEFAULT_RATES, RATE_RANGE, MAGNETS, HEATER_ZONES, HEATER_LAYOUTS,
-    magnetCell, clampTemp, cleanTargets, cleanRates, cleanTolerance, emptyControls, copyControls, sameControls,
+    magnetCell, clampTemp, cleanTargets, cleanRates, cleanTolerance, emptyControls, copyControls, sameControls, MESSAGE_LENGTH, cleanText,
     usesControls, apply, estimateMs, rampAt, reached, targetsText, colour,
   };
 });
