@@ -71,6 +71,30 @@
   // With a process, the actions of a tile that does one kind of thing (a dispense, a move, a
   // mix...) are called by the tile's name; a Step tile's actions keep names of their own.
   const namedByTile = (t) => Boolean(t) && processes.hasWork(t) && t.kind !== 'step';
+  // Steps with nothing to put anywhere on the electrodes: they go on the board by themselves.
+  const SETTING_KINDS = ['wait', 'message', 'temperature', 'magnet'];
+  // The action a setting step puts on the board (null if it sets nothing yet: a Temperature tile
+  // without a heater).
+  function settingAction(t) {
+    const name = tileName(t);
+    switch (t.kind) {
+      case 'wait':
+        return { type: 'wait', name, droplet: '', duration: Math.round(Math.max(0.01, Number(t.seconds) || 1) * 1000) };
+      case 'message':
+        return { type: 'message', name, droplet: '', text: heat.cleanText(t.text) };
+      case 'temperature': {
+        const targets = heat.cleanTargets(t.targets);
+        if (!targets.some((x) => x !== null)) return null;
+        const a = { type: 'temp', name, droplet: '', targets };
+        if (t.wait) Object.assign(a, { wait: true, tolerance: heat.cleanTolerance(t.tolerance) });
+        return a;
+      }
+      case 'magnet':
+        return { type: 'magnet', name, droplet: '', magnet: t.magnet === 2 ? 2 : 1, on: t.on !== false };
+      default:
+        return null;
+    }
+  }
   const tileName = (t) => t.name || processes.KINDS[t.kind].name;
   // A merged droplet's name is its droplets' short names ("D1 + D2"): with droplet `from`
   // renamed `to`, the name it becomes, or null if `from` isn't one of its parts.
@@ -325,11 +349,16 @@
       return true;
     }
 
-    // A change to the process (fn edits it): undoable like drawing; the board follows.
+    // A change to the process (fn edits it): undoable like drawing; the board follows. Setting
+    // steps it leaves unplaced (Wait, Message, Temperature, Magnet) are put on the board in the
+    // same step, so undo takes both back together.
     processChange(fn) {
       if (!this.doc.process || this.refused()) return false;
       if (this.scope) this.project = this.workingProject();
-      const done = this.change(() => fn(this.doc.process), { check: false });
+      const done = this.change(() => {
+        fn(this.doc.process);
+        this.placeSettings();
+      }, { check: false });
       if (done) this.rescope();
       return done;
     }
@@ -468,6 +497,84 @@
       return out;
     }
 
+    // Puts every setting step of the process (see SETTING_KINDS) that an arrow leads to and has
+    // nothing on the board yet there: after the last actions of the steps before it in its
+    // stretch, or in frame 1. One whose action no longer follows a step before it (its arrows
+    // were changed) is linked after them again. Inside a change. Returns how many it placed.
+    placeSettings() {
+      const p = this.doc.process;
+      if (!p) return 0;
+      this.flush();
+      const st = processes.stretches(p);
+      const g = processes.graph(p);
+      const back = processes.backLinks(p, g);
+      const tilesOf = new Map(st.list.map((s) => [s.id, new Set(s.tiles)]));
+      let placed = 0;
+      for (const t of p.tiles) {
+        if (!SETTING_KINDS.includes(t.kind)) continue;
+        const sid = st.of.get(t.id);
+        if (!sid || !(g.into.get(t.id) || []).length) continue;
+        const existing = this.doc.actions.filter((a) => a.tile === t.id);
+        const fields = existing.length ? null : settingAction(t);
+        if (!existing.length && !fields) continue;
+        const inside = tilesOf.get(sid);
+        // The nearest steps before it, in its stretch, with something on the board: it follows
+        // their last actions.
+        const after = [];
+        const seen = new Set();
+        const earlier = new Set(); // actions of every step before it in the stretch
+        const walk = (tid) => {
+          for (const l of g.into.get(tid) || []) {
+            if (back.has(processes.linkKey(l)) || seen.has(l.from) || !inside.has(l.from)) continue;
+            seen.add(l.from);
+            const mine = this.doc.actions.filter((a) => a.tile === l.from);
+            for (const a of mine) earlier.add(a.id);
+            if (!mine.length) {
+              walk(l.from);
+              continue;
+            }
+            const ids = new Set(mine.map((a) => a.id));
+            const followed = new Set(mine.flatMap((a) => (predsOf(a) || []).filter((x) => ids.has(x))));
+            for (const a of mine) if (!followed.has(a.id)) after.push(a.id);
+          }
+        };
+        walk(t.id);
+        if (existing.length) {
+          // Placed already: left alone while it follows steps before it (or nothing is before it).
+          if (existing.length > 1) continue;
+          const [x] = existing;
+          const preds = predsOf(x);
+          if (preds ? preds.every((id) => earlier.has(id)) : !after.length) continue;
+          delete x.start;
+          delete x.delay;
+          delete x.after;
+          if (after.length) x.after = after.length === 1 ? after[0] : after;
+          else x.start = 1;
+          continue;
+        }
+        const a = { id: projects.nextId(this.doc), ...fields, tile: t.id };
+        if (after.length) a.after = after.length === 1 ? after[0] : after;
+        else a.start = 1;
+        // Put between two steps already on the board: what followed the step before now follows
+        // this one (the step after it waits, as the arrows say).
+        const nextTiles = new Set((g.out.get(t.id) || []).filter((l) => !back.has(processes.linkKey(l)) && inside.has(l.to)).map((l) => l.to));
+        if (after.length) {
+          for (const b of this.doc.actions) {
+            if (!nextTiles.has(b.tile)) continue;
+            const preds = predsOf(b);
+            if (!preds || !preds.some((x) => after.includes(x))) continue;
+            const rest = [...new Set([...preds.filter((x) => !after.includes(x)), a.id])];
+            b.after = rest.length === 1 ? rest[0] : rest;
+            delete b.delay;
+          }
+        }
+        this.doc.actions.push(a);
+        placed++;
+      }
+      if (placed && this.scope) this.project = this.workingProject();
+      return placed;
+    }
+
     // The frame a tile's work starts in: where the tiles before it end (1 if nothing is before).
     tileStart(id) {
       const ends = this.orderAfter(id).map((x) => this.span(x)).filter(Boolean).map((s) => s.to);
@@ -486,6 +593,10 @@
       }
       this.frame = Math.min(MAX_FRAMES, this.tileStart(id));
       const droplets = this.arrive.map((a) => a.droplet);
+      // A setting step goes on the board by itself: once there, placing it again adds nothing.
+      if (SETTING_KINDS.includes(t.kind) && this.project.actions.some((a) => a.tile === id)) {
+        return { kind: 'added', text: `${tileName(t)} is on the board already: steps like this go there by themselves` };
+      }
       switch (t.kind) {
         case 'dispense':
           if (!this.layout.hasReservoirs) {

@@ -43,7 +43,12 @@ every change goes through it and is recompiled.
 `Walk`). *Stops* (Start, Measure, Ask, Decision, Repeat, End) split it into *stretches*; the work
 tiles of one stretch share one board and one timeline (`js/stretch.js`: which actions belong to
 which tile, droplets and controls carried in from the stretch before). Placing a tile on the board
-creates its actions with `tile: <id>`. `js/schedule.js` lays the whole process out in time,
+creates its actions with `tile: <id>`, linked `after` the last actions of the steps before it
+(`editor.orderAfter`). Setting steps (Wait, Message, Temperature, Magnet: `SETTING_KINDS` in
+`js/editor.js`) are never placed by hand: every `ed.processChange` runs `placeSettings()` inside
+the same undo step, which places them once an arrow leads to them, makes the next step's actions
+follow one dropped between two placed steps, and re-links one whose arrows moved. Process edits
+must go through `ed.processChange` for this (and undo) to work. `js/schedule.js` lays the whole process out in time,
 including parallel lanes that run side by side and stops inside lanes; the timeline shows the
 whole process along one route. `js/runner.js` runs a process (it still walks with `P.Walk`; moving
 it to `schedule.js` is unfinished work). While a run goes, `editor.frozen` makes everything

@@ -420,3 +420,81 @@ test('merged droplets follow a rename by their short names; two Dispense tiles o
   const warned = P.check(ed.doc.process).filter((i) => /also makes “Sample”/.test(i.text)).map((i) => i.tile).sort();
   assert.deepEqual(warned, [ids.dA, ids.dB].sort());
 });
+
+// --- steps that go on the board by themselves ------------------------------------------------
+
+// Puts a new tile of `kind` on the arrow from tile `from`, as dropping it on the arrow does.
+function insertAfter(ed, from, kind, fields = {}) {
+  let tile = null;
+  ed.processChange((p) => {
+    const old = p.links.find((l) => l.from === from && l.port === 'next');
+    tile = P.addTile(p, kind, 0, 0, fields);
+    P.unlink(p, from, 'next');
+    P.link(p, from, 'next', tile.id);
+    P.link(p, tile.id, 'next', old.to);
+  });
+  return tile;
+}
+
+test('a Wait or Message dropped between two placed steps goes on the board by itself, and the next step waits for it', () => {
+  const { ed, ids } = placed();
+  const actionsOf = (id) => ed.doc.actions.filter((a) => a.tile === id);
+  const [disp] = actionsOf(ids.dispense);
+  const [path] = actionsOf(ids.move);
+  assert.equal(path.after, disp.id, 'before: the path follows the dispense');
+  const undos = ed.undoStack.length;
+  const wait = insertAfter(ed, ids.dispense, 'wait', { seconds: 30 });
+  const [w] = actionsOf(wait.id);
+  assert.deepEqual([w.type, w.duration, w.after], ['wait', 30000, disp.id], 'after the dispense');
+  assert.equal(actionsOf(ids.move)[0].after, w.id, 'the path now follows the wait');
+  const msg = insertAfter(ed, wait.id, 'message', { text: 'Moving now' });
+  const [m] = actionsOf(msg.id);
+  assert.deepEqual([m.type, m.text, m.after], ['message', 'Moving now', w.id]);
+  assert.equal(actionsOf(ids.move)[0].after, m.id);
+  ed.openTile(ids.move);
+  assert.ok(ed.span(path.id).from >= ed.span(w.id).to, 'the path starts once the wait is over');
+  assert.deepEqual(ed.analyze().tile.get(wait.id).problems, []);
+  // One undo takes back the tile and its action together.
+  ed.undo();
+  assert.equal(P.tileById(ed.doc.process, msg.id), null);
+  assert.deepEqual(actionsOf(msg.id), []);
+  assert.equal(actionsOf(ids.move)[0].after, w.id);
+  ed.undo();
+  assert.equal(ed.undoStack.length, undos);
+  assert.equal(actionsOf(ids.move)[0].after, disp.id, 'back as it was');
+});
+
+test('a Temperature tile goes on the board once it sets a heater; one without an arrow to it waits, then follows its step', () => {
+  const { ed, ids } = placed();
+  const actionsOf = (id) => ed.doc.actions.filter((a) => a.tile === id);
+  const heat = insertAfter(ed, ids.dispense, 'temperature', { targets: [null, null, null] });
+  assert.deepEqual(actionsOf(heat.id), [], 'no heater set: nothing to place');
+  ed.tileSettings(heat.id, { targets: [40, null, null] });
+  const [t] = actionsOf(heat.id);
+  assert.deepEqual([t.type, t.targets, t.after], ['temp', [40, null, null], actionsOf(ids.dispense)[0].id]);
+  let loose = null;
+  ed.processChange((p) => {
+    loose = P.addTile(p, 'message', 500, 500, { text: 'Alone' });
+  });
+  assert.deepEqual(actionsOf(loose.id), [], 'no arrow to it yet: not on any board');
+  // Connected after the move: it follows the path.
+  ed.processChange((p) => {
+    const old = p.links.find((l) => l.from === ids.move);
+    P.unlink(p, ids.move, 'next');
+    P.link(p, ids.move, 'next', loose.id);
+    P.link(p, loose.id, 'next', old.to);
+  });
+  const path = actionsOf(ids.move)[0];
+  assert.equal(actionsOf(loose.id)[0].after, path.id);
+  // Moved to after the dispense instead: it follows the dispense now.
+  ed.processChange((p) => {
+    P.unlink(p, ids.move, 'next');
+    P.unlink(p, loose.id, 'next');
+    P.link(p, ids.move, 'next', ids.mix);
+    const old = p.links.find((l) => l.from === heat.id);
+    P.unlink(p, heat.id, 'next');
+    P.link(p, heat.id, 'next', loose.id);
+    P.link(p, loose.id, 'next', old.to);
+  });
+  assert.equal(actionsOf(loose.id)[0].after, t.id, 'it follows the step before it now');
+});

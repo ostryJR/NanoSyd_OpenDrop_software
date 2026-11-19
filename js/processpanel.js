@@ -126,10 +126,12 @@
 
       if (P.hasWork(t)) {
         const me = info.tile.get(t.id);
-        const where = !me.placed ? 'Not placed on the board yet.' : me.to ? `On the board: frames ${me.from}–${me.to} of its stretch, ${seconds(me.ms)}.` : 'On the board, but it doesn’t run.';
+        const auto = ['wait', 'message', 'temperature', 'magnet'].includes(t.kind);
+        const where = !me.placed ? (auto ? `Goes on the board by itself once an arrow leads to it${t.kind === 'temperature' ? ' and it sets a heater' : ''}.` : 'Not placed on the board yet.') : me.to ? `On the board: frames ${me.from}–${me.to} of its stretch, ${seconds(me.ms)}.` : 'On the board, but it doesn’t run.';
         this.host.append(node('p', { class: me.placed ? 'info ok' : 'info' }, where));
         const row = node('div', { class: 'row' });
-        if (t.kind !== 'step') row.append(node('button', { type: 'button', class: me.placed ? '' : 'primary', text: me.placed ? 'Place again' : 'Place on the board', onclick: () => this.app.place(t.id) }));
+        // Wait, Message, Temperature and Magnet go on the board by themselves.
+        if (t.kind !== 'step' && !(auto && me.placed)) row.append(node('button', { type: 'button', class: me.placed ? '' : 'primary', text: me.placed ? 'Place again' : 'Place on the board', onclick: () => this.app.place(t.id) }));
         row.append(node('button', { type: 'button', text: 'Open on the board', 'data-look': '', onclick: () => this.app.open(t.id) }));
         this.host.append(row);
       }

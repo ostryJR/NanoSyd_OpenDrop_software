@@ -194,7 +194,9 @@ A flowchart on a canvas (palette of tiles on the left, settings in Properties on
 | Wait for all | waits until every lane has finished | lanes |
 
 A work tile must be **placed**: open it on the board (double-click it, or **Open on the board**,
-or **Place on the board** in Properties) and draw or drop its work.
+or **Place on the board** in Properties) and draw or drop its work. **Wait, Message, Temperature
+and Magnet** place themselves once an arrow leads to them (a Temperature once it sets a heater):
+"not placed yet" on one of these means no arrow leads to it, or a Temperature sets no heater.
 
 ### 3.2 Stretches: why steps are grouped on the board
 
@@ -318,7 +320,7 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
 | "it follows *X*, which doesn't run" / "which never ends" / "an action that isn't there" | Its start depends on something broken or deleted. | Fix that action, or set a start frame in Properties. |
 | "it runs past frame 100000 and is cut short there" | Too long. | Shorten it. |
 | "it sets no temperature" | A Temperature with no target. | Set at least one of T1–T3. |
-| "Not placed on the board yet." / "not placed yet" (orange !) | A work tile has nothing on the board. | Open it and place its work. |
+| "Not placed on the board yet." / "not placed yet" (orange !) | A work tile has nothing on the board. | Open it and place its work. Wait/Message/Temperature/Magnet: connect an arrow to it (Temperature: set a heater). |
 | "On the board it starts in frame *a*, before *X* ends (frame *b*)" | Order on the board differs from the process. | Move it later on the timeline. |
 | "Coming from *X*, the droplets are elsewhere: …" | Two ways into a step bring droplets to different places. | Make both ways leave the droplets in the same places. |
 | "Another Dispense in this part also makes *name*" | Two Dispense tiles make a droplet with the same name. | Rename one droplet. |

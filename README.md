@@ -170,7 +170,12 @@ everything drawn so far.
   - The droplets coming in from the step before wait where it left them, shown as dashed rings. You
     draw from them as from any droplet.
   - What you draw goes into the open step, after the steps before it.
-  - **Place on the board** does a typed tile's job: it adds a dispense or a hold, starts placing
+  - **Wait, Message, Temperature and Magnet** tiles go on the board by themselves, in the same
+    undo step as the change that connected them (a Temperature once it sets a heater): after the
+    last actions of the steps before them in their stretch; put on an arrow between two placed
+    steps, the step after them now follows them. Reconnected elsewhere, their action follows its
+    new step. They have no Place button once placed.
+  - **Place on the board** does a typed tile's job: it adds a dispense, starts placing
     the mixer, merge or split (click where the droplet is, R turns it), or picks freehand for a
     move.
 - **The timeline shows the whole process**, the stretches one after another, with the frame
