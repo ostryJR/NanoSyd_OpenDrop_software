@@ -1,5 +1,7 @@
 # OpenDrop Generator
 
+nanoSYD software · source code: https://github.com/ostryJR/NanoSyd_OpenDrop_software
+
 A browser app for drawing electrode sequences for the OpenDrop V4 digital-microfluidics platform
 and exporting them as the `.json` frame files used by GaudiLabs' **OpenDropController4_25**. It
 started as a port of that controller's editor and adds drag-to-draw droplet paths, templates for

@@ -413,6 +413,32 @@ button {
   color: #b00020;
 }
 
+/* The key hints with, in the bottom right corner on their last line, whose software it is and
+   where its code is. A row of its own in the bar, so the hints don't squeeze in beside the
+   message. */
+#bar-hints {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+#bar-hints #help {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+#credit {
+  flex: none;
+  color: #6b6b6b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#credit a {
+  color: inherit;
+}
+
 #help {
   color: #6b6b6b;
   font-size: 12px;

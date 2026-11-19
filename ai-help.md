@@ -122,8 +122,9 @@ It imitates GaudiLabs' original OpenDropController window.
 ### Bottom bar
 
 **Layout** (which cartridge: Standard, Magnet, …), **Electrode numbers**, **Lines**, then the
-**message** (the most important text for troubleshooting: amber = warning, red = error), and a
-line of keyboard hints.
+**message** (the most important text for troubleshooting: amber = warning, red = error), a
+line of keyboard hints with "nanoSYD software · GitHub" at the right end of their last line (the source code:
+https://github.com/ostryJR/NanoSyd_OpenDrop_software).
 
 ### Process view
 
