@@ -72,6 +72,33 @@
       return s;
     }
 
+    // Ask and Measure: whether a run waiting here shows it on the device's screen, and with what.
+    screenFields(h, t) {
+      const H = OD.heat;
+      const box = node('input', { type: 'checkbox' });
+      box.checked = Boolean(t.screen);
+      box.addEventListener('change', () => {
+        // Switched on: the screen text starts as the question or prompt, cut to what fits.
+        const fields = box.checked && !t.screenText ? { screen: true, screenText: H.cleanText(P.screenText({ ...t, screen: true, screenText: '' })) } : { screen: box.checked };
+        this.set(fields, box.checked ? `${t.name}: shown on the device's screen while a run waits here` : `${t.name}: not shown on the device`);
+        this.key = '';
+        this.app.changed();
+      });
+      h.append(node('label', { class: 'check' }, box, 'Show it on the device’s screen'));
+      if (!t.screen) return;
+      const input = this.text(t.screenText || '', { maxlength: H.MESSAGE_LENGTH });
+      h.append(this.field(`Screen text (up to ${H.MESSAGE_LENGTH} characters)`, input, (v) => {
+        const text = H.cleanText(v);
+        if (!text) {
+          this.app.status('The screen text can’t be empty: untick “Show it on the device’s screen” instead', 'warn');
+          input.value = t.screenText || '';
+          return;
+        }
+        this.set({ screenText: text }, 'Screen text set');
+      }), counter(input, H.MESSAGE_LENGTH));
+      h.append(node('p', { class: 'hint', text: 'While a run waits here, the OpenDrop’s screen (custom firmware) shows this; afterwards it goes back to what a Message tile set.' }));
+    }
+
     set(fields, text) {
       if (this.ed.tileSettings(this.tile, fields) && text) this.app.status(text);
     }
@@ -215,6 +242,16 @@
           h.append(node('p', { class: 'hint', text: 'Empty heaters stay as they were. Waiting, a run on the OpenDrop goes on once the readings get there; without one, the wait is estimated from the heating rates in the Temperature view.' }));
           break;
         }
+        case 'message': {
+          const H = OD.heat;
+          const input = this.text(t.text, { maxlength: H.MESSAGE_LENGTH, placeholder: 'empty: clears the screen' });
+          h.append(this.field(`Text (up to ${H.MESSAGE_LENGTH} characters)`, input, (v) => {
+            const text = H.cleanText(v);
+            this.set({ text }, text ? `${t.name}: “${text}” on the device's screen` : `${t.name}: clears the device's screen`);
+          }), counter(input, H.MESSAGE_LENGTH));
+          h.append(node('p', { class: 'hint', text: 'Shown on the OpenDrop’s screen (custom firmware, OpenDropVCustom) from here until another Message tile, while live or in a run. Plain letters: accents are dropped.' }));
+          break;
+        }
         case 'magnet':
           h.append(this.field('Magnet', this.select([['1', 'Magnet 1'], ['2', 'Magnet 2']], String(t.magnet === 2 ? 2 : 1)), (v) => this.set({ magnet: Number(v) }, `${t.name}: magnet ${v}`)));
           h.append(this.field('Switch it', this.select([['on', 'on'], ['off', 'off']], t.on === false ? 'off' : 'on'), (v) => this.set({ on: v === 'on' }, `${t.name}: ${v}`)));
@@ -230,10 +267,12 @@
           }
           h.append(this.field('Ask with', this.text(t.prompt, { maxlength: 120, placeholder: `Measure ${t.value || 'it'}${t.unit ? ` (${t.unit})` : ''} and type it in.` }), (v) => this.set({ prompt: String(v).trim() }, 'Prompt set')));
           h.append(node('p', { class: 'hint', text: 'A run stops here and asks you to type the value in, with this text (empty: the default shown). Reading it from a connected instrument comes later.' }));
+          this.screenFields(h, t);
           break;
         case 'ask':
           h.append(this.field('Question', this.text(t.question, { maxlength: 120 }), (v) => this.set({ question: String(v).trim() || 'Go on?' }, 'Question set')));
           h.append(this.field('Value', this.text(t.value, { maxlength: 30 }), (v) => this.set({ value: clean(v) || t.value }, `${t.name} gives ${clean(v) || t.value}`)));
+          this.screenFields(h, t);
           break;
         case 'decision': {
           const sources = p.tiles.filter((x) => (x.kind === 'measure' || x.kind === 'ask') && x.value);
@@ -267,6 +306,15 @@
           break;
       }
     }
+  }
+
+  // "n / max" under a text field, kept up to date as you type.
+  function counter(input, max) {
+    const out = node('p', { class: 'hint count' });
+    const update = () => (out.textContent = `${input.value.length} / ${max}`);
+    input.addEventListener('input', update);
+    update();
+    return out;
   }
 
   const clean = (v) => String(v).trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '').slice(0, 30);

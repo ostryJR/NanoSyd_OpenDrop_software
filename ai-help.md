@@ -184,8 +184,9 @@ A flowchart on a canvas (palette of tiles on the left, settings in Properties on
 | Wait | holds the droplets for a set time; the way to pause | work |
 | Temperature | sets heaters T1–T3; can wait until reached | work |
 | Magnet | switches a magnet on/off until the next Magnet tile | work |
+| Message | shows up to 20 characters on the OpenDrop's screen (custom firmware) until the next Message tile; empty clears it | work |
 | Measure | the run stops for a measured number, typed in by you (its **Ask with** text is shown; a connected instrument comes later) | stop |
-| Ask | the run stops and asks a yes/no question | stop |
+| Ask | the run stops and asks a yes/no question (Ask and Measure: **Show it on the device's screen** puts its **Screen text**, up to 20 characters, on the OpenDrop's screen while the run waits) | stop |
 | Decision | goes the yes or no way, by a measured or asked value | stop |
 | Repeat | goes round "again" N times, then on by "done" | stop |
 | Parallel | splits the way into lanes that run at the same time | lanes |
@@ -250,6 +251,10 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
 
 - Three heaters **T1–T3** (temperature adapter), targets 20–120 °C; two magnets **M1/M2**
   (magnet board). Set by **Temperature** and **Magnet** tiles or actions; they last until changed.
+- **Message** tiles put text on the OpenDrop's screen (custom firmware OpenDropVCustom only; older
+  firmware ignores it). It is only sent while **live** is on or in a run. Nothing on the screen?
+  Check live is on, the firmware is the custom one, and the text isn't hidden by its "INSERT
+  CARTRIDGE" / "UNDER VOLTAGE!" warnings, which are drawn over it. Accents are dropped.
 - A temperature that **waits**: offline, it lasts the estimated time (ramp rates in the
   Temperature view: warms/cools °C per minute); live, playback holds that frame until the
   readings are within the tolerance.

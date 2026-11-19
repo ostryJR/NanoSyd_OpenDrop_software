@@ -567,8 +567,9 @@
       <tr><td><b>Wait</b></td><td>Holds the droplets where they are for a time (the way to pause)</td><td>Wait (s)</td></tr>
       <tr><td><b>Temperature</b></td><td>Sets the heaters, optionally waits until they get there</td><td>T1–T3 (°C), Wait until the heaters get there, Close enough within (°C)</td></tr>
       <tr><td><b>Magnet</b></td><td>Switches a magnet on or off until the next Magnet tile</td><td>Magnet 1 or 2, on or off</td></tr>
-      <tr><td><b>Measure</b></td><td>The run stops for a measured number: you type it in (reading it from a connected instrument comes later)</td><td>Value (a name, e.g. <code>conc</code>), Unit, Get it by, Ask with (the text shown when it asks)</td></tr>
-      <tr><td><b>Ask</b></td><td>The run stops and asks you a yes-or-no question</td><td>Question, Value</td></tr>
+      <tr><td><b>Message</b></td><td>Shows a short text on the OpenDrop's screen (custom firmware) until the next Message tile; empty clears it</td><td>Text (up to 20 characters, plain letters)</td></tr>
+      <tr><td><b>Measure</b></td><td>The run stops for a measured number: you type it in (reading it from a connected instrument comes later)</td><td>Value (a name, e.g. <code>conc</code>), Unit, Get it by, Ask with (the text shown when it asks), Show it on the device's screen, Screen text (up to 20 characters)</td></tr>
+      <tr><td><b>Ask</b></td><td>The run stops and asks you a yes-or-no question</td><td>Question, Value, Show it on the device's screen, Screen text (up to 20 characters)</td></tr>
       <tr><td><b>Decision</b></td><td>Goes the <b>yes</b> or <b>no</b> way by a measured or asked value</td><td>Value, Is / Compared, With</td></tr>
       <tr><td><b>Repeat</b></td><td>Goes round what follows <b>again</b> a number of times, then on by <b>done</b></td><td>Times</td></tr>
       <tr><td><b>Parallel</b></td><td>Splits the way into lanes that run at the same time</td><td>Lanes</td></tr>
@@ -864,7 +865,7 @@
       </div>
       <div>
         <ol class="steps">
-          <li>Make the chain of tiles shown on the left (palette group <b>Heat and magnets</b> for
+          <li>Make the chain of tiles shown on the left (palette group <b>Heat, magnets, screen</b> for
             Temperature and Magnet).</li>
           <li><b>Temperature:</b> <b>T1 (°C)</b> <i>60</i>, leave T2 and T3 empty (they stay as they
             are), tick <span class="ui">Wait until the heaters get there</span>.</li>

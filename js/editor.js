@@ -360,6 +360,7 @@
             if (fields.magnet !== undefined) a.magnet = fields.magnet === 2 ? 2 : 1;
             if (fields.on !== undefined) a.on = Boolean(fields.on);
           }
+          if (a.type === 'message' && fields.text !== undefined) a.text = heat.cleanText(fields.text);
         }
         if (droplet !== undefined && t.kind === 'dispense') {
           // The droplet it makes: renamed down its chain once placed; until then just the tile's.
@@ -506,6 +507,11 @@
         case 'magnet': {
           const a = this.addMagnet(this.frame, t.magnet, t.on !== false, { name: t.name || 'Magnet' });
           return a ? { kind: 'added', text: `${t.name}: magnet ${t.magnet === 2 ? 2 : 1} ${t.on !== false ? 'on' : 'off'}` } : null;
+        }
+        case 'message': {
+          const text = heat.cleanText(t.text);
+          const a = this.addMessage(this.frame, text, { name: t.name || 'Message' });
+          return a ? { kind: 'added', text: text ? `${t.name}: “${text}” on the device's screen` : `${t.name}: clears the device's screen` } : null;
         }
         case 'mix':
         case 'merge':
@@ -800,12 +806,28 @@
       return done ? added : null;
     }
 
-    // A temperature or magnet action's settings (targets, wait, tolerance; magnet, on). Undoable.
+    // Puts `text` on the device's screen from frame `frame` ('' clears it). Undoable.
+    addMessage(frame, text, { name = 'Message' } = {}) {
+      if (this.locked) {
+        this.notice = this.locked;
+        return null;
+      }
+      let added = null;
+      const done = this.change(() => {
+        added = this.addAction({ type: 'message', name, droplet: '', text: heat.cleanText(text) }, Math.max(1, Math.round(frame)), []);
+      });
+      return done ? added : null;
+    }
+
+    // A temperature, magnet or message action's settings (targets, wait, tolerance; magnet, on;
+    // text). Undoable.
     setControl(id, fields) {
       const a = this.action(id);
-      if (!a || (a.type !== 'temp' && a.type !== 'magnet')) return false;
+      if (!a || (a.type !== 'temp' && a.type !== 'magnet' && a.type !== 'message')) return false;
       const next = { ...a };
-      if (a.type === 'temp') {
+      if (a.type === 'message') {
+        if (fields.text !== undefined) next.text = heat.cleanText(fields.text);
+      } else if (a.type === 'temp') {
         if (fields.targets !== undefined) next.targets = heat.cleanTargets(fields.targets);
         if (!next.targets.some((t) => t !== null)) {
           this.notice = 'A temperature setting needs at least one heater: delete it instead';

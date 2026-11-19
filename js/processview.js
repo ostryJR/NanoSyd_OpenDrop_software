@@ -68,6 +68,7 @@
     wait: [{ d: 'M6 3h12M6 21h12M8 3c0 5 8 4 8 9s-8 4-8 9M16 3c0 5-8 4-8 9s8 4 8 9' }],
     temperature: [{ d: 'M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0ZM12 14v3' }],
     magnet: [{ d: 'M5 4v8a7 7 0 0 0 14 0V4h-4v8a3 3 0 0 1-6 0V4ZM5 8h4M15 8h4' }],
+    message: [{ d: 'M4 6h16v10H9l-4 3v-3H4ZM8 10h8M8 13h5' }],
     measure: [{ d: 'M3.5 17a8.5 8.5 0 0 1 17 0M12 17l4.5-5.5' }],
     ask: [{ d: 'M9 9a3 3 0 1 1 4.2 2.75c-.75.35-1.2 1.1-1.2 1.95V15M12 19v.01' }],
     decision: [{ d: 'M12 3l9 9-9 9-9-9Z' }],
@@ -159,6 +160,7 @@
         if (t.kind === 'wait') bits.push(`${t.seconds || 0} s`);
         if (t.kind === 'temperature') bits.push(`${OD.heat.targetsText(OD.heat.cleanTargets(t.targets))}${t.wait ? ', waits' : ''}`);
         if (t.kind === 'magnet') bits.push(`magnet ${t.magnet === 2 ? 2 : 1} ${t.on === false ? 'off' : 'on'}`);
+        if (t.kind === 'message') bits.push(t.text ? `“${t.text}”` : 'clears the screen');
         const me = info && info.tile.get(t.id);
         if (me && me.placed && me.to) bits.push(`frames ${me.from}–${me.to} · ${seconds(me.ms)}`);
         else if (P.hasWork(t)) bits.push('not placed yet');

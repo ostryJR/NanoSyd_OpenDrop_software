@@ -269,7 +269,7 @@ frame on and stay that way until set again, so they can change during a process.
   frame on (a click in a frame that already has a setting adds the heater to it). **Drag** a point
   up or down to change its temperature, sideways to move it to another frame. **Click a magnet
   lane** to switch that magnet from that frame on; clicking a switch's frame again takes it away.
-- A setting is an action on the timeline (tracks *Heaters*, *Magnet 1*, *Magnet 2*); Properties
+- A setting is an action on the timeline (tracks *Heaters*, *Magnet 1*, *Magnet 2*, *Screen*); Properties
   shows its heaters (empty = stays as it was), and **Wait until the heaters get there** with how
   close is close enough. Settings take no time and hold nothing up, except one that waits: it lasts
   as long as the heaters are estimated to take (the warming and cooling rates, °C/min, above the
@@ -278,8 +278,8 @@ frame on and stay that way until set again, so they can change during a process.
   every set heater within the tolerance, however long that takes; without a device it lasts the
   estimate. The device gets each frame's targets; heaters the sequence doesn't set keep the targets
   in the Device tab, which shows which ones the sequence sets.
-- In the **process**: the *Temperature* and *Magnet* tiles (group *Heat and magnets*) are placed as
-  such settings. What they set carries on into the following steps, past Measure and Ask stops,
+- In the **process**: the *Temperature*, *Magnet* and *Message* tiles (group *Heat, magnets,
+  screen*) are placed as such settings. What they set carries on into the following steps, past Measure and Ask stops,
   the way droplets do.
 - At the top of the board, in the dip of the red frame, a strip shows each heater's target and reading (green ring: there) and each
   magnet, for the frame on screen, once the project sets any or a device with the adapter is
@@ -291,6 +291,13 @@ frame on and stay that way until set again, so they can change during a process.
   (`HEATER_ZONES` in `js/heat.js`).
 - Magnets are the control lines 129 (magnet 1) and 128 (magnet 2); the magnet layout labels them
   M1 and M2 on the board.
+- **Messages on the device's screen** (custom firmware OpenDropVCustom): a *Message* tile (or action)
+  puts up to 20 characters of plain text on the OpenDrop's screen from its frame on, until the next
+  one; empty text clears it. It goes to the device while live and in a run, and shows as a pill on
+  the board. **Ask** and **Measure** tiles have **Show it on the device's screen** (on for new
+  tiles): while a run waits there, the screen shows their **Screen text** (up to 20 characters,
+  starting as the question or prompt cut to fit; a counter shows how many are used), then goes
+  back to the Message. Every text for the screen is limited to 20 characters as you type. Live off, Switch all off and disconnecting clear it.
 
 ## Templates
 

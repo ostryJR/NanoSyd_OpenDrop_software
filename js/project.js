@@ -23,11 +23,11 @@
   const TAG = 'openDropGeneratorProject';
   const VERSION = 1;
   const EXTENSION = '.odproj.json';
-  const TYPE_NAMES = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet' };
+  const TYPE_NAMES = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet', message: 'Message' };
   const MAX_WAIT = 24 * 3600 * 1000; // a wait (hold) may last up to a day
   // Key order in saved files; other keys follow in the order they came.
   const KEY_ORDER = ['id', 'type', 'name', 'droplet', 'tile', 'start', 'after', 'delay', 'points', 'template', 'at', 'turns',
-    'reservoir', 'frames', 'duration', 'targets', 'wait', 'tolerance', 'magnet', 'on'];
+    'reservoir', 'frames', 'duration', 'targets', 'wait', 'tolerance', 'magnet', 'on', 'text'];
   const TILE_ORDER = ['id', 'kind', 'name', 'x', 'y'];
 
   function newProject({ layout = 'electrodes', frameTime = DEFAULT_FRAME_TIME } = {}) {
@@ -148,6 +148,11 @@
       case 'magnet':
         a.magnet = a.magnet === 2 ? 2 : 1;
         a.on = a.on !== false;
+        a.droplet = '';
+        break;
+      case 'message':
+        // Text on the device's screen ('' clears it).
+        a.text = heat.cleanText(a.text);
         a.droplet = '';
         break;
       default:

@@ -31,6 +31,9 @@
       this.hvChanges = 0; // times it set the high voltage anew
       this.saved = null; // the settings written to flash: { volts, hz, ac, feedback }
       this.saves = 0; // flash writes (only when something changed)
+      this.message = ''; // the message on its screen
+      this.messages = []; // every message shown or cleared (''), in order
+      this.text = null; // a message's text coming in: { packet, n, bytes }
       this.block = null; // protocol 1: a sequence block coming in
       this.loaded = null; // { frames, times, crc }
       this.run = null; // { frame, timer }
@@ -82,6 +85,17 @@
     }
 
     take(b) {
+      // The text of a message: N bytes after the packet, read before the packet is acted on.
+      if (this.text) {
+        this.text.bytes.push(b);
+        if (this.text.bytes.length < this.text.n) return;
+        const { packet } = this.text;
+        this.message = String.fromCharCode(...this.text.bytes).slice(0, 20);
+        this.messages.push(this.message);
+        this.text = null;
+        this.handle(packet);
+        return;
+      }
       if (this.block) {
         this.block.bytes.push(b);
         if (this.block.bytes.length === 4) {
@@ -110,6 +124,21 @@
       if (this.count < PACKET) return;
       this.count = 0;
       const p = this.packet.slice();
+      // The custom firmware's message byte: N text bytes follow, 255 clears it.
+      const n = p[OUT.message];
+      if (n > 0 && n < 255) {
+        this.text = { packet: p, n, bytes: [] };
+        return;
+      }
+      if (n === 255) {
+        this.message = '';
+        this.messages.push('');
+      }
+      this.handle(p);
+    }
+
+    // A whole packet (and its message's text, if any).
+    handle(p) {
       const command = this.protocol >= 1 ? p[OUT.command] : COMMAND.frame;
       this.feedback = Boolean(p[24]);
       this.targets = [p[26], p[27], p[28]];
@@ -230,7 +259,8 @@
 
   function cellsOf(packet) {
     const cells = [];
-    for (let x = 0; x < COLUMNS; x++) for (let r = 0; r < 8; r++) if ((packet[x] >> r) & 1) cells.push(x * 8 + r);
+    // Columns 0-16: byte 17 is the custom firmware's message length.
+    for (let x = 0; x < COLUMNS - 1; x++) for (let r = 0; r < 8; r++) if ((packet[x] >> r) & 1) cells.push(x * 8 + r);
     return cells;
   }
 

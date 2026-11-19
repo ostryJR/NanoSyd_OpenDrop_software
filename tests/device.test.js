@@ -25,7 +25,7 @@ test('a frame: one byte per column, bit = row; magnets, feedback, temperatures a
   assert.equal(f[1], 0b10000010, 'electrodes 9 and 15: column 1, rows 1 and 7');
   assert.equal(f[15], 0b10000000);
   assert.equal(f[16], 0b00000011, 'electrodes 128 and 129: the magnets (0x1 and 0x2 for the firmware)');
-  assert.equal(f[17], 0b10000000, 'electrode 143');
+  assert.equal(f[17], 0, 'electrode 143 isn\'t sent: byte 17 is the message length (custom firmware)');
   assert.equal(f[24], 1, 'feedback on');
   assert.deepEqual([f[26], f[27], f[28]], [30, 120, 20], 'temperature targets, kept to 20-120 °C');
   assert.equal(f[23], 4, 'the command (protocol 1), in byte 23');
@@ -171,6 +171,49 @@ test('high voltage: sent once (ordinary frames send 0 and change nothing); savin
   assert.equal(sim.saves, 1, 'saving the same again writes nothing');
   await s.detach();
   assert.deepEqual(await s.sendHV({ volts: 100 }), { ok: false, reason: 'no device is connected' });
+});
+
+test('a message: its length in byte 17, the text after the packet; 255 clears it; plain ASCII, 20 characters', () => {
+  const f = D.encodeFrame([9], { message: 'Add buffer' });
+  assert.equal(f.length, 32 + 10);
+  assert.equal(f[17], 10);
+  assert.equal(String.fromCharCode(...f.subarray(32)), 'Add buffer');
+  assert.equal(f[1], 0b00000010, 'the electrodes as usual');
+  const clear = D.encodeFrame([], { message: '' });
+  assert.equal(clear.length, 32);
+  assert.equal(clear[17], 255);
+  assert.equal(D.encodeFrame([]).length, 32, 'no message: 32 bytes, byte 17 = 0');
+  assert.equal(D.encodeFrame([])[17], 0);
+  assert.equal(D.cleanMessage('  Ajoutez   l’échantillon à 37 °C, s’il vous plaît '), 'Ajoutez l?echantillo');
+  assert.equal(D.cleanMessage('Mix\nnow'), 'Mix now');
+});
+
+test('the screen message: live, the frame’s message goes once; a note goes over it; live off or all off clears it', async (t) => {
+  const sim = new SimulatedOpenDrop({ board: 0x12 });
+  const { s } = session();
+  t.after(() => s.detach());
+  await s.attach(sim);
+  s.show([12], null, 'Mixing');
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(sim.messages, [], 'not live: the screen is left alone');
+  s.setLive(true);
+  await until(() => sim.message === 'Mixing');
+  assert.deepEqual(last(sim), [12]);
+  s.show([13], null, 'Mixing');
+  await until(() => last(sim).join() === '13');
+  assert.deepEqual(sim.messages, ['Mixing'], 'the same message isn’t sent again');
+  s.setNote('Add the sample?');
+  await until(() => sim.message === 'Add the sample?');
+  s.setNote(null);
+  await until(() => sim.message === 'Mixing', 'back to the frame’s');
+  s.show([14], null, null);
+  await until(() => sim.message === '', 'a frame without a message clears the one shown');
+  s.show([14], null, 'Heating');
+  await until(() => sim.message === 'Heating');
+  await s.allOff();
+  await until(() => sim.message === '');
+  assert.deepEqual(sim.messages, ['Mixing', 'Add the sample?', 'Mixing', '', 'Heating', '']);
+  await s.detach();
 });
 
 test('a device that stops answering is marked so and lined up again when it answers; unplugging ends the session', async () => {

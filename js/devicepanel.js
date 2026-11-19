@@ -76,7 +76,7 @@
     paint() {
       if (this.session.connected) {
         const c = this.ed.controlsAt(this.ed.frame);
-        this.session.show(cellsIn(this.ed.seq, this.ed.frame), c.targets.some((t) => t !== null) ? c.targets : null);
+        this.session.show(cellsIn(this.ed.seq, this.ed.frame), c.targets.some((t) => t !== null) ? c.targets : null, typeof c.message === 'string' ? c.message : null);
       }
       this.render();
     }

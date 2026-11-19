@@ -69,7 +69,9 @@
         if (!Array.isArray(action.targets) || !action.targets.some((t) => typeof t === 'number')) return { error: 'it sets no temperature' };
         return { steps: [{ cells: [], time: 0 }] };
       case 'magnet':
-        // Switches a magnet on or off from its frame on; it doesn't hold anything up.
+      case 'message':
+        // Switches a magnet on or off, or puts text on the device's screen, from its frame on; it
+        // doesn't hold anything up.
         return { steps: [{ cells: [], time: 0 }] };
       default:
         return { error: `this version can't show “${action.type}” actions (kept in the file)`, unknown: true };
@@ -116,9 +118,10 @@
     const actions = arrive.length ? [...arrive, ...project.actions] : project.actions;
     const coming = (a) => a.type === 'arrive';
     // Settings that take no time: a magnet, a temperature that doesn't wait.
-    const marker = (a) => a.type === 'magnet' || (a.type === 'temp' && !a.wait);
+    const control = (a) => a.type === 'temp' || a.type === 'magnet' || a.type === 'message';
+    const marker = (a) => a.type === 'magnet' || a.type === 'message' || (a.type === 'temp' && !a.wait);
     // Settings and waits don't hold the others up: they last over the frames the others take.
-    const split = (a) => a.type === 'wait' || a.type === 'temp' || a.type === 'magnet';
+    const split = (a) => a.type === 'wait' || control(a);
     const state = controls ? heat.copyControls(controls) : heat.emptyControls();
     const rates = heat.cleanRates(project.heatRates);
     const byId = new Map(actions.map((a) => [a.id, a]));
@@ -168,7 +171,7 @@
         r.remaining = Math.max(frameTime, heat.estimateMs(state.targets, want, rates));
         r.steps = [{ cells: [], time: r.remaining }];
       } else r.remaining = stepTime(r);
-      if (a.type === 'temp' || a.type === 'magnet') heat.apply(state, a);
+      if (control(a)) heat.apply(state, a);
       running.push(r);
       return r;
     };
@@ -179,7 +182,7 @@
         if (on) seq.set(heat.MAGNETS[i].e, f, true);
       });
     };
-    const anyControls = heat.usesControls(state) || actions.some((a) => a.type === 'temp' || a.type === 'magnet');
+    const anyControls = heat.usesControls(state) || actions.some(control);
 
     // Frames run until nothing is running or waiting to start (or the guard is reached).
     const lastStart = Math.max(0, ...starts.keys());

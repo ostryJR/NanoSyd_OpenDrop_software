@@ -12,6 +12,15 @@ const { Runner } = require('../js/runner.js');
 const { getLayout } = require('../js/layout.js');
 const { Session, decodeReply } = require('../js/device.js');
 const P = require('../js/process.js');
+const { SimulatedOpenDrop } = require('../js/device-sim.js');
+
+const until = async (cond, ms = 2000) => {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error('timed out waiting');
+    await new Promise((r) => setTimeout(r, 2));
+  }
+};
 
 const lay = getLayout('electrodes');
 const rects = lay.rects;
@@ -200,4 +209,74 @@ test('live, the device gets the frame’s heater targets; the others as set in t
   const bytes = s.bytes();
   assert.deepEqual([bytes[26], bytes[27], bytes[28]], [60, 33, 25]);
   void decodeReply;
+});
+
+// --- the device's screen ----------------------------------------------------------------------
+
+test('a Message action puts text on the device’s screen from its frame on, until the next; it takes no time', () => {
+  const r = compile(project([
+    path('p', { start: 1 }, [17, 25, 33, 41]),
+    { id: 'm1', type: 'message', name: 'M', droplet: '', start: 2, text: 'Mixing' },
+    { id: 'm2', type: 'message', name: 'M', droplet: '', start: 4, text: '' },
+  ]), rects);
+  assert.deepEqual([1, 2, 3, 4].map((f) => r.seq.controlsAt(f).message), [undefined, 'Mixing', 'Mixing', '']);
+  assert.equal(r.seq.timeOf(2), 500, 'no time of its own');
+  assert.equal(r.seq.lastFrame(), 4);
+  assert.deepEqual(r.issues, []);
+});
+
+test('a Message tile is placed as a setting; the next stretch starts with its text; files keep it, cleaned', () => {
+  const ed = new Editor(lay);
+  ed.makeProcess();
+  const ids = {};
+  ed.processChange((p) => {
+    p.tiles = [];
+    p.links = [];
+    for (const [key, kind, fields] of [['start', 'start'], ['msg', 'message', { text: 'Add  the   sample' }], ['ask', 'ask'], ['move', 'move'], ['end', 'end']]) ids[key] = P.addTile(p, kind, 0, 0, fields || {}).id;
+    for (const [a, b] of [['start', 'msg'], ['msg', 'ask'], ['ask', 'move'], ['move', 'end']]) P.link(p, ids[a], 'next', ids[b]);
+  });
+  assert.ok(ed.openTile(ids.msg));
+  assert.equal(ed.placeTile().kind, 'added');
+  const [m] = ed.project.actions;
+  assert.deepEqual([m.type, m.text], ['message', 'Add the sample']);
+  ed.tileSettings(ids.msg, { text: 'Load it now please, thanks' });
+  ed.openTile(ids.msg);
+  assert.equal(ed.project.actions[0].text, 'Load it now please,', 'at most 20 characters');
+  ed.openTile(ids.move);
+  assert.equal(ed.controlsIn.message, 'Load it now please,', 'carried past the Ask');
+  assert.equal(ed.controlsAt(1).message, 'Load it now please,');
+  const { project: back, warnings } = projects.parse(projects.serialize(ed.doc));
+  assert.deepEqual(warnings, []);
+  assert.equal(back.actions.find((a) => a.type === 'message').text, 'Load it now please,');
+});
+
+test('Ask and Measure: shown on the device’s screen by default, with a screen text of up to 20 characters', () => {
+  const process = P.emptyProcess();
+  const ask = P.addTile(process, 'ask', 0, 0, { question: 'Is the droplet there?' });
+  const measure = P.addTile(process, 'measure', 0, 0, { unit: 'mM' });
+  assert.equal(P.screenText(ask), 'Go on?', 'a new tile starts with its own 20-character screen text');
+  assert.equal(P.screenText(measure), `${measure.value}?`);
+  assert.equal(P.screenText({ ...ask, screenText: 'A screen text that is far too long' }), 'A screen text that i', 'never more than 20 characters');
+  assert.equal(P.screenText({ ...ask, screenText: '' }), 'Is the droplet there?', 'older tiles without one: the question, which the device cuts');
+  assert.equal(P.screenText({ ...measure, screenText: '' }), `${measure.value} (mM)?`);
+  assert.equal(P.screenText({ ...measure, screenText: '', prompt: 'Read OD600' }), 'Read OD600');
+  assert.equal(P.screenText({ ...ask, screenText: 'Droplet?' }), 'Droplet?');
+  assert.equal(P.screenText({ ...ask, screen: false }), null);
+  assert.equal(P.screenText({ kind: 'ask', question: 'Old file' }), null, 'tiles from before stay off the screen');
+});
+
+test('a run shows the question on the device’s screen while it waits, then the frame’s message again', async (t) => {
+  const sim = new SimulatedOpenDrop({ board: 0x12 });
+  const s = new Session({}, { link: { timeout: 80, settle: 20, boot: 60 } });
+  t.after(() => s.detach());
+  await s.attach(sim);
+  s.setLive(true);
+  s.show([9], null, 'Mixing');
+  await until(() => sim.message === 'Mixing');
+  s.setNote(P.screenText({ kind: 'ask', screen: true, question: 'Is the droplet there? It should be.' }));
+  await until(() => sim.message === 'Is the droplet there');
+  s.setNote(null);
+  await until(() => sim.message === 'Mixing');
+  await s.detach();
+  assert.equal(sim.message, '', 'disconnecting clears what the page put there');
 });

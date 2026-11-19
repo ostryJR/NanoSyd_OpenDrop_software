@@ -28,6 +28,7 @@
     wait: { name: 'Wait', about: 'Holds the droplets where they are for a set time.', ports: ['next'], work: true },
     temperature: { name: 'Temperature', about: 'Sets the heaters (T1–T3); it can wait until they get there.', ports: ['next'], work: true },
     magnet: { name: 'Magnet', about: 'Switches a magnet on or off; it stays that way until another Magnet tile.', ports: ['next'], work: true },
+    message: { name: 'Message', about: 'Shows a short text on the OpenDrop’s screen (custom firmware) until another Message tile; empty clears it.', ports: ['next'], work: true },
     measure: { name: 'Measure', about: 'The run stops for a measured value: a number, typed in by you.', ports: ['next'], stop: true },
     ask: { name: 'Ask', about: 'The run stops and asks you a yes-or-no question.', ports: ['next'], stop: true },
     decision: { name: 'Decision', about: 'Goes the yes or the no way, by a measured or asked value.', ports: ['yes', 'no'], stop: true },
@@ -38,7 +39,7 @@
   // How they are listed in the palette, in groups.
   const PALETTE_GROUPS = [
     { name: 'On the board', kinds: ['step', 'dispense', 'move', 'mix', 'merge', 'split', 'wait'] },
-    { name: 'Heat and magnets', kinds: ['temperature', 'magnet'] },
+    { name: 'Heat, magnets, screen', kinds: ['temperature', 'magnet', 'message'] },
     { name: 'Measure and decide', kinds: ['measure', 'ask', 'decision', 'repeat'] },
     { name: 'Lanes', kinds: ['parallel', 'join'] },
     { name: 'Start and end', kinds: ['start', 'end'] },
@@ -56,6 +57,15 @@
   const portsOf = (t) => (t.kind === 'parallel' ? Array.from({ length: lanesOf(t) }, (_, i) => `lane${i + 1}`) : KINDS[t.kind].ports);
   const isStop = (t) => Boolean(KINDS[t.kind].stop);
   const hasWork = (t) => Boolean(KINDS[t.kind].work);
+  // What an Ask or Measure tile puts on the device's screen while a run waits at it (`screen`
+  // on): its own screen text, else its question or prompt; null if it shows nothing.
+  function screenText(t) {
+    if (!t || (t.kind !== 'ask' && t.kind !== 'measure') || !t.screen) return null;
+    const own = typeof t.screenText === 'string' ? t.screenText.replace(/\s+/g, ' ').trim().slice(0, 20).trim() : '';
+    if (own) return own;
+    if (t.kind === 'ask') return t.question || 'Go on?';
+    return t.prompt || `${t.value || 'Value'}${t.unit ? ` (${t.unit})` : ''}?`;
+  }
   const takesInput = (t) => KINDS[t.kind].input !== false;
   const portName = (port) => (/^lane\d+$/.test(port) ? `lane ${port.slice(4)}` : port);
   // Tiles where lanes end and that wait for all of them: a join, and a merge (one lane per droplet).
@@ -103,14 +113,16 @@
         return { name: 'Temperature', targets: [60, null, null], wait: true, tolerance: 1 };
       case 'magnet':
         return { name: 'Magnet', magnet: 1, on: true };
+      case 'message':
+        return { name: 'Message', text: 'Step 1' };
       case 'measure': {
         const used = new Set(process.tiles.map((t) => t.value));
         let value = 'conc';
         for (let i = 2; used.has(value); i++) value = `value${i}`;
-        return { name: 'Measure', value, unit: '', source: 'typed', prompt: '' };
+        return { name: 'Measure', value, unit: '', source: 'typed', prompt: '', screen: true, screenText: `${value}?` };
       }
       case 'ask':
-        return { name: 'Ask', question: 'Go on?', value: 'ok' };
+        return { name: 'Ask', question: 'Go on?', value: 'ok', screen: true, screenText: 'Go on?' };
       case 'decision': {
         const measured = process.tiles.filter((t) => (t.kind === 'measure' || t.kind === 'ask') && t.value);
         const last = measured[measured.length - 1];
@@ -674,7 +686,7 @@
   }
 
   return {
-    KINDS, PALETTE, PALETTE_GROUPS, OPS, MAX_LANES, emptyProcess, isTile, portsOf, portName, lanesOf, isStop, hasWork,
+    KINDS, PALETTE, PALETTE_GROUPS, OPS, MAX_LANES, emptyProcess, isTile, portsOf, portName, lanesOf, isStop, hasWork, screenText,
     takesInput, endsLanes, inputsOf, sizeOf, tileById, addTile, moveTile, removeTile, link, unlink, setLanes, graph,
     linkKey, backLinks, stretches, exitsOf, conditionText, evaluate, loops, check, tidy, Walk, COL, ROW, GAP_X, GAP_Y, LOOP,
   };

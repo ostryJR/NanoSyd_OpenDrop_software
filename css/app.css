@@ -2259,3 +2259,11 @@ body.read-only button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
+
+/* "n / 20" under a text field with a length limit (device screen texts). */
+.hint.count,
+#prop-message-count {
+  margin: 2px 0 0;
+  font-size: 11px;
+  text-align: right;
+}

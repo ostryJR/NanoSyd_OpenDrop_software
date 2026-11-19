@@ -307,6 +307,8 @@
         pills.push({ text, colour: t === null ? null : H.colour(t), cls: t === null ? 'off' : there ? 'there' : '', title: t === null ? `T${i + 1}: not set by the sequence` : `T${i + 1}: target ${t} °C${now === null ? '' : `, measured ${now.toFixed(1)} °C`}` });
       });
       info.magnets.forEach((on, i) => pills.push({ text: `M${i + 1}  ${on ? 'on' : 'off'}`, colour: on ? '#52514e' : null, cls: on ? 'magnet on' : 'magnet off', title: `Magnet ${i + 1} ${on ? 'on' : 'off'}` }));
+      // The device's screen, once a Message action has set it.
+      if (info.message) pills.push({ text: `▭  ${info.message}`, colour: null, cls: 'screen', title: `On the device's screen: ${info.message}` });
       const charW = 15;
       const widths = pills.map((p) => 44 + p.text.length * charW);
       const gap = 16;

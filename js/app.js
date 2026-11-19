@@ -197,13 +197,14 @@
     const c = ed.controlsAt(ed.frame);
     const s = device && device.session;
     const adapter = Boolean(s && s.connected && s.board && s.board.temperature);
-    const used = ed.doc.actions.some((a) => a.type === 'temp' || a.type === 'magnet') || heat.usesControls(c);
+    const used = ed.doc.actions.some((a) => a.type === 'temp' || a.type === 'magnet' || a.type === 'message') || heat.usesControls(c);
     const hold = ed.holding || (runner && runner.state && !runner.state.done && runner.state.heating) || null;
     const hereHold = ed.seq.holds.get(ed.frame);
     return {
       show: used || adapter,
       targets: c.targets,
       magnets: c.magnets,
+      message: typeof c.message === 'string' ? c.message : null,
       temps: adapter ? s.temps.slice() : null,
       tolerance: hereHold ? hereHold.tolerance : heat.DEFAULT_TOLERANCE,
       waiting: hold ? { targets: hold.targets } : null,
@@ -928,9 +929,10 @@
   }
 
   // One track per droplet, each action a clip; actions without a droplet name get a track each.
-  const KIND = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet' };
-  // Heater and magnet settings share a track each, under the droplets'.
-  const controlTrack = (a) => (a.type === 'temp' ? ['c:heat', 'Heaters', '°C'] : a.type === 'magnet' ? [`c:m${a.magnet || 1}`, `Magnet ${a.magnet || 1}`, `M${a.magnet || 1}`] : null);
+  const KIND = { path: 'Path', template: 'Template', dispense: 'Dispense', pattern: 'Pattern', wait: 'Wait', temp: 'Temperature', magnet: 'Magnet', message: 'Message' };
+  // Heater, magnet and screen settings share a track each, under the droplets'.
+  const controlTrack = (a) =>
+    a.type === 'temp' ? ['c:heat', 'Heaters', '°C'] : a.type === 'magnet' ? [`c:m${a.magnet || 1}`, `Magnet ${a.magnet || 1}`, `M${a.magnet || 1}`] : a.type === 'message' ? ['c:screen', 'Screen', '▭'] : null;
   // --- the whole process on the timeline -------------------------------------------------
   // With a process, the timeline shows all of it: the stretches one after another along the way a
   // run goes on (stretch.route: on at every decision, Repeats all their rounds). The board edits
@@ -1261,12 +1263,17 @@
     afterList.replaceChildren(...rows);
 
     // Heaters and magnets have no droplet, no steps of their own and nothing to turn.
-    const control = a.type === 'temp' || a.type === 'magnet';
+    const control = a.type === 'temp' || a.type === 'magnet' || a.type === 'message';
     show(dropletField.closest('.field'), !control && a.type !== 'wait');
     show($('prop-temps-row'), a.type === 'temp');
     show($('prop-heatwait-row'), a.type === 'temp');
     show($('prop-tolerance-row'), a.type === 'temp' && Boolean(a.wait));
     show($('prop-magnet-row'), a.type === 'magnet');
+    show($('prop-message-row'), a.type === 'message');
+    if (a.type === 'message') {
+      keep($('prop-message'), a.text || '');
+      $('prop-message-count').textContent = `${$('prop-message').value.length} / ${heat.MESSAGE_LENGTH}`;
+    }
     if (a.type === 'temp') {
       a.targets.forEach((t, i) => keep(heaterFields[i], t === null ? '' : String(t)));
       $('prop-heatwait').checked = Boolean(a.wait);
@@ -1276,7 +1283,7 @@
       $('prop-magnet').value = String(a.magnet || 1);
       $('prop-magnet-on').value = a.on === false ? 'off' : 'on';
     }
-    show($('prop-turn'), !['dispense', 'wait', 'temp', 'magnet'].includes(a.type));
+    show($('prop-turn'), !['dispense', 'wait', 'temp', 'magnet', 'message'].includes(a.type));
     const p = a.type === 'template' && a.params ? a.params : null;
     const family = p && templates.FAMILIES[p.kind];
     const turnsRound = Boolean(family && family.choices && family.choices.dir);
@@ -1347,6 +1354,14 @@
   $('prop-magnet').addEventListener('change', (evt) => {
     const a = ed.selected;
     if (a && a.type === 'magnet') propChange(ed.setControl(a.id, { magnet: Number(evt.target.value) }), () => `${quote(a)} switches magnet ${evt.target.value}`);
+  });
+  editKeys($('prop-message'));
+  $('prop-message').addEventListener('input', (evt) => ($('prop-message-count').textContent = `${evt.target.value.length} / ${heat.MESSAGE_LENGTH}`));
+  $('prop-message').addEventListener('change', (evt) => {
+    const a = ed.selected;
+    if (!a || a.type !== 'message') return;
+    const text = heat.cleanText(evt.target.value);
+    propChange(ed.setControl(a.id, { text }), () => (text ? `${quote(a)} shows “${text}” on the device's screen` : `${quote(a)} clears the device's screen`));
   });
   $('prop-magnet-on').addEventListener('change', (evt) => {
     const a = ed.selected;
@@ -2132,7 +2147,17 @@
   runner = new Runner({
     editor: ed,
     readings: liveReadings,
-    ask: (step) => askRun(stageArea, step, ed.doc.process),
+    ask: async (step) => {
+      // An Ask or Measure set to show on the device: its text on the OpenDrop's screen meanwhile.
+      const note = P.screenText(step.tile);
+      const s = device && device.session;
+      if (note && s && s.connected) s.setNote(note);
+      try {
+        return await askRun(stageArea, step, ed.doc.process);
+      } finally {
+        if (note && s) s.setNote(null);
+      }
+    },
     changed() {
       const s = runner.state;
       if (s) sync.run({ tile: s.tile, stretch: s.stretch, frame: s.frame, frames: s.frames, done: s.done });

@@ -22,7 +22,7 @@ holds what it was last sent until the next packet comes.
 |---|---|
 | 0–15 | Electrode columns 0–15: one byte per column, bit r = row r (electrode e = column × 8 + row) |
 | 16 | Control lines, electrodes 128–135. The V4.2 firmware reads bit 0x2 as magnet 1 (electrode 129) and 0x1 as magnet 2 (electrode 128) |
-| 17 | Electrodes 136–143 (not used by the V4.2 firmware) |
+| 17 | Message on the device's screen (custom firmware): N = 1–254 text bytes follow the packet, 255 clears it, 0 leaves it. Once electrodes 136–143, which the V4.2 firmware doesn't use |
 | 18–22 | 0 |
 | 23 | 0 (protocol 1: the command, see below) |
 | 24 | Feedback: 1 = sense where droplets are (V4.2) |
@@ -31,6 +31,15 @@ holds what it was last sent until the next packet comes.
 | 29 | High voltage in V, 50–240 (custom firmware; 0 = keep the device's) |
 | 30 | Frequency / 10: 10–100 = 100–1000 Hz (custom firmware; 0 = keep) |
 | 31 | 1 = DC, 2 = AC (custom firmware; 0 = keep) |
+
+**Message (byte 17, `ControlBytesIn[1]`):** with N = 1–254, N plain ASCII bytes come straight after
+byte 31 and the device reads them all (within 1 s) before it acts on the packet and answers. Its
+screen shows the first 20 characters, centred in a white bar, until another message or a clear
+(255, no text); its "INSERT CARTRIDGE" and "UNDER VOLTAGE!" warnings are drawn over it. The page
+sends at most 20 characters (accents dropped, other characters as ?), and only when the screen
+should change: a frame whose Message action sets other text (live), a run's question (an Ask or
+Measure tile set to show on the device), or a clear when there is nothing to show any more (live
+off, Switch all off, disconnecting, the page closing). Every other packet has 0 there.
 
 Bytes 25 and 29–31 are read by the custom firmware (`firmware_custom/…/OpenDropVCustom.ino`,
 `ControlBytesIn[9]` and `[13..15]`): it clamps 29–31 and calls `set_voltage()` when one differs from
