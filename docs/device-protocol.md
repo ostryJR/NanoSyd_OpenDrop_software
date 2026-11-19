@@ -41,7 +41,8 @@ should change: a frame whose Message action sets other text (live), a run's ques
 Measure tile set to show on the device), or a clear when there is nothing to show any more (live
 off, Switch all off, disconnecting, the page closing). Every other packet has 0 there.
 
-Bytes 25 and 29–31 are read by the custom firmware (`firmware_custom/…/OpenDropVCustom.ino`,
+Bytes 25 and 29–31 are read by the custom firmware (`firmware_custom/customFirmware/OpenDropVCustom/OpenDropVCustom.ino`, byte map in
+`firmware_custom/customFirmware/SERIAL_PROTOCOL.md`;
 `ControlBytesIn[9]` and `[13..15]`): it clamps 29–31 and calls `set_voltage()` when one differs from
 what it has; 0 keeps the current setting. With byte 25 = 1 it then calls `save_settings()`, which
 writes the high voltage, sound and feedback (byte 24 of that packet) to flash, only if they differ
