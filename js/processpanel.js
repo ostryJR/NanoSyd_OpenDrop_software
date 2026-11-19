@@ -80,7 +80,7 @@
       const p = this.ed.doc.process;
       const t = p && this.tile ? P.tileById(p, this.tile) : null;
       const info = t ? this.app.analysis() : null;
-      const key = JSON.stringify([t, info && t ? info.tile.get(t.id) : null, this.ed.revision]);
+      const key = JSON.stringify([t, info && t ? info.tile.get(t.id) : null, this.ed.revision, this.ed.readOnly]);
       if (key === this.key) return;
       if (this.host.contains(document.activeElement) && document.activeElement !== document.body) return; // don't redraw under typing
       this.key = key;
@@ -103,7 +103,7 @@
         this.host.append(node('p', { class: me.placed ? 'info ok' : 'info' }, where));
         const row = node('div', { class: 'row' });
         if (t.kind !== 'step') row.append(node('button', { type: 'button', class: me.placed ? '' : 'primary', text: me.placed ? 'Place again' : 'Place on the board', onclick: () => this.app.place(t.id) }));
-        row.append(node('button', { type: 'button', text: 'Open on the board', onclick: () => this.app.open(t.id) }));
+        row.append(node('button', { type: 'button', text: 'Open on the board', 'data-look': '', onclick: () => this.app.open(t.id) }));
         this.host.append(row);
       }
 
@@ -122,6 +122,17 @@
             this.app.changed();
           },
         })));
+      }
+
+      // While a run is going nothing can be changed: only looking at the board is left.
+      const why = this.ed.readOnly;
+      if (why) {
+        this.host.insertBefore(node('p', { class: 'info warn', text: why }), this.host.children[2] || null);
+        for (const el of this.host.querySelectorAll('input, select, textarea, button')) {
+          if ('look' in el.dataset) continue;
+          el.disabled = true;
+          el.title = why;
+        }
       }
     }
 
@@ -212,19 +223,24 @@
         case 'measure':
           h.append(this.field('Value', this.text(t.value, { maxlength: 30 }), (v) => this.set({ value: clean(v) || t.value }, `${t.name} gives ${clean(v) || t.value}`)));
           h.append(this.field('Unit', this.text(t.unit, { maxlength: 12 }), (v) => this.set({ unit: String(v).trim() }, 'Unit set')));
-          h.append(node('p', { class: 'hint', text: 'A run asks you for the measured value here.' }));
+          {
+            const source = this.select([['typed', 'typed in by you'], ['device', 'an instrument (later)']], 'typed');
+            source.options[1].disabled = true;
+            h.append(this.field('Get it by', source, () => {}));
+          }
+          h.append(this.field('Ask with', this.text(t.prompt, { maxlength: 120, placeholder: `Measure ${t.value || 'it'}${t.unit ? ` (${t.unit})` : ''} and type it in.` }), (v) => this.set({ prompt: String(v).trim() }, 'Prompt set')));
+          h.append(node('p', { class: 'hint', text: 'A run stops here and asks you to type the value in, with this text (empty: the default shown). Reading it from a connected instrument comes later.' }));
           break;
         case 'ask':
           h.append(this.field('Question', this.text(t.question, { maxlength: 120 }), (v) => this.set({ question: String(v).trim() || 'Go on?' }, 'Question set')));
-          h.append(this.field('Answer', this.select([['yesno', 'yes or no'], ['number', 'a number']], t.answer || 'yesno'), (v) => this.set({ answer: v }, `${t.name}: answered with ${v === 'number' ? 'a number' : 'yes or no'}`)));
           h.append(this.field('Value', this.text(t.value, { maxlength: 30 }), (v) => this.set({ value: clean(v) || t.value }, `${t.name} gives ${clean(v) || t.value}`)));
           break;
         case 'decision': {
           const sources = p.tiles.filter((x) => (x.kind === 'measure' || x.kind === 'ask') && x.value);
           const values = [...new Set(sources.map((x) => x.value))];
-          const yesno = sources.some((x) => x.value === t.value && x.kind === 'ask' && x.answer === 'yesno');
+          const yesno = sources.some((x) => x.value === t.value && x.kind === 'ask');
           h.append(this.field('Value', this.select([['', '— choose —'], ...values.map((v) => [v, v])], t.value || ''), (v) => {
-            const isYesNo = sources.some((x) => x.value === v && x.kind === 'ask' && x.answer === 'yesno');
+            const isYesNo = sources.some((x) => x.value === v && x.kind === 'ask');
             this.set(isYesNo ? { value: v, op: 'is', than: 'yes' } : { value: v, op: t.op === 'is' ? '<' : t.op || '<', than: t.op === 'is' ? 0 : t.than }, `Decides by ${v}`);
           }));
           if (yesno) h.append(this.field('Is', this.select([['yes', 'yes'], ['no', 'no']], t.than === 'no' ? 'no' : 'yes'), (v) => this.set({ op: 'is', than: v }, `If ${t.value} is ${v}`)));
@@ -255,7 +271,7 @@
 
   const clean = (v) => String(v).trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '').slice(0, 30);
 
-  // The question a run asks: a Measure's value, an Ask's question (yes/no or a number), or a value
+  // The question a run asks: a Measure's value (typed in), an Ask's yes/no question, or a value
   // a decision needs that wasn't measured. Resolves with the answer, or null to stop the run.
   function ask(host, step, process) {
     const t = step.tile;
@@ -270,7 +286,7 @@
       const name = step.missing || t.value;
       const unit = (process.tiles.find((x) => x.kind === 'measure' && x.value === name) || {}).unit || '';
       box.append(t.kind === 'decision' ? node('h3', { text: `${name}?` }) : node('h3', { class: 'with-icon' }, icon(t.kind), t.name || P.KINDS[t.kind].name));
-      if (t.kind === 'ask' && t.answer !== 'number') {
+      if (t.kind === 'ask') {
         box.append(node('p', { text: t.question || 'Go on?' }));
         // Keys too: 1 or , for yes, 2 or . for no (side by side, like the buttons).
         const key = (...k) => node('span', { class: 'keys' }, ...k.map((x) => node('kbd', { text: x })));
@@ -287,7 +303,7 @@
         };
         document.addEventListener('keydown', keys, true);
       } else {
-        box.append(node('p', { text: t.kind === 'ask' ? t.question || '' : t.kind === 'decision' ? `The decision needs ${name}, which wasn't measured on the way here.` : `Measure ${name}${unit ? ` (${unit})` : ''} and type it in.` }));
+        box.append(node('p', { text: t.kind === 'decision' ? `The decision needs ${name}, which wasn't measured on the way here.` : t.prompt || `Measure ${name}${unit ? ` (${unit})` : ''} and type it in.` }));
         const input = node('input', { type: 'number', step: 'any', 'aria-label': name });
         const go = () => {
           if (input.value.trim() === '' || !Number.isFinite(Number(input.value))) {

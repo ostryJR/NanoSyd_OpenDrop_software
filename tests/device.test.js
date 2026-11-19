@@ -28,7 +28,9 @@ test('a frame: one byte per column, bit = row; magnets, feedback, temperatures a
   assert.equal(f[17], 0b10000000, 'electrode 143');
   assert.equal(f[24], 1, 'feedback on');
   assert.deepEqual([f[26], f[27], f[28]], [30, 120, 20], 'temperature targets, kept to 20-120 °C');
-  assert.equal(f[31], 4, 'the command (protocol 1)');
+  assert.equal(f[23], 4, 'the command (protocol 1), in byte 23');
+  assert.equal(f[25], 0, 'not saving the settings');
+  assert.deepEqual(Array.from(f.subarray(29, 32)), [0, 0, 0], 'no high voltage set: 0 = the device keeps its own');
   assert.deepEqual(Array.from(D.encodeFrame([]).subarray(26, 29)), [25, 25, 25], 'targets default to 25 °C, as the original sends');
   const seq = new Sequence();
   seq.set(9, 3, true);
@@ -136,6 +138,39 @@ test('feedback shows the sensed electrodes; temperature targets reach the device
   assert.deepEqual(s.sensed, []);
   await s.detach();
   assert.deepEqual(last(sim), [], 'disconnecting switches everything off first');
+});
+
+test('high voltage: volts, frequency / 10 and 1 DC / 2 AC in bytes 29-31, kept in range; unset = 0', () => {
+  const f = D.encodeFrame([], { hv: { volts: 120, hz: 500, mode: 'ac' } });
+  assert.deepEqual(Array.from(f.subarray(29, 32)), [120, 50, 2]);
+  assert.deepEqual(Array.from(D.encodeFrame([], { hv: { volts: 300, hz: 55, mode: 'dc' } }).subarray(29, 32)), [240, 10, 1], 'clamped to 240 V and 100 Hz');
+  assert.deepEqual(Array.from(D.encodeFrame([], { hv: { volts: 20, hz: 1234 } }).subarray(29, 32)), [50, 100, 0], '50 V at least, 1000 Hz at most; mode kept');
+  assert.deepEqual(D.cleanHV({ volts: '', hz: null, mode: 'x' }), { volts: null, hz: null, mode: null });
+  assert.deepEqual(D.cleanHV({ volts: '150', hz: '333' }), { volts: 150, hz: 330, mode: null }, 'frequency in steps of 10');
+});
+
+test('high voltage: sent once (ordinary frames send 0 and change nothing); saving writes it to flash once', async () => {
+  const sim = new SimulatedOpenDrop({ board: 0x12 });
+  const { s } = session();
+  await s.attach(sim);
+  assert.deepEqual(sim.hv, { volts: 240, hz: 1000, ac: false }, 'as the device starts');
+  assert.deepEqual(await s.sendHV({ volts: 150, mode: 'ac' }), { ok: true });
+  assert.deepEqual(sim.hv, { volts: 150, hz: 1000, ac: true }, 'the frequency it had stays');
+  assert.equal(sim.saves, 0, 'applied, not saved');
+  const changes = sim.hvChanges;
+  s.show([12]);
+  s.setLive(true);
+  await until(() => last(sim).join() === '12');
+  assert.equal(sim.packet[29] + sim.packet[30] + sim.packet[31] + sim.packet[25], 0, 'ordinary frames send 0 there');
+  assert.equal(sim.hvChanges, changes);
+  assert.deepEqual(sim.hv, { volts: 150, hz: 1000, ac: true }, 'and the device keeps what it was sent');
+  s.setFeedback(true);
+  assert.deepEqual(await s.sendHV({ volts: 200, hz: 500, mode: 'ac' }, { save: true }), { ok: true });
+  assert.deepEqual(sim.saved, { volts: 200, hz: 500, ac: true, feedback: true }, 'saved, with the feedback switch as sent');
+  assert.deepEqual(await s.sendHV({ volts: 200, hz: 500, mode: 'ac' }, { save: true }), { ok: true });
+  assert.equal(sim.saves, 1, 'saving the same again writes nothing');
+  await s.detach();
+  assert.deepEqual(await s.sendHV({ volts: 100 }), { ok: false, reason: 'no device is connected' });
 });
 
 test('a device that stops answering is marked so and lined up again when it answers; unplugging ends the session', async () => {

@@ -140,7 +140,7 @@
       case 'measure':
         return `${t.value || '?'}${t.unit ? ` (${t.unit})` : ''}`;
       case 'ask':
-        return t.answer === 'number' ? `${t.question || ''} → ${t.value}` : `${t.question || ''} (yes/no)`;
+        return `${t.question || ''} (yes/no)`;
       case 'decision':
         return P.conditionText(t, process);
       case 'repeat':
@@ -643,11 +643,11 @@
         const on = !ids.includes(hit.tile);
         const next = on ? [...ids, hit.tile] : ids.filter((id) => id !== hit.tile);
         this.select(next.length ? { tiles: next } : null);
-        if (on && !this.ed.frozen) this.startMove(hit.tile, x, y, false);
+        if (on && !this.ed.readOnly) this.startMove(hit.tile, x, y, false);
         this.render();
         return;
       }
-      if (this.ed.frozen) {
+      if (this.ed.readOnly) {
         if (hit && hit.tile) this.select({ tile: hit.tile });
         else if (!hit) this.select(null);
         return;
@@ -883,7 +883,7 @@
     // --- adding tiles -----------------------------------------------------------------------------
 
     paletteDown(evt, kind) {
-      if (evt.button !== 0 || this.ed.frozen) return;
+      if (evt.button !== 0 || this.ed.readOnly) return;
       evt.preventDefault();
       const button = evt.currentTarget;
       button.setPointerCapture(evt.pointerId);
@@ -1005,7 +1005,7 @@
         else this.select(null);
         return true;
       }
-      if (!sel || this.ed.frozen) return false;
+      if (!sel || this.ed.readOnly) return false;
       const ids = this.selectedIds().filter((id) => P.tileById(this.process, id));
       if (ids.length > 1) return this.keyMany(evt, ids);
       if (evt.key === 'Delete' || evt.key === 'Backspace') {

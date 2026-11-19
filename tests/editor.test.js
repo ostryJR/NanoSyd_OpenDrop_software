@@ -382,7 +382,7 @@ test('freehand: a loop keeps every step, including the return to the start', () 
 });
 
 test('path tools and the select tool: a click selects what is there instead of toggling', () => {
-  for (const tool of ['freehand', 'straight', 'select']) {
+  for (const tool of ['freehand', 'select']) {
     const ed = standard();
     drag(ed, 8, 24);
     ed.pointerUp();
@@ -430,40 +430,6 @@ test('paths stop at the MAX_FRAMES guard', () => {
   assert.ok(ed.draft.limited);
   assert.deepEqual(ed.pointerUp(), { kind: 'path', from: MAX_FRAMES - 2, to: MAX_FRAMES, steps: 2, extended: false });
   assert.deepEqual(onIn(ed, MAX_FRAMES), [24]);
-
-  ed.setTool('straight');
-  ed.frame = MAX_FRAMES - 1;
-  drag(ed, 9, 17, 57);
-  assert.deepEqual(ed.draft.cells, [9, 17]);
-  assert.ok(ed.draft.limited);
-});
-
-test('straight: the first line follows the direction the drag starts in', () => {
-  const ed = standard();
-  ed.setTool('straight');
-  drag(ed, 8, 16, 26); // starts to the right, ends at column 3 row 2
-  assert.deepEqual(ed.draft.cells, [8, 16, 24, 25, 26]);
-  assert.equal(ed.draft.end, 26);
-  ed.pointerMove(...at(8)); // back on the start electrode: the next direction decides again
-  assert.deepEqual(ed.draft.cells, [8]);
-  ed.pointerMove(...at(9)); // starts downwards
-  ed.pointerMove(...at(26));
-  assert.deepEqual(ed.draft.cells, [8, 9, 10, 18, 26]);
-  ed.pointerMove(...at(11)); // same column as the start: a single line
-  assert.deepEqual(ed.draft.cells, [8, 9, 10, 11]);
-  ed.pointerUp();
-  assert.deepEqual(framesFrom(ed, 1, 4), [[8], [9], [10], [11]]);
-  assert.equal(ed.frame, 4);
-  assert.deepEqual(pointsOf(byType(ed, 'path')[0]), [8, 11]);
-});
-
-test('straight: between electrodes or off the array, the path stays as it was', () => {
-  const ed = standard();
-  ed.setTool('straight');
-  drag(ed, 8, 40);
-  ed.pointerMove(0, 14); // below the array
-  ed.pointerMove(-15, -2); // the gap left of the grid
-  assert.deepEqual(ed.draft.cells, [8, 16, 24, 32, 40]);
 });
 
 test('drawing a path stops playback; a plain click does not', () => {
@@ -759,15 +725,13 @@ test(`undo keeps the last ${UNDO_LIMIT} changes`, () => {
 
 test('the switch on the left picks the drag tool, with undo and redo buttons below it', () => {
   const ed = standard();
-  assert.equal(ed.pointerDown(-42, -5), 'toolStraight');
-  assert.equal(ed.tool, 'straight');
-  assert.equal(ed.pointerDown(-38, 1), 'toolSelect'); // on the label
+  assert.equal(ed.pointerDown(-38, -2), 'toolSelect'); // on the label
   assert.equal(ed.tool, 'select');
   assert.equal(ed.pointerDown(-42, -8), 'toolFreehand');
   assert.equal(ed.tool, 'freehand');
-  ed.setTool('nonsense');
+  ed.setTool('straight'); // the tool that was taken out: ignored
   assert.equal(ed.tool, 'freehand');
-  assert.equal(ed.pointerDown(-38, -2), 'toolPaint');
+  assert.equal(ed.pointerDown(-38, -5), 'toolPaint');
   assert.equal(ed.tool, 'paint');
 
   click(ed, 9);
@@ -885,6 +849,19 @@ test('the frame time is a setting, not undone', () => {
   assert.equal(ed.seq.timeOf(3), 250);
   assert.ok(!ed.canUndo);
   assert.equal(ed.speed, 240, 'shown as 240 frames/min');
+});
+
+test('the high voltage is a setting of the project: merged field by field, cleaned, emptied away', () => {
+  const ed = standard();
+  assert.ok(ed.setHV({ volts: 150 }));
+  assert.ok(ed.setHV({ mode: 'ac', hz: 505 }));
+  assert.deepEqual(ed.project.hv, { volts: 150, hz: 510, mode: 'ac' }, 'the volts stay; 505 Hz goes to 510');
+  assert.deepEqual(ed.doc.hv, ed.project.hv);
+  assert.ok(ed.setHV({ volts: 999 }));
+  assert.equal(ed.project.hv.volts, 240);
+  assert.ok(ed.setHV({ volts: null, hz: null, mode: null }));
+  assert.equal(ed.project.hv, undefined, 'all empty: the device keeps its own');
+  assert.ok(!ed.canUndo, 'a setting, like the frame time: not undone');
 });
 
 test('a template that would touch another droplet shows red and is not dropped', () => {

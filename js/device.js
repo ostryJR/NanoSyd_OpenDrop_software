@@ -21,27 +21,52 @@
   const DEFAULT_TEMP = 25; // the original controller's starting targets, sent to every board
   const TEMP_RANGE = [20, 120];
   const NO_SENSOR = 150;
-  // Positions in a packet: the firmware's ControlBytesIn[i] is byte 16 + i.
-  const OUT = { feedback: 24, temps: 26, command: 31 };
+  // Positions in a packet: the firmware's ControlBytesIn[i] is byte 16 + i. The custom firmware
+  // (OpenDropVCustom) reads the high voltage: volts, frequency / 10 and 1 DC / 2 AC, where 0 keeps
+  // what the device has; and `save` = 1 writes its settings (high voltage, sound, feedback) to
+  // flash. Ordinary frames send 0 in all four, so they change nothing; older firmware ignores
+  // them. Protocol 1's command is in byte 23 (ControlBytesIn[7], unused).
+  const OUT = { command: 23, feedback: 24, save: 25, temps: 26, volts: 29, freq: 30, mode: 31 };
+  const VOLTS = [50, 240];
+  const FREQ = [100, 1000]; // Hz, in steps of 10
+  const MODES = { dc: 1, ac: 2 };
   // Positions in an answer.
   const IN = { protocol: 16, temps: 17, board: 23, result: 24, state: 25, frame: 26, stored: 27, crc: 28 };
   const COMMAND = { frame: 0, load: 1, run: 2, stop: 3, status: 4 };
   const RESULTS = ['ok', 'bad checksum', 'too long', 'busy', 'unknown command', 'nothing loaded'];
   const RUN_STATES = ['idle', 'running', 'done'];
 
+  // High-voltage settings as sent: { volts, hz, mode } each null (keep the device's) or in range.
+  function cleanHV(hv) {
+    const out = { volts: null, hz: null, mode: null };
+    if (!hv || typeof hv !== 'object') return out;
+    const v = Number(hv.volts);
+    if (hv.volts !== null && hv.volts !== '' && Number.isFinite(v) && v > 0) out.volts = Math.min(VOLTS[1], Math.max(VOLTS[0], Math.round(v)));
+    const f = Number(hv.hz);
+    if (hv.hz !== null && hv.hz !== '' && Number.isFinite(f) && f > 0) out.hz = Math.min(FREQ[1], Math.max(FREQ[0], Math.round(f / 10) * 10));
+    if (hv.mode === 'dc' || hv.mode === 'ac') out.mode = hv.mode;
+    return out;
+  }
+
   const clampTemp = (t) => (Number.isFinite(t) ? Math.min(TEMP_RANGE[1], Math.max(TEMP_RANGE[0], Math.round(t))) : DEFAULT_TEMP);
 
   // --- bytes ----------------------------------------------------------------------------------
 
   // A packet: electrodes `cells` on (0-143: byte = column, bit = row), the feedback switch, the
-  // three temperature targets (°C) and the command (0 = a frame to show, as today's firmware
-  // knows it; others are protocol 1).
-  function encodeFrame(cells = [], { feedback = false, temps = null, command = COMMAND.frame } = {}) {
+  // three temperature targets (°C), the high voltage (cleanHV; unset = 0, keep), whether the
+  // device saves its settings, and the command (0 = a frame to show, as today's firmware knows
+  // it; others are protocol 1).
+  function encodeFrame(cells = [], { feedback = false, temps = null, hv = null, save = false, command = COMMAND.frame } = {}) {
     const out = new Uint8Array(PACKET);
     for (const e of cells) if (Number.isInteger(e) && e >= 0 && e < CELLS) out[e >> 3] |= 1 << (e & 7);
     out[OUT.feedback] = feedback ? 1 : 0;
     for (let i = 0; i < 3; i++) out[OUT.temps + i] = clampTemp(temps ? temps[i] : DEFAULT_TEMP);
     out[OUT.command] = command;
+    const h = cleanHV(hv);
+    out[OUT.volts] = h.volts || 0;
+    out[OUT.freq] = h.hz ? h.hz / 10 : 0;
+    out[OUT.mode] = h.mode ? MODES[h.mode] : 0;
+    out[OUT.save] = save ? 1 : 0;
     return out;
   }
 
@@ -465,6 +490,23 @@
       this.on.change();
     }
 
+    // Sends the high voltage (cleanHV; unset parts keep what the device has) once, with what the
+    // device should have now; with `save`, the device also writes its settings to flash, so they
+    // are there after it is switched off and on (the feedback switch too). Ordinary frames after
+    // it send 0 there again: the device keeps these. Resolves with { ok, reason }.
+    async sendHV(hv, { save = false } = {}) {
+      const link = this.link;
+      if (!link || this.state !== 'on') return { ok: false, reason: 'no device is connected' };
+      if (this.run) return { ok: false, reason: 'a sequence is running on the device' };
+      const bytes = encodeFrame(this.live ? this.cells : [], { feedback: this.feedback && Boolean(this.board && this.board.feedback), temps: this.sentTargets, hv, save });
+      const answer = await link.exchange(bytes, REPLY);
+      if (link !== this.link) return { ok: false, reason: 'the device went away' };
+      this.lastSent = null; // the next frame goes as usual
+      if (!answer) return { ok: false, reason: "the device didn't answer" };
+      this.take(answer);
+      return { ok: true };
+    }
+
     // Live off, everything off on the device.
     allOff() {
       this.live = false;
@@ -592,7 +634,7 @@
   }
 
   return {
-    BAUD, PACKET, REPLY, STATUS, COLUMNS, CELLS, MAX_FRAMES, DEFAULT_TEMP, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND,
+    BAUD, PACKET, REPLY, STATUS, COLUMNS, CELLS, MAX_FRAMES, DEFAULT_TEMP, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND, VOLTS, FREQ, cleanHV,
     RESULTS, RUN_STATES, encodeFrame, cellsIn, boardInfo, decodeReply, crc16, encodeSequence, decodeSequence, sameBytes,
     textLine, Link, Session,
   };

@@ -102,10 +102,12 @@ test('checks: Start, arrows going nowhere, tiles never reached, values not measu
     [['start'], ['parallel'], ['measure'], ['step'], ['join'], ['end']],
     ['1>2', '2.lane1>3', '3>5', '2.lane2>4', '4>5', '5>6']
   );
-  assert.ok(P.check(inLanes.p).some((i) => /Measure can't be inside parallel lanes/.test(i.text)));
+  const asks = P.check(inLanes.p).find((i) => /in one of its lanes: while it asks, everything pauses, the other lanes too/.test(i.text));
+  assert.ok(asks, 'a question in a lane is allowed, with a warning');
+  assert.notEqual(asks.level, 'error');
+  // Lanes may each end in an End: their droplets stay where they are.
   const noJoin = build([['start'], ['parallel'], ['step'], ['step'], ['end']], ['1>2', '2.lane1>3', '2.lane2>4', '3>5', '4>5']);
-  const noJoinTexts = P.check(noJoin.p).map((i) => i.text);
-  assert.ok(noJoinTexts.some((t) => /don't join again/.test(t)));
+  assert.deepEqual(P.check(noJoin.p).filter((i) => i.level === 'error'), []);
   void id;
 });
 
@@ -227,9 +229,10 @@ test('a merge takes several arrows in: the lanes end there, like a Wait for all'
   );
   assert.deepEqual(P.stretches(ways.p).list.map((s) => s.tiles), [[ways.id(4)], [ways.id(5)], [ways.id(6)]]);
 
-  // A stop in a lane is still an error, and lanes that never end too.
+  // A question in a lane: the lane goes on after it in a stretch of its own, the merge too.
   const stop = build([['start'], ['parallel'], ['measure'], ['step'], ['merge'], ['end']], ['1>2', '2.lane1>3', '3>5', '2.lane2>4', '4>5', '5>6']);
-  assert.ok(P.check(stop.p).some((i) => /Measure can't be inside parallel lanes/.test(i.text)));
+  assert.ok(P.check(stop.p).some((i) => /while it asks, everything pauses/.test(i.text)));
+  assert.ok(!P.check(stop.p).some((i) => i.level === 'error'));
 });
 
 test('inputs: none on Start, one per arrow on a merge or Wait for all (at least two), else one', () => {

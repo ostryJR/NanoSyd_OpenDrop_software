@@ -59,10 +59,12 @@ body {
 }
 
 /* The bar over the stage: Process | Board, where the board is in the process, the run. */
+/* One row, always: text that changes while a run goes (where, run state) is cut with … rather
+   than wrapping, which would take a row from the board and make it jump smaller and back. */
 #viewbar {
   display: flex;
   flex: none;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px 12px;
   padding: 6px 12px;
@@ -111,14 +113,31 @@ body {
 }
 
 #viewbar-where {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink-secondary);
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#viewbar > :not(#viewbar-where):not(.spacer):not(#run-controls) {
+  flex: none;
+  white-space: nowrap;
 }
 
 #run-controls {
   display: inline-flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+
+#run-controls button {
+  flex: none;
+  white-space: nowrap;
 }
 
 #run-start {
@@ -128,9 +147,13 @@ body {
 }
 
 #run-state {
+  min-width: 0;
+  overflow: hidden;
   color: #1e7d32;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #stage-area {
@@ -151,6 +174,21 @@ button {
   touch-action: none; /* dragging on a touch screen edits instead of scrolling */
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* While a run goes (nothing can be changed), the red frame and its buttons are greyed a bit; the
+   electrodes and droplets stay as they are. */
+#board .frame,
+#board .labels,
+#board .controls {
+  transition: filter 0.2s, opacity 0.2s;
+}
+
+#board.running .frame,
+#board.running .labels,
+#board.running .controls {
+  filter: saturate(0.35);
+  opacity: 0.75;
 }
 
 #board rect,
@@ -357,9 +395,14 @@ button {
   gap: 6px;
 }
 
+/* Its own width doesn't count when the bar wraps (basis 0), so a long message doesn't push the
+   help onto another row and shrink the board; it is cut with … and shown whole on hover. */
 #status {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #status.warn {
@@ -1053,10 +1096,12 @@ kbd {
 #board .heat-strip .pill.off text { fill: #898781; }
 #board .heat-strip .pill.there rect { stroke: #1baf7a; stroke-width: 3; }
 
+/* On the red frame, under the pills: white. */
 #board .heat-strip text.heat-wait {
-  fill: #c2410c;
+  fill: #fff;
   text-anchor: middle;
   font-size: 22px;
+  font-weight: 700;
 }
 
 #board .magnet-labels text {
@@ -1357,7 +1402,10 @@ kbd {
   gap: 6px;
 }
 
-.with-unit input {
+/* The project's fields line up: the Mode select as wide as the number fields. */
+.with-unit input,
+#hv-mode {
+  box-sizing: border-box;
   width: 9em;
 }
 
@@ -2104,6 +2152,7 @@ body.dragging-template * {
 
 #tile-props .field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr); /* fields fit the panel, however long their options */
   gap: 4px;
   margin-top: 10px;
   font-size: 13px;
@@ -2111,6 +2160,8 @@ body.dragging-template * {
 
 #tile-props .field input,
 #tile-props .field select {
+  min-width: 0;
+  max-width: 100%;
   padding: 4px 6px;
   font: inherit;
 }
@@ -2194,4 +2245,17 @@ body.dragging-template * {
   stroke-width: 5;
   stroke-dasharray: 9 6;
   opacity: 0.9;
+}
+
+/* While a run is going (here or in another tab) nothing in the project can be changed: the
+   fields and buttons that would change it are greyed out. */
+#tile-props .info.warn {
+  color: #8a5a00;
+}
+
+body.read-only input:disabled,
+body.read-only select:disabled,
+body.read-only button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }

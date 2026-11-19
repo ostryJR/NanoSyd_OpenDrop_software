@@ -11,6 +11,8 @@
   const $ = (id) => document.getElementById(id);
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const MAGNET_PAIR = ['electrodes', 'electrodes_magnet'];
+  const hvText = (hv) =>
+    hv ? [hv.volts ? `${hv.volts} V` : '', hv.mode ? hv.mode.toUpperCase() : '', hv.hz && hv.mode !== 'dc' ? `${hv.hz} Hz` : ''].filter(Boolean).join(', ') : '';
 
   class DevicePanel {
     // app: { editor, setStatus(text, kind), redraw(), prefs (an object kept between visits),
@@ -40,7 +42,6 @@
         disconnect: $('device-disconnect'),
         sim: $('device-sim'),
         auto: $('device-auto'),
-        live: $('device-live'),
         allOff: $('device-alloff'),
         feedbackPart: $('device-feedback-part'),
         feedback: $('device-feedback'),
@@ -53,6 +54,8 @@
         stop: $('device-stop'),
         runState: $('device-run-state'),
         seqNote: $('device-seq-note'),
+        hvNow: $('device-hv-now'),
+        hvSave: $('device-hv-save'),
       };
       this.buildTemps();
       this.wire();
@@ -295,10 +298,11 @@
     // --- a whole sequence (protocol 1) -----------------------------------------------------------
 
     async load() {
+      if (this.ed.readOnly) return this.app.setStatus(this.ed.readOnly, 'warn');
       const seq = this.ed.seq;
       const n = seq.lastFrame();
       if (n > MAX_FRAMES) {
-        this.app.setStatus(`Not sent: the device holds at most ${MAX_FRAMES} frames and this sequence has ${n}. Play it live instead (Device tab, Live), which has no limit.`, 'warn');
+        this.app.setStatus(`Not sent: the device holds at most ${MAX_FRAMES} frames and this sequence has ${n}. Play it live instead (live on the board, then simulate), which has no limit.`, 'warn');
         return;
       }
       const result = await this.session.load(encodeSequence(seq, n));
@@ -308,6 +312,7 @@
     }
 
     async run() {
+      if (this.ed.readOnly) return this.app.setStatus(this.ed.readOnly, 'warn');
       const result = await this.session.start();
       if (result.ok) this.app.setStatus('Running on the device, on its own clock; Stop ends it and switches everything off');
       else this.app.setStatus(`Not started: ${result.reason}`, 'warn');
@@ -341,12 +346,7 @@
         this.app.savePrefs();
         d.auto.blur();
       });
-      d.live.addEventListener('change', () => {
-        this.setLive(d.live.checked);
-        d.live.blur();
-        this.key = '';
-        this.render();
-      });
+      click(d.hvSave, () => this.saveHV());
       d.feedback.addEventListener('change', () => {
         this.setFeedback(d.feedback.checked);
         d.feedback.blur();
@@ -359,12 +359,24 @@
       this.app.redraw();
     }
 
+    // Save to device: the project's high voltage, sent with the save flag, so the device writes
+    // it to its memory (with its sound and the feedback switch as sent now). Nothing set in the
+    // project: the device saves what it has.
+    async saveHV() {
+      const hv = this.ed.project.hv || null;
+      const r = await this.session.sendHV(hv, { save: true });
+      const what = hvText(hv);
+      if (r.ok) this.app.setStatus(what ? `Saved on the device: ${what}; it starts with these from now on` : 'Saved on the device: the settings it has now');
+      else this.app.setStatus(`Not saved: ${r.reason}`, 'warn');
+      this.changed();
+    }
+
     render() {
       const s = this.session;
       const b = this.boardState();
       const seq = this.ed.seq;
       const n = seq.lastFrame();
-      const key = JSON.stringify([b, s.temps, s.targets, s.sentTargets, s.live, s.protocol, s.run, this.portLabel, n, seq.elapsed(n), this.busy]);
+      const key = JSON.stringify([b, s.temps, s.targets, s.sentTargets, s.live, s.protocol, s.run, this.portLabel, n, seq.elapsed(n), this.busy, this.ed.readOnly, this.ed.project.hv || null]);
       if (key === this.key) return;
       this.key = key;
       const d = this.dom;
@@ -382,8 +394,6 @@
       document.getElementById('device-pick-hint').hidden = on;
       d.connect.disabled = this.busy || !serial.supported();
       d.disconnect.hidden = !on;
-      d.live.checked = s.live;
-      d.live.disabled = !on || Boolean(s.run);
       d.allOff.disabled = !on;
       d.feedbackPart.hidden = !(on && b.canFeedback);
       d.feedback.checked = b.feedback;
@@ -399,9 +409,17 @@
         input.title = bySeq ? 'Set by the sequence while live (frame on screen)' : '';
         if (document.activeElement !== input) input.value = String(bySeq ? sent[i] : s.targets[i]);
       });
+      // The project's high voltage (set in Properties).
+      const hv = hvText(this.ed.project.hv);
+      d.hvNow.textContent = hv ? `This project: ${hv}` : "This project sets none: the device keeps its own";
+      d.hvSave.disabled = s.state !== 'on' || Boolean(s.run);
       d.seq.textContent = `${plural(n, 'frame')}, ${this.app.formatTime(seq.elapsed(n))}`;
-      d.load.disabled = !s.canLoad || Boolean(s.run);
-      d.run.disabled = !s.canLoad || Boolean(s.run);
+      // While the process runs here (or in another tab), the device is the run's: no sending.
+      const running = this.ed.readOnly;
+      d.load.disabled = !s.canLoad || Boolean(s.run) || Boolean(running);
+      d.run.disabled = !s.canLoad || Boolean(s.run) || Boolean(running);
+      d.load.title = running || '';
+      d.run.title = running || 'The device plays the sequence sent to it on its own, without this page (not the process\'s ▶ Run)';
       d.stop.disabled = !s.canLoad || !s.run;
       d.seqNote.hidden = on && s.protocol >= 1;
       d.runState.textContent = s.run ? `Running on the device: frame ${s.run.frame} of ${s.run.frames}` : '';

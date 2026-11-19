@@ -9,7 +9,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (device) {
   'use strict';
 
-  const { PACKET, REPLY, STATUS, COLUMNS, COMMAND, decodeSequence } = device;
+  const { PACKET, REPLY, STATUS, COLUMNS, COMMAND, OUT, decodeSequence } = device;
   const RESULT = { ok: 0, badChecksum: 1, tooLong: 2, busy: 3, unknown: 4, nothingLoaded: 5 };
   const STATE = { idle: 0, running: 1, done: 2 };
 
@@ -27,6 +27,10 @@
       this.feedback = false;
       this.targets = [0, 0, 0];
       this.temps = [21.5, 21.5, 21.5];
+      this.hv = { volts: 240, hz: 1000, ac: false }; // as the firmware starts (OpenDrop.cpp)
+      this.hvChanges = 0; // times it set the high voltage anew
+      this.saved = null; // the settings written to flash: { volts, hz, ac, feedback }
+      this.saves = 0; // flash writes (only when something changed)
       this.block = null; // protocol 1: a sequence block coming in
       this.loaded = null; // { frames, times, crc }
       this.run = null; // { frame, timer }
@@ -106,9 +110,11 @@
       if (this.count < PACKET) return;
       this.count = 0;
       const p = this.packet.slice();
-      const command = this.protocol >= 1 ? p[31] : COMMAND.frame;
+      const command = this.protocol >= 1 ? p[OUT.command] : COMMAND.frame;
       this.feedback = Boolean(p[24]);
       this.targets = [p[26], p[27], p[28]];
+      this.highVoltage(p);
+      if (p[OUT.save] === 1) this.save();
       this.warm();
       if (command === COMMAND.frame) {
         if (!this.run) this.drive(cellsOf(p));
@@ -131,6 +137,24 @@
       } else if (command === COMMAND.status) {
         this.answer(RESULT.ok);
       } else this.answer(RESULT.unknown);
+    }
+
+    // The custom firmware's high voltage: volts, frequency / 10, 1 DC / 2 AC; 0 keeps the setting.
+    highVoltage(p) {
+      const volts = p[OUT.volts] ? Math.min(240, Math.max(50, p[OUT.volts])) : this.hv.volts;
+      const hz = p[OUT.freq] ? Math.min(1000, Math.max(100, p[OUT.freq] * 10)) : this.hv.hz;
+      const ac = p[OUT.mode] ? p[OUT.mode] === 2 : this.hv.ac;
+      if (volts === this.hv.volts && hz === this.hv.hz && ac === this.hv.ac) return;
+      this.hv = { volts, hz, ac };
+      this.hvChanges++;
+    }
+
+    // save_settings(): only writes when something differs from what is stored.
+    save() {
+      const now = { ...this.hv, feedback: this.feedback };
+      if (this.saved && JSON.stringify(this.saved) === JSON.stringify(now)) return;
+      this.saved = now;
+      this.saves++;
     }
 
     drive(cells) {

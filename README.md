@@ -28,10 +28,9 @@ explain what is going wrong. It is kept up to date with the app, like the manual
 | To | Do |
 |---|---|
 | Draw a droplet path | Drag from the droplet's electrode. Every electrode you pass is the next frame. The path shows in blue with its step count until you let go, and is added then. **Esc** cancels; going back along the path takes steps back |
-| Draw a path in straight lines | Choose **straight** on the left (or press **S**). The path runs along the row or column you start dragging in, then turns once to the blue end electrode |
 | Draw a path corner by corner | Shift+click where it starts, then Shift+click each corner (two pieces at a right angle when a click isn't in line). With a path selected, Shift+clicks carry on from its end. **Esc** stops |
 | Select something drawn | Click its clip in the timeline, or click it on the board (any tool but paint): the action on that electrode in the frame on screen, or a path's line. Clicking again picks the next one below. **Esc** lets go |
-| Reshape the selected path | With freehand, straight or select: drag a straight piece sideways, or drag a corner or its start. Dragging its free end draws it on (freehand also goes back along it). Where something is attached to its start or end, dragging that end takes it along: a mixer there moves with it. Double-click on the line adds a point; double-click a point removes it |
+| Reshape the selected path | With freehand or select: drag a straight piece sideways, or drag a corner or its start. Dragging its free end draws it on, or back along it. Where something is attached to its start or end, dragging that end takes it along: a mixer there moves with it. Double-click on the line adds a point; double-click a point removes it |
 | Move something | ⌥/Alt + drag (any tool), **select** (**V**) + drag, or ⌥/Alt + arrow keys. Paths leading into and out of a template or pattern follow it, including one whose droplet got there early and waits (as at a merge), and what is linked after it moves in time. A move, turn or size change that would still leave a droplet behind (a mixer straight after a dispense, say) is refused. With Shift, everything that follows it moves too |
 | Turn it | **R** (Shift+R turns back), or the Turn buttons in Properties |
 | Move it in time | Drag its clip in the timeline, **[** / **]**, or the Starts field in Properties |
@@ -41,9 +40,10 @@ explain what is going wrong. It is kept up to date with the app, like the manual
 | Switch electrodes on or off | Choose **paint** (**P**) and click or drag, as in the original; the first electrode decides on or off. What you paint is kept as a pattern. With paint, Shift+click goes to the next frame and switches an electrode on |
 | Undo / redo | ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y on Windows and Linux), or **undo** / **redo** on the left |
 | Change frame | ← / →, the mouse wheel (up = next), the arrows under the array, or click/drag the timeline's ruler |
-| Play / stop | Space or the **play** button; loops up to the last frame with anything on |
+| Play / stop | Space or the **simulate** button; loops up to the last frame with anything on |
 | Change playback speed | Mouse wheel while playing (5–600 frames/min); this sets the frame time |
 | Set the frame time | **Properties** with nothing selected: **Frame time** (how long every step lasts) |
+| Set the project's high voltage | **Properties** with nothing selected, under the frame time: **Voltage** (50–240 V), **Frequency** (100–1000 Hz, AC only), **Mode** (AC/DC). Empty = the device's own setting. Saved in the project and sent to a connected device (custom firmware) when it connects or the setting changes |
 | See how long frames last | **Step time** instead of **Timeline** |
 | Drop a template | Drag it from the Templates tab onto the electrode the droplet is on; **R** turns it, **Esc** cancels |
 | Make a template | **+ New** in the Templates tab, or ✎ on a template to change it (or a copy of a built-in one) |
@@ -55,7 +55,7 @@ explain what is going wrong. It is kept up to date with the app, like the manual
 | Export for the OpenDrop controller | **export**, top right |
 | Design the process: steps, decisions, loops, lanes | **Process** at the top (see "The process"); **Board** goes back. **▶ Run** runs it |
 | Connect the OpenDrop (Chrome, Edge) | **Connect…** in the Device tab, then pick its port. The dot by the title is green while it answers |
-| Send what is on screen to the device | **live** under play (white when on). Stepping, playing and editing then go straight to the device; live off switches everything on it off |
+| Send what is on screen to the device | **live** under simulate (white when on; only on the board). Stepping, playing and editing then go straight to the device; live off switches everything on it off |
 | See where the device senses droplets | **feedback** under live (OpenDrop V4.2): dark dots on the board |
 | Show electrode numbers / paths' lines | `N` / `L`, or the checkboxes in the bottom bar |
 | Use another cartridge layout | The Layout menu (all layouts from the original repository) |
@@ -64,7 +64,7 @@ explain what is going wrong. It is kept up to date with the app, like the manual
 
 Everything you draw becomes an action, a clip in the timeline from its first to its last frame:
 
-- **Path**: drawn with freehand or straight, or corner by corner. It is kept as a line, its start,
+- **Path**: drawn with freehand, or corner by corner. It is kept as a line, its start,
   end and corners; the electrodes in between are worked out from the layout, so reshaping it
   changes them.
 - **Template**: dropped from the Templates tab. The project keeps its own copy of the template. A
@@ -112,8 +112,8 @@ everything drawn so far.
 | Start, End | Where it begins and ends | |
 | Step, Dispense, Move, Mix, Split, Wait | A step with work on the board: anything (Step), a dispense from its reservoir, a path, a mixer that keeps one droplet (kind, size, rounds, direction), a split, a hold (seconds) | Plays on the board |
 | Merge | Two droplets become one, on the board. It takes an arrow from each droplet's lane and waits for them, so it ends those lanes | Plays on the board |
-| Measure | A named value with a unit, e.g. `conc` in mM | Asks you for the value |
-| Ask | A question, answered yes/no or with a number | Asks you |
+| Measure | A named number with a unit, e.g. `conc` in mM, and the text to ask with | Asks you to type it in (a connected instrument comes later) |
+| Ask | A yes-or-no question | Asks you |
 | Decision | `value` compared with a number (or `value is yes`), with a yes and a no arrow | Takes the arrow that holds |
 | Repeat | Its "again" arrow goes to what is repeated, which leads back to it; "done" goes on | Goes round that many times |
 | Parallel, Wait for all | Lanes that run at the same time, on one board. Wait for all waits until every lane has finished, its droplets staying apart (lanes whose droplets go together end in a Merge instead) | |
@@ -187,15 +187,19 @@ everything drawn so far.
     at the top says.
 - **Run** (at the top) goes through the process from Start:
   - Each stretch plays on the board with its frame times, and the running tile glows. With
-    **live** on (the board's switch under play, or the Device tab) and the device connected, the
+    **live** on (the board's switch under simulate) and the device connected, the
     device follows the run and is switched all off at the end.
-  - **play** on the board is only a preview: it goes through the timeline without asking anything
+  - **simulate** on the board is only a preview: it goes through the timeline without asking anything
     (the top bar says "Previewing"). **▶ Run** is the real run.
   - Measure and Ask tiles ask you; a yes/no question also takes the keys 1 or , (yes) and 2 or .
     (no). Decisions and Repeat choose the way.
   - The log at the bottom right lists the values, decisions and times; **Pause** and **Stop** are
     at the top.
-  - Nothing can be edited while it runs. Keep the page in front: a hidden tab runs slowly.
+  - Nothing in the project can be changed while it runs (board, tiles, Properties, frame time,
+    layout, opening a file, undo, new templates), in a second tab either; those fields are greyed
+    out, and so are the Device tab's Send to device and Run on the device, and the board's red frame is greyed a bit.
+    Frames can't be stepped or scrolled through (wheel, arrow keys, ◀ ▶, timeline, charts): the board
+    follows the run. Keep the page in front: a hidden tab runs slowly.
 - **Two tabs:**
   - **Board in a new tab** (or **Process in a new tab**) opens the other view in a second browser
     tab, e.g. the process on one screen and the board on the other.
@@ -277,7 +281,7 @@ frame on and stay that way until set again, so they can change during a process.
 - In the **process**: the *Temperature* and *Magnet* tiles (group *Heat and magnets*) are placed as
   such settings. What they set carries on into the following steps, past Measure and Ask stops,
   the way droplets do.
-- Under the board, a strip shows each heater's target and reading (green ring: there) and each
+- At the top of the board, in the dip of the red frame, a strip shows each heater's target and reading (green ring: there) and each
   magnet, for the frame on screen, once the project sets any or a device with the adapter is
   connected. On the standard and magnet layouts, the electrodes over each heater get a halo in the
   colour of its target: T1 under electrodes 25 and 26, T2 under 57 and 58, T3 under 97 and 98.
@@ -321,13 +325,17 @@ the port.
   adapter. For a magnet board the layout switches to the magnet one, and back for a board without,
   as the original did. **Reconnect automatically** finds the same device again when the page opens
   or it is plugged back in.
-- **live** (under play): the device shows the frame on screen. Stepping, playing (with each frame's
+- **live** (under simulate): the device shows the frame on screen. Stepping, playing (with each frame's
   own time: the computer keeps the time), painting, drawing, undo, loading: all go straight to the
   device. After connecting or reconnecting, live is off and everything on the device is off.
   Switching live off, **Switch all off**, disconnecting and closing the page switch everything off
   first. Keep the page in front while playing live: a hidden tab stops playback.
 - **feedback** (V4.2 boards): the device senses where droplets are; dark dots show them on the
   board and the Device tab counts them.
+- **High voltage** (custom firmware, OpenDropVCustom): shows the project's settings (set in
+  Properties). They are sent when the device connects and when they change, and last until it is
+  switched off; **Save to device** writes them to its memory, so it starts with them (its sound
+  and the feedback switch are saved too). Ordinary frames leave them alone.
 - **Temperatures** (temperature adapter): the three readings, and their targets (20–120 °C,
   25 to start with, as the original), kept between visits.
 - **Sequence on the device:** **Send to device**, **Run on the device** and **Stop** load the whole sequence,
@@ -400,7 +408,8 @@ What **save** writes and **load** opens. JSON, one field per line:
 ```
 
 - `openDropGeneratorProject` is the format version; `layout` the cartridge layout; `frameTime`
-  the frame time in ms; `templates` copies of the templates the actions use.
+  the frame time in ms; `templates` copies of the templates the actions use; `hv` (optional) the
+  high voltage, `{ volts, hz, mode }` (`mode` `ac` or `dc`; `null` = the device's own).
 - Every action has an `id`, a `type`, a `name` and a `droplet` name, and **either** `start` (its
   first frame, from 1) **or** `after` (the id of the action it follows, or a list of ids: it starts in
   the last frame of the one that ends last) with an optional `delay` in frames.
@@ -418,7 +427,7 @@ What **save** writes and **load** opens. JSON, one field per line:
 - `process` (top level, optional):
   - `tiles`: `{ id, kind, name, x, y, … }` with the kind's settings: `reservoir` and `droplet` (the
     name of the droplet it makes) for a dispense,
-    `params` (mix), `seconds` (wait), `value` and `unit` (measure), `question`, `answer` and
+    `params` (mix), `seconds` (wait), `value`, `unit`, `source` (`typed`) and `prompt` (measure), `question` and
     `value` (ask), `value`, `op` (`<`, `<=`, `>`, `>=`, `=`, `!=`, `is`) and `than` (decision),
     `times` (repeat), `lanes` (parallel). The kinds are `start`, `end`, `step`, `dispense`,
     `move`, `mix`, `merge`, `split`, `wait`, `measure`, `ask`, `decision`, `repeat`, `parallel`
@@ -427,7 +436,8 @@ What **save** writes and **load** opens. JSON, one field per line:
     for a repeat; `lane1`… for a parallel tile.
 - Room for later: action types and fields this version doesn't know are kept when a file is opened
   and written back when it is saved. Not built yet: functions (a sub-process used in several
-  places), reading a measuring instrument directly (Measure asks you for now).
+  places), reading a measuring instrument directly (Measure asks you for now). An Ask from older files
+  that took a number opens as a Measure, its question as the prompt.
 
 ## Exported files (OpenDrop `.json`)
 
@@ -470,7 +480,7 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
 - What you draw is kept as actions in a project file, shown in a timeline, and can be moved,
   reshaped or moved in time; droplets can't be made to touch by accident; the frames are exported
   separately.
-- Dragging draws droplet paths (freehand or straight) that are added when you let go; the original
+- Dragging draws droplet paths (freehand) that are added when you let go; the original
   drag is the **paint** tool. A click selects; paint switches single electrodes.
 - Undo and redo, templates, Wait blocks, and a chart of how long frames last.
 - Works without a device too. Its "life" button is **live** here; connecting, feedback and

@@ -13,6 +13,14 @@
   const px = (u) => G.CX + G.UNIT * u; // the original's coX()
   const py = (v) => G.CY + G.UNIT * v; // the original's coY()
   const BOX = 2 * G.UNIT; // button size (eSize)
+  // What the board shows of the picture: the red frame (x 0–2226, y 80–1024) and a small white gap
+  // all round it.
+  const GAP = 20;
+  const VIEW_TOP = 80 - GAP;
+  const VIEW_BOTTOM = 1024 + GAP;
+  const PILLS_TOP = 88; // the pills (40 high) in the indent, whose red bottom is at 135
+  const PILLS_WIDTH = 940; // the indent's width at the pills
+  const WAIT_Y = 163; // the heater wait line, on the red under the indent, above the array
 
   const COLOR = {
     on: 'rgb(0,200,0)',
@@ -26,7 +34,6 @@
   // Hover text for the controls on the left.
   const TIPS = {
     toolFreehand: 'Drag draws a droplet path through each electrode you pass, one frame per step (F)',
-    toolStraight: 'Drag draws a droplet path along rows and columns to the blue electrode (S)',
     toolPaint: 'Drag switches electrodes on or off in this frame, kept as a pattern (P)',
     toolSelect: 'Click picks what is drawn; drag moves it, or reshapes a path: its pieces, corners and ends (V)',
     undo: 'Undo (⌘Z or Ctrl+Z)',
@@ -115,8 +122,10 @@
 
   class BoardView {
     constructor(svg, imageHref) {
-      svg.setAttribute('viewBox', `0 0 ${G.IMG_W} ${G.IMG_H}`);
-      el('image', { href: imageHref, x: 0, y: 0, width: G.IMG_W, height: G.IMG_H }, svg);
+      // Only the red frame with a small gap all round: the picture's white margins are cut off so
+      // the board fills more of the stage. Fixed, so the board never changes size.
+      svg.setAttribute('viewBox', `${-GAP} ${VIEW_TOP} ${G.IMG_W + 2 * GAP} ${VIEW_BOTTOM - VIEW_TOP}`);
+      el('image', { class: 'frame', href: imageHref, x: 0, y: 0, width: G.IMG_W, height: G.IMG_H }, svg);
 
       const labels = el('g', { class: 'labels' }, svg);
       const label = (text, u, v, parent = labels) => {
@@ -128,7 +137,7 @@
       label('export', 25, -18.5);
       label('save', 32, -18.5);
       label('load', 38, -18.5);
-      label('play', 37, -7.5);
+      label('simulate', 37, -7.5);
       label('copy last frame', 37, 5.5);
       label('clear frame', 37, 8.5);
       label('clear all', 37, 11.5);
@@ -179,7 +188,7 @@
       this.playBox = box(34, -9);
       // Its hover tip, over the box and label: with a process, play is a preview of the timeline
       // (▶ Run is the real run).
-      this.playTip = el('title', {}, el('rect', { class: 'hit', x: px(34), y: py(-9), width: G.UNIT * 6, height: G.UNIT * 2 }, controls));
+      this.playTip = el('title', {}, el('rect', { class: 'hit', x: px(34), y: py(-9), width: G.UNIT * 9, height: G.UNIT * 2 }, controls));
       box(34, 4); // copy last frame
       box(34, 7); // clear frame
       box(34, 10); // clear all
@@ -288,7 +297,8 @@
         el('rect', { x: x0 - 3, y: y0 - 3, width: x1 - x0 + 6, height: y1 - y0 + 6, rx: 6, style: `stroke:${H.colour(t)}` }, this.zoneLayer);
       });
 
-      // The strip: one pill per heater and magnet, centred under the board.
+      // The strip: one pill per heater and magnet, centred in the indent at the top of the red
+      // frame (white there, rows 80–135 between its raised sides).
       const pills = [];
       info.targets.forEach((t, i) => {
         const now = info.temps && typeof info.temps[i] === 'number' ? info.temps[i] : null;
@@ -302,9 +312,13 @@
       const gap = 16;
       const total = widths.reduce((a, b) => a + b, 0) + gap * (pills.length - 1);
       let x = G.CX - total / 2;
-      const y = py(21.2);
+      const y = PILLS_TOP;
+      // Too wide for the indent (three heaters with readings and two magnets): the row is made
+      // smaller round its middle so it stays inside.
+      const fit = Math.min(1, PILLS_WIDTH / total);
+      const row = el('g', fit < 1 ? { transform: `translate(${G.CX} ${y + 20}) scale(${fit}) translate(${-G.CX} ${-(y + 20)})` } : {}, strip);
       pills.forEach((p, k) => {
-        const g = el('g', { class: `pill ${p.cls}` }, strip);
+        const g = el('g', { class: `pill ${p.cls}` }, row);
         el('title', {}, g).textContent = p.title;
         el('rect', { x, y, width: widths[k], height: 40, rx: 20 }, g);
         el('circle', { cx: x + 22, cy: y + 20, r: 8, style: p.colour ? `fill:${p.colour}` : '' }, g);
@@ -312,7 +326,7 @@
         x += widths[k] + gap;
       });
       if (info.waiting) {
-        el('text', { x: G.CX, y: y + 66, class: 'heat-wait' }, strip).textContent = `Waiting for the heaters: ${H.targetsText(info.waiting.targets)}…`;
+        el('text', { x: G.CX, y: WAIT_Y, class: 'heat-wait' }, strip).textContent = `Waiting for the heaters: ${H.targetsText(info.waiting.targets)}…`;
       }
     }
 
@@ -377,8 +391,8 @@
       this.speedLabel.textContent = perMinute(ed.speed);
       this.playBox.setAttribute('fill', ed.playing ? COLOR.active : COLOR.button);
       const playText = ed.doc && ed.doc.process
-        ? 'Preview: plays the timeline, step after step, without asking anything (▶ Run at the top asks at Measure and Ask) (Space)'
-        : 'Play the frames with their times, round and round (Space)';
+        ? 'Simulate: plays the timeline on screen, step after step, without asking anything (▶ Run at the top asks at Measure and Ask) (Space)'
+        : 'Simulate: plays the frames on screen with their times, round and round (Space)';
       if (this.playTip.textContent !== playText) this.playTip.textContent = playText;
       this.dots.forEach((dot, i) => dot.setAttribute('fill', i + 1 === frame ? COLOR.button : COLOR.idle));
       this.nextArrow.setAttribute('fill', frame >= 18 ? COLOR.button : COLOR.idle);

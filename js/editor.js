@@ -28,7 +28,7 @@
   // Click areas in grid units, copied from the original's inRect() checks. The device-only
   // controls (life, feedback, reconnect, temperatures) are left out.
   const CONTROLS = [
-    { action: 'play', x: 34, y: -9, w: 6, h: 2 },
+    { action: 'play', x: 34, y: -9, w: 9, h: 2 }, // labelled 'simulate'
     { action: 'copy', x: 34, y: 4, w: 2, h: 2 },
     { action: 'clearFrame', x: 34, y: 7, w: 2, h: 2 },
     { action: 'clearAll', x: 34, y: 10, w: 2, h: 2 },
@@ -50,17 +50,17 @@
     // box, y) sits on the side facing the array, mirroring the right-hand buttons. The label is
     // clickable too.
     { action: 'toolFreehand', x: -45, y: -9, w: 11, h: 2, box: -36, label: 'freehand', tool: 'freehand' },
-    { action: 'toolStraight', x: -45, y: -6, w: 11, h: 2, box: -36, label: 'straight', tool: 'straight' },
-    { action: 'toolPaint', x: -45, y: -3, w: 11, h: 2, box: -36, label: 'paint', tool: 'paint' },
-    { action: 'toolSelect', x: -45, y: 0, w: 11, h: 2, box: -36, label: 'select', tool: 'select' },
+    { action: 'toolPaint', x: -45, y: -6, w: 11, h: 2, box: -36, label: 'paint', tool: 'paint' },
+    { action: 'toolSelect', x: -45, y: -3, w: 11, h: 2, box: -36, label: 'select', tool: 'select' },
     { action: 'undo', x: -45, y: 4, w: 11, h: 2, box: -36, label: 'undo' },
     { action: 'redo', x: -45, y: 7, w: 11, h: 2, box: -36, label: 'redo' },
   ];
 
-  // What a drag on the array does: draw a droplet path that follows the pointer, draw one along
-  // rows and columns, switch electrodes in the current frame (the original's drag), or pick and
-  // move what is drawn. The selected path can be reshaped with the path tools too.
-  const TOOLS = ['freehand', 'straight', 'paint', 'select'];
+  // What a drag on the array does: draw a droplet path that follows the pointer, switch
+  // electrodes in the current frame (the original's drag), or pick and move what is drawn. The
+  // selected path can be reshaped with the path tool too.
+  const TOOLS = ['freehand', 'paint', 'select'];
+  const FRAME_HELD = 'A run is going: the board follows it, so frames can’t be stepped through until it stops';
   const UNDO_LIMIT = 100;
   const MIN_SPEED = 5; // frames per minute
   const MAX_SPEED = 600;
@@ -97,11 +97,18 @@
       this.onPlayEnd = null;
       this.arrive = []; // the droplets coming into that stretch (actions of type 'arrive')
       this.controlsIn = null; // the heaters and magnets coming into it (null: nothing set)
+      // Other lanes' droplets while it plays (compile()'s `context`): they can't be changed here,
+      // and mustn't be touched.
+      this.context = [];
+      // The page can say what comes into a stretch the way the timeline shows it (stretch id ->
+      // { state, controls, context } or null); otherwise it is the first way a run gets there.
+      this.contextOf = null;
       // The heaters' temperatures from a live device (°C or null ×3), or null without one: the page
       // sets it. Playing, a frame that waits for the heaters then lasts until they get there.
       this.readings = () => null;
       this.holding = null; // the hold playback is waiting in ({ targets, tolerance }), if any
       this.frozen = null; // why nothing can be changed now (a run is going), or null
+      this.runElsewhere = null; // the same for a run going in another tab, or null
       this.project.layout = lay.id;
       this.frame = 1;
       this.playing = false;
@@ -130,7 +137,7 @@
       this.flush();
       this.syncNames();
       this.revision = (this.revision || 0) + 1; // goes up with every change, for keeping the work
-      this.compiled = compile(this.project, this.layout.rects, { arrive: this.arrive, controls: this.controlsIn });
+      this.compiled = compile(this.project, this.layout.rects, { arrive: this.arrive, controls: this.controlsIn, context: this.context });
       if (this.playing) this.playLast = this.compiled.seq.lastFrame();
     }
 
@@ -159,6 +166,8 @@
       this.doc.templates = this.project.templates;
       this.doc.frameTime = this.project.frameTime;
       if (this.project.heatRates) this.doc.heatRates = this.project.heatRates;
+      if (this.project.hv) this.doc.hv = this.project.hv;
+      else delete this.doc.hv;
     }
 
     // One name per step: an action of a tile that does one kind of thing is called by the tile's
@@ -206,10 +215,23 @@
       return Boolean(this.doc.process);
     }
 
+    // Why nothing in the project may change now, or null: a run is going, here or in another tab
+    // (a template being made isn't the project, so a run elsewhere leaves it alone).
+    get readOnly() {
+      return this.frozen || (this.saved ? null : this.runElsewhere) || null;
+    }
+
+    // While a run is going nothing changes: `notice` says so and this returns true.
+    refused() {
+      if (!this.readOnly) return false;
+      this.notice = this.readOnly;
+      return true;
+    }
+
     // Why the board can't be changed now, or null: a run is going, or with a process no tile is
     // open.
     get locked() {
-      if (this.frozen) return this.frozen;
+      if (this.readOnly) return this.readOnly;
       if (this.doc.process && !(this.scope && this.scope.tile)) return 'Open a step of the process first: double-click it in the process view';
       return null;
     }
@@ -222,16 +244,18 @@
 
     // Opens tile id's stretch on the board, the droplets coming in where the stretch before leaves
     // them (or as `state` says, in a run). False if it is a stop (nothing on the board).
-    openTile(id, { state = null, controls = null } = {}) {
+    openTile(id, { state = null, controls = null, context = null } = {}) {
       if (!this.doc.process) return false;
       this.cancel();
       const info = this.analyze();
       const sid = info.st.of.get(id);
       if (!sid) return false;
       const s = info.stretch.get(sid);
+      const given = state ? null : this.contextOf && this.contextOf(sid);
       this.scope = { tile: id, stretch: sid, tiles: new Set(s.tiles) };
-      this.arrive = stretches.arrivals(state || s.state);
-      this.controlsIn = controls || s.controls;
+      this.arrive = stretches.arrivals(state || (given ? given.state : s.state));
+      this.controlsIn = controls || (given ? given.controls : s.controls);
+      this.context = context || (given ? given.context : []) || [];
       this.project = this.workingProject();
       if (this.selection && !this.action(this.selection)) this.selection = null;
       this.recompile();
@@ -247,6 +271,7 @@
           this.scope = null;
           this.arrive = [];
           this.controlsIn = null;
+          this.context = [];
           this.project = this.doc;
           this.recompile();
         }
@@ -259,12 +284,13 @@
       this.scope = { tile: null, stretch: null, tiles: new Set() };
       this.arrive = [];
       this.controlsIn = null;
+      this.context = [];
       this.project = this.workingProject();
       this.recompile();
     }
 
     // A run shows stretch `sid` with the droplets as they really are.
-    showStretch(sid, state, controls = null) {
+    showStretch(sid, state, controls = null, context = []) {
       this.flush();
       const s = processes.stretches(this.doc.process).list.find((x) => x.id === sid);
       if (!s) return false;
@@ -272,6 +298,7 @@
       this.scope = { tile: s.start, stretch: sid, tiles: new Set(s.tiles) };
       this.arrive = stretches.arrivals(state);
       this.controlsIn = controls;
+      this.context = context;
       this.project = this.workingProject();
       this.selection = null;
       this.recompile();
@@ -281,7 +308,7 @@
     // Gives the project a process: Start, one step holding everything drawn so far, End; and
     // opens that step on the board.
     makeProcess() {
-      if (this.doc.process || this.saved) return false;
+      if (this.doc.process || this.saved || this.refused()) return false;
       this.cancel();
       this.flush();
       const p = processes.emptyProcess();
@@ -300,7 +327,7 @@
 
     // A change to the process (fn edits it): undoable like drawing; the board follows.
     processChange(fn) {
-      if (!this.doc.process || this.frozen) return false;
+      if (!this.doc.process || this.refused()) return false;
       if (this.scope) this.project = this.workingProject();
       const done = this.change(() => fn(this.doc.process), { check: false });
       if (done) this.rescope();
@@ -349,6 +376,7 @@
     // A mix tile's kind, size, rounds or direction; the mixer placed on the board changes with it
     // (as Properties would change it there). Undoable, in one step.
     setTileParams(id, params) {
+      if (this.refused()) return false;
       const t = this.doc.process && processes.tileById(this.doc.process, id);
       if (!t) return false;
       const next = templates.cleanParams({ ...(t.params || { kind: 'circle' }), ...params });
@@ -369,7 +397,7 @@
     // taken in as an undo step here, the open tile staying open. False while something is being
     // dragged, run or made, when it has to wait.
     applyRemote(shared) {
-      if (this.dragging || this.frozen || this.saved || this.placement) return false;
+      if (this.dragging || this.readOnly || this.saved || this.placement) return false;
       const tile = this.scope && this.scope.tile;
       const selection = this.selection;
       this.cancel();
@@ -381,6 +409,8 @@
         else delete this.doc.process;
         if (shared.frameTime) this.doc.frameTime = shared.frameTime;
         if (shared.heatRates) this.doc.heatRates = shared.heatRates;
+        if (shared.hv) this.doc.hv = shared.hv;
+        else delete this.doc.hv;
       }, { check: false });
       if (this.doc.process && tile && this.openTile(tile)) {
         // the same tile
@@ -585,6 +615,7 @@
     }
 
     setLayout(lay) {
+      if (this.refused()) return false;
       this.cancel();
       this.layout = lay;
       this.ctx = lines.context(lay.rects);
@@ -592,6 +623,7 @@
       this.doc.layout = lay.id;
       this.recompile();
       if (this.scope) this.rescope(); // the droplets coming in depend on the layout too
+      return true;
     }
 
     setTool(tool) {
@@ -626,6 +658,8 @@
       if (t) {
         // Which droplets, and where: the two actions are often called the same ("Move").
         const who = (id) => {
+          const lane = this.context.find((c) => c.id === id);
+          if (lane) return `${lane.droplet ? projects.shortDroplet(lane.droplet) : 'a droplet'} of another lane`;
           const a = actions.find((x) => x.id === id) || this.arrive.find((x) => x.id === id);
           const d = a && a.droplet ? projects.shortDroplet(a.droplet) : '';
           return a ? `${quote(a)}${d ? ` (${d})` : ''}` : id;
@@ -644,7 +678,7 @@
     tryChanges(changes, extra = [], templatesToo = null) {
       const actions = this.project.actions.map((a) => changes.get(a.id) || a).concat(extra);
       const trial = { ...this.project, actions, templates: templatesToo ? { ...this.project.templates, ...templatesToo } : this.project.templates };
-      const compiled = compile(trial, this.layout.rects, { controls: this.controlsIn });
+      const compiled = compile(trial, this.layout.rects, { arrive: this.arrive, controls: this.controlsIn, context: this.context });
       const ids = new Set([...changes.keys(), ...extra.map((a) => a.id)]);
       const bad = compiled.issues.find((i) => ids.has(i.id) && i.kind === 'invalid');
       const reason = bad ? `It can't go there: ${bad.text}` : this.blockReason(compiled, actions);
@@ -793,9 +827,22 @@
 
     // How fast the heaters are assumed to warm up and cool down (°C/min), for estimating waits
     // when no device says. A setting of the project, like the default frame time.
+    // The project's high voltage (volts, hz, mode; empty parts = the device's own), merged into what
+    // is set. Kept in the project file; the page sends it to a connected device.
+    setHV(hv) {
+      if (this.refused()) return false;
+      const next = projects.cleanHV({ ...(this.project.hv || {}), ...hv });
+      if (next) this.project.hv = next;
+      else delete this.project.hv;
+      this.recompile();
+      return true;
+    }
+
     setHeatRates(rates) {
+      if (this.refused()) return false;
       this.project.heatRates = heat.cleanRates({ ...heat.cleanRates(this.project.heatRates), ...rates });
       this.recompile();
+      return true;
     }
 
     // --- pointer --------------------------------------------------------------------------------
@@ -817,7 +864,7 @@
         if (inArray(mx, my)) this.notice = this.locked;
         return null;
       }
-      const drawing = this.tool === 'freehand' || this.tool === 'straight';
+      const drawing = this.tool === 'freehand';
       if (!(drawing && shift && !alt)) this.pending = null;
       if (this.tool === 'select' || alt) {
         this.startEdit(mx, my, shift);
@@ -980,23 +1027,17 @@
         this.beginEdit(sel, grab, e, true);
         return;
       }
-      this.draft = new PathDraft(this.layout.rects, this.tool, e, this.frame, { mx, my });
+      this.draft = new PathDraft(this.layout.rects, e, this.frame, { mx, my });
       this.dragging = true;
     }
 
-    // Drawing on from the selected path's free end: freehand follows the pointer and goes back
-    // along the path when the pointer does; straight adds lines from the end.
+    // Drawing on from the selected path's free end: it follows the pointer and goes back along
+    // the path when the pointer does.
     startDrawingOn(path, mx, my) {
       const { built } = this.compiled.expanded.get(path.id);
       const span = this.span(path.id);
-      let draft;
-      if (this.tool === 'freehand') {
-        draft = new PathDraft(this.layout.rects, 'freehand', built.cells[0], span.from, { mx, my });
-        draft.cells = built.cells.slice();
-      } else {
-        draft = new PathDraft(this.layout.rects, 'straight', built.cells[built.cells.length - 1], span.to, { mx, my });
-        draft.base = built.cells;
-      }
+      const draft = new PathDraft(this.layout.rects, built.cells[0], span.from, { mx, my });
+      draft.cells = built.cells.slice();
       draft.extends = path.id;
       this.draft = draft;
       this.dragging = true;
@@ -1007,7 +1048,7 @@
       if (draft.extends) {
         const path = this.action(draft.extends);
         const { built } = this.compiled.expanded.get(path.id);
-        const cells = draft.base ? [...draft.base, ...draft.cells.slice(1)] : draft.cells;
+        const cells = draft.cells;
         const keep = new Map();
         path.points.forEach((p, i) => {
           const k = built.steps[i];
@@ -1390,6 +1431,7 @@
 
     // Runs a prepared check: applies it if it may be kept, otherwise says why.
     commit(check, templatesToo = null) {
+      if (this.refused()) return false; // a run is going: that is the reason, whatever the check says
       if (!check.valid) {
         this.notice = check.reason;
         return false;
@@ -1861,6 +1903,7 @@
     }
 
     startTemplate(seq = null) {
+      if (this.refused()) return false;
       this.cancel();
       this.flush();
       if (!this.saved) {
@@ -1874,6 +1917,7 @@
       this.scope = null;
       this.arrive = [];
       this.controlsIn = null;
+      this.context = [];
       this.selection = null;
       if (seq) {
         const a = { id: projects.nextId(this.project), ...importSequence(seq, 'Template') };
@@ -1885,6 +1929,7 @@
       this.redoStack = [];
       this.playing = false;
       this.recompile();
+      return true;
     }
 
     // --- keeping the work between visits -----------------------------------------------------------
@@ -1939,6 +1984,7 @@
       this.scope = null;
       this.arrive = [];
       this.controlsIn = null;
+      this.context = [];
       Object.assign(this, mainState);
       this.doc = this.project;
       if (this.doc.process && !(tile && this.openTile(tile))) this.rescope();
@@ -1950,6 +1996,7 @@
         this.scope = null;
         this.arrive = [];
         this.controlsIn = null;
+        this.context = [];
         Object.assign(this, makingState);
         this.doc = this.project;
         w1.push(...w2);
@@ -2011,6 +2058,7 @@
     // change that makes droplets touch, or runs something past the frame guard, that didn't before is
     // taken back and `notice` says why. Returns whether anything changed.
     change(fn, { check = true } = {}) {
+      if (this.refused()) return false;
       const before = this.checkpoint();
       const old = this.compiled;
       fn();
@@ -2047,6 +2095,7 @@
     }
 
     travel(from, to) {
+      if (from.length && this.refused()) return false;
       const target = from.pop();
       if (!target) return false;
       to.push(this.checkpoint());
@@ -2064,7 +2113,16 @@
     // One wheel step: +1 = towards you (down), -1 = away (up). While playing it changes the
     // speed by 5 frames/min, as in the original; otherwise up goes to the next frame and down
     // to the previous one.
+    // While a run goes, the frame on screen is the run's: stepping, scrolling and playing are
+    // refused (`notice` says so). The run itself sets `frame` directly.
+    frameHeld() {
+      if (!this.frozen) return false;
+      this.notice = FRAME_HELD;
+      return true;
+    }
+
     wheel(count) {
+      if (this.frameHeld()) return;
       if (this.playing) {
         const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(this.speed) - count * 5));
         this.setDefaultTime(Math.round(60000 / speed));
@@ -2076,10 +2134,12 @@
     }
 
     nextFrame() {
+      if (this.frameHeld()) return;
       if (this.frame < MAX_FRAMES) this.frame++;
     }
 
     prevFrame() {
+      if (this.frameHeld()) return;
       if (this.frame > 1) this.frame--;
     }
 
@@ -2088,6 +2148,7 @@
         this.playing = false;
         return;
       }
+      if (this.frameHeld()) return;
       this.playing = true;
       this.playStart = now;
       this.playLast = this.seq.lastFrame();
@@ -2100,8 +2161,10 @@
 
     // The default frame time is a setting: it isn't undone.
     setDefaultTime(ms) {
+      if (this.refused()) return false;
       this.project.frameTime = clampTime(ms);
       this.recompile();
+      return true;
     }
 
     // Advances playback, each frame staying for its own time; returns true when the frame
@@ -2131,7 +2194,7 @@
       const f = this.frame;
       const changes = ['copy', 'clearFrame', 'clearAll', 'undo', 'redo'].includes(action) || Boolean(RESERVOIR_STEPS[action]);
       if (this.locked && (changes || (this.frozen && (action === 'play' || action === 'next' || action === 'prev')))) {
-        this.notice = this.locked;
+        this.notice = changes ? this.locked : FRAME_HELD;
         return;
       }
       switch (action) {
@@ -2228,6 +2291,7 @@
     // Opening a project: undoable, like loading was. Its default frame time comes along (a
     // setting); its layout is set by the caller.
     openProject(project) {
+      if (this.refused()) return false;
       this.cancel();
       this.leaveScope();
       this.change(() => {
@@ -2239,6 +2303,7 @@
       this.project.frameTime = project.frameTime;
       this.recompile();
       this.rescope();
+      return true;
     }
 
     // Back to showing the whole project (before it is replaced).
@@ -2247,12 +2312,14 @@
       this.scope = null;
       this.arrive = [];
       this.controlsIn = null;
+      this.context = [];
       this.project = this.doc;
     }
 
     // Opening an OpenDrop file: one pattern holding all its frames. A file with frame times also
     // brings its default frame time; one without keeps the current default.
     openSequence(seq, { timed = false, name = 'Imported' } = {}) {
+      if (this.refused()) return false;
       this.cancel();
       this.leaveScope();
       this.change(() => {
@@ -2266,11 +2333,13 @@
         this.frame = 1;
       }, { check: false });
       if (timed) this.setDefaultTime(seq.frameTime);
+      return true;
     }
 
     // Adding an OpenDrop file to the project: one pattern from the frame on screen (leading empty
     // frames left out). Refused if it would touch what is there.
     addSequence(seq, name = 'Imported') {
+      if (this.refused()) return false;
       const block = importSequence(seq, name);
       const first = block.frames.findIndex((cells) => cells.length);
       if (first < 0) {
