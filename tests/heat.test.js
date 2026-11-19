@@ -199,15 +199,18 @@ test('playing live holds a heater frame until the readings get there', () => {
   assert.equal(ed.tick(10 ** 9), true, 'there: it goes on');
 });
 
-test('live, the device gets the frame’s heater targets; the others as set in the Device tab', () => {
+test('live, the device gets the frame’s heater targets; the others as set in the Device tab, off by default', () => {
   const s = new Session();
-  s.targets = [25, 33, 25];
+  assert.deepEqual(s.targets, [null, null, null], 'heaters start off');
+  s.setTargets([0, 33, '']);
   s.show([], [60, null, null]);
-  assert.deepEqual(s.sentTargets, [25, 33, 25], 'not live: what the Device tab says');
+  assert.deepEqual(s.sentTargets, [null, 33, null], 'not live: what the Device tab says');
+  assert.deepEqual(Array.from(s.bytes().subarray(26, 29)), [0, 33, 0], 'off is sent as 0');
   s.live = true;
-  assert.deepEqual(s.sentTargets, [60, 33, 25]);
-  const bytes = s.bytes();
-  assert.deepEqual([bytes[26], bytes[27], bytes[28]], [60, 33, 25]);
+  assert.deepEqual(s.sentTargets, [60, 33, null]);
+  assert.deepEqual(Array.from(s.bytes().subarray(26, 29)), [60, 33, 0]);
+  s.allOff();
+  assert.deepEqual(Array.from(s.bytes().subarray(26, 29)), [0, 0, 0], 'Switch all off: the heaters too');
   void decodeReply;
 });
 

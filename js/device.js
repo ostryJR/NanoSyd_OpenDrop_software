@@ -18,7 +18,10 @@
   const CELLS = COLUMNS * 8;
   const DROPLET_CELLS = 128;
   const MAX_FRAMES = 200; // protocol 1's limit (a sequence loaded on the device); live frames have none
-  const DEFAULT_TEMP = 25; // the original controller's starting targets, sent to every board
+  // A heater's target as sent: 0 switches it off. (The adapter runs a PID controller on the
+  // target: the original controller's 25 °C keeps a cartridge in a cooler room heated to 25; with
+  // 0 its output stays at 0 whatever the temperature.)
+  const HEATER_OFF = 0;
   const TEMP_RANGE = [20, 120];
   const NO_SENSOR = 150;
   // Positions in a packet: the firmware's ControlBytesIn[i] is byte 16 + i. The custom firmware
@@ -64,7 +67,8 @@
       .slice(0, MESSAGE_SHOWN);
   }
 
-  const clampTemp = (t) => (Number.isFinite(t) ? Math.min(TEMP_RANGE[1], Math.max(TEMP_RANGE[0], Math.round(t))) : DEFAULT_TEMP);
+  // A target: 20-120 °C, or null (off) for 0 or less and anything that isn't a number.
+  const clampTemp = (t) => (t !== null && t !== '' && Number.isFinite(Number(t)) && Number(t) > 0 ? Math.min(TEMP_RANGE[1], Math.max(TEMP_RANGE[0], Math.round(Number(t)))) : null);
 
   // --- bytes ----------------------------------------------------------------------------------
 
@@ -79,7 +83,10 @@
     // Columns 0-16: byte 17, once electrodes 136-143, is the message's length.
     for (const e of cells) if (Number.isInteger(e) && e >= 0 && e < OUT.message * 8) out[e >> 3] |= 1 << (e & 7);
     out[OUT.feedback] = feedback ? 1 : 0;
-    for (let i = 0; i < 3; i++) out[OUT.temps + i] = clampTemp(temps ? temps[i] : DEFAULT_TEMP);
+    for (let i = 0; i < 3; i++) {
+      const t = temps ? clampTemp(temps[i]) : null;
+      out[OUT.temps + i] = t === null ? HEATER_OFF : t;
+    }
     out[OUT.command] = command;
     const h = cleanHV(hv);
     out[OUT.volts] = h.volts || 0;
@@ -202,6 +209,47 @@
     return m ? m[0].length : 0;
   }
 
+  // --- for a traffic log ---------------------------------------------------------------------
+
+  const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ');
+
+  // What a packet sent to the device says, in words (as the custom firmware reads it). Shorter
+  // writes (lining up) are described by their length.
+  function describeOut(bytes) {
+    if (bytes.length < PACKET) return bytes.every((b) => b === 0) ? `${bytes.length} zero byte${bytes.length === 1 ? '' : 's'} (lining up)` : `${bytes.length} bytes`;
+    const p = bytes;
+    const cells = [];
+    for (let x = 0; x < 16; x++) for (let r = 0; r < 8; r++) if ((p[x] >> r) & 1) cells.push(x * 8 + r);
+    const parts = [cells.length ? `electrodes ${cells.join(', ')}` : 'all electrodes off'];
+    const magnets = [p[16] & 0x2 ? 'M1' : '', p[16] & 0x1 ? 'M2' : ''].filter(Boolean);
+    if (magnets.length) parts.push(`magnet${magnets.length > 1 ? 's' : ''} ${magnets.join(' ')} on`);
+    if (p[OUT.feedback]) parts.push('feedback on');
+    parts.push(`heaters ${[26, 27, 28].map((i) => (p[i] ? `${p[i]} °C` : 'off')).join(' / ')}`);
+    const n = p[OUT.message];
+    if (n === MESSAGE_CLEAR) parts.push('clear the screen message');
+    else if (n) parts.push(`message “${String.fromCharCode(...p.subarray(PACKET, PACKET + n))}” (${n} bytes after the packet)`);
+    if (p[OUT.volts] || p[OUT.freq] || p[OUT.mode]) {
+      parts.push(`high voltage ${p[OUT.volts] ? `${p[OUT.volts]} V` : 'V kept'}, ${p[OUT.freq] ? `${p[OUT.freq] * 10} Hz` : 'Hz kept'}, ${p[OUT.mode] === 1 ? 'DC' : p[OUT.mode] === 2 ? 'AC' : 'mode kept'}`);
+    }
+    if (p[OUT.save] === 1) parts.push('SAVE settings to flash');
+    if (p[OUT.command]) parts.push(`command: ${Object.keys(COMMAND).find((k) => COMMAND[k] === p[OUT.command]) || p[OUT.command]}`);
+    if (bytes.length > PACKET && !n) parts.push(`+ ${bytes.length - PACKET} more bytes`);
+    return parts.join(' · ');
+  }
+
+  // What an answer says, in words.
+  function describeIn(bytes) {
+    if (bytes.length < REPLY) return `${bytes.length} bytes`;
+    const info = decodeReply(bytes);
+    const parts = [info.sensed.length ? `senses ${info.sensed.join(', ')}` : 'senses nothing'];
+    const temps = info.temps.map((t, i) => (t === null ? null : `T${i + 1} ${t} °C`)).filter(Boolean);
+    if (temps.length) parts.push(temps.join(' '));
+    parts.push(`${info.board.name} (id 0x${info.board.id.toString(16).padStart(2, '0')})`);
+    if (info.protocol) parts.push(`protocol ${info.protocol}`);
+    if (bytes.length >= STATUS) parts.push(`result ${info.result}, ${info.state}, frame ${info.frame} of ${info.stored}`);
+    return parts.join(' · ');
+  }
+
   // --- the link -------------------------------------------------------------------------------
   // One exchange at a time: what came in before it is dropped, the bytes are written, and the
   // answer is awaited. The firmware has no start marker: it counts bytes and acts on every 32nd.
@@ -221,6 +269,10 @@
       this.pumping = false;
       this.closed = false;
       this.onLost = null;
+      // For a traffic log: tap({ dir, bytes, wait }) with dir 'out' (written), 'in' (an answer),
+      // 'none' (no answer within `wait` ms), 'text' (the device's start-up text) or 'extra'
+      // (bytes nothing asked for, dropped).
+      this.tap = null;
       transport.onData = (chunk) => this.receive(chunk);
       transport.onClose = () => this.lost();
     }
@@ -233,17 +285,23 @@
       if (this.closed) return;
       for (const b of chunk) this.inbox.push(b);
       // The start-up line is dropped wherever it comes.
-      for (let n = textLine(this.inbox); n; n = textLine(this.inbox)) this.inbox.splice(0, n);
+      for (let n = textLine(this.inbox); n; n = textLine(this.inbox)) this.log('text', this.inbox.splice(0, n));
       const w = this.waiting;
       if (!w) {
-        if (this.inbox.length > 64) this.inbox = []; // nothing asked for it
+        if (this.inbox.length > 64) this.log('extra', this.inbox.splice(0)); // nothing asked for it
         return;
       }
       if (this.inbox.length >= w.expect) {
         this.waiting = null;
         this.timers.clearTimeout(w.timer);
-        w.resolve(Uint8Array.from(this.inbox.splice(0, w.expect)));
+        const answer = Uint8Array.from(this.inbox.splice(0, w.expect));
+        this.log('in', answer);
+        w.resolve(answer);
       }
+    }
+
+    log(dir, bytes, extra = {}) {
+      if (this.tap && (bytes.length || dir === 'none')) this.tap({ dir, bytes: Uint8Array.from(bytes), ...extra });
     }
 
     // Writes `bytes`, then resolves with the `expect` bytes answered, or null if none came within
@@ -251,15 +309,20 @@
     exchange(bytes, expect, wait = this.opts.timeout) {
       const run = async () => {
         if (this.closed) return null;
+        if (this.inbox.length) this.log('extra', this.inbox);
         this.inbox = [];
         const answer = new Promise((resolve) => {
           const timer = this.timers.setTimeout(() => {
-            if (this.waiting && this.waiting.resolve === resolve) this.waiting = null;
+            if (this.waiting && this.waiting.resolve === resolve) {
+              this.waiting = null;
+              this.log('none', [], { wait });
+            }
             resolve(null);
           }, wait);
           this.waiting = { expect, resolve, timer };
         });
         try {
+          this.log('out', bytes);
           await this.transport.write(bytes);
         } catch {
           this.lost();
@@ -370,7 +433,7 @@
       this.sensed = [];
       this.live = false;
       this.feedback = false;
-      this.targets = [DEFAULT_TEMP, DEFAULT_TEMP, DEFAULT_TEMP];
+      this.targets = [null, null, null]; // heater targets set here (°C), null: off
       this.cells = []; // the frame on screen
       this.frameTargets = null; // heater targets the frame on screen sets (°C or null ×3), if any
       this.frameMessage = null; // the message the frame on screen puts on the device's screen, if any
@@ -381,6 +444,7 @@
       this.pollTimer = null;
       this.run = null; // a sequence running on the device: { frames, frame, state }
       this.label = '';
+      this.tap = null; // a traffic log: see Link.tap
     }
 
     get connected() {
@@ -432,6 +496,7 @@
       const link = new Link(transport, this.linkOptions);
       this.link = link;
       link.onLost = () => this.lost(link);
+      link.tap = (e) => this.tap && this.tap(e);
       this.label = label;
       this.live = false;
       this.lastSent = null;
@@ -549,6 +614,7 @@
       this.on.change();
     }
 
+    // Heater targets set here (°C, or null: off), for heaters the frame on screen doesn't set.
     setTargets(temps) {
       this.targets = [0, 1, 2].map((i) => clampTemp(temps[i]));
       if (this.link) this.push();
@@ -572,10 +638,12 @@
       return { ok: true };
     }
 
-    // Live off, everything off on the device (a message the page put on its screen too).
+    // Live off, everything off on the device: the heaters too, and a message the page put on its
+    // screen.
     allOff() {
       this.live = false;
       this.note = null;
+      this.targets = [null, null, null];
       const done = this.link ? this.push() : Promise.resolve(true);
       this.on.change();
       return done;
@@ -589,6 +657,7 @@
       this.live = false;
       this.note = null;
       if (allOff && !link.closed) {
+        this.targets = [null, null, null];
         if (this.run) await this.command(COMMAND.stop);
         this.run = null;
         await this.push();
@@ -604,7 +673,9 @@
       if (!link || link.closed) return;
       this.timers.clearTimeout(this.pollTimer);
       try {
-        const done = link.transport.write(this.run ? encodeFrame([], { command: COMMAND.stop }) : encodeFrame([], { temps: this.targets, message: this.shown ? '' : null }));
+        const bytes = this.run ? encodeFrame([], { command: COMMAND.stop }) : encodeFrame([], { temps: null, message: this.shown ? '' : null });
+        link.log('out', bytes);
+        const done = link.transport.write(bytes);
         if (done && done.catch) done.catch(() => {});
       } catch {
         // the page is going anyway
@@ -703,8 +774,8 @@
   }
 
   return {
-    BAUD, PACKET, REPLY, STATUS, COLUMNS, CELLS, MAX_FRAMES, DEFAULT_TEMP, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND, VOLTS, FREQ, cleanHV,
-    MESSAGE_SHOWN, cleanMessage, RESULTS, RUN_STATES, encodeFrame, cellsIn, boardInfo, decodeReply, crc16, encodeSequence, decodeSequence, sameBytes,
+    BAUD, PACKET, REPLY, STATUS, COLUMNS, CELLS, MAX_FRAMES, HEATER_OFF, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND, VOLTS, FREQ, cleanHV,
+    MESSAGE_SHOWN, cleanMessage, hex, describeOut, describeIn, RESULTS, RUN_STATES, encodeFrame, cellsIn, boardInfo, decodeReply, crc16, encodeSequence, decodeSequence, sameBytes,
     textLine, Link, Session,
   };
 });

@@ -345,8 +345,11 @@ the port.
   Properties). They are sent when the device connects and when they change, and last until it is
   switched off; **Save to device** writes them to its memory, so it starts with them (its sound
   and the feedback switch are saved too). Ordinary frames leave them alone.
-- **Temperatures** (temperature adapter): the three readings, and their targets (20–120 °C,
-  25 to start with, as the original), kept between visits.
+- **Temperatures** (temperature adapter): the three readings, and targets (20–120 °C) for heaters
+  the sequence doesn't set. Empty or 0 = **off**, which is how they start on every visit: an unset
+  heater is sent as 0. (The original controller sends 25 °C, but the adapter's PID controller then
+  keeps heating a cooler cartridge to 25; with 0 its output stays at 0.) **Switch all off**,
+  disconnecting and closing the page switch the heaters off too.
 - **Sequence on the device:** **Send to device**, **Run on the device** and **Stop** load the whole sequence,
   with each frame's time, into the device and run it on its own clock, with progress. Today's
   firmware can't do that: it only follows live frames, so these stay off and say so. The protocol a
@@ -354,6 +357,14 @@ the port.
   live protocol.
 - Without a device: open `index.html#sim` (or `#sim1`, which can also take a whole sequence) and
   use **Simulated OpenDrop** in the Device tab.
+- **Traffic log** (Device tab, for debugging): with **Log what is sent and what comes back** on,
+  every packet written to the port and every answer is listed with the time, what it says
+  (`describeOut` / `describeIn` in `js/device.js`) and its bytes in hex; also answers that never
+  came, the device's start-up text and stray bytes. Repeats (the same packet and answer, like the
+  status check every second) fold into "×N"; temperature readings, which change a little every
+  time, don't count as a difference, and the entry shows the latest. **Copy** and **Save…** give it as text; it keeps the
+  last 3000 entries and costs nothing while off. The port can only be open in one program at a
+  time, so this is the way to see the traffic while the page is connected (`js/seriallog.js`).
 
 ## Kept between visits
 
@@ -513,7 +524,7 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
   the board, `js/chart.js` the timing chart, `js/timeline.js` the timeline and `js/app.js` the page
   wiring. `js/device.js` talks to the OpenDrop (bytes, lining up, the session), `js/device-sim.js`
   is a simulated OpenDrop, `js/serial.js` the Web Serial port and `js/devicepanel.js` the Device
-  tab; see `docs/device-protocol.md`. `js/process.js` is the process (tiles, arrows, stretches,
+  tab (`js/seriallog.js` its traffic log); see `docs/device-protocol.md`. `js/process.js` is the process (tiles, arrows, stretches,
   loops, checks, layout, a run's way through it), `js/stretch.js` puts it on the board (droplets
   coming in, each tile's frames, the whole process laid out along one way), `js/runner.js` runs it, `js/processview.js` and
   `js/processpanel.js` are the process view and its Properties, and `js/sync.js` keeps two tabs in

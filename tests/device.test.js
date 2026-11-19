@@ -31,7 +31,8 @@ test('a frame: one byte per column, bit = row; magnets, feedback, temperatures a
   assert.equal(f[23], 4, 'the command (protocol 1), in byte 23');
   assert.equal(f[25], 0, 'not saving the settings');
   assert.deepEqual(Array.from(f.subarray(29, 32)), [0, 0, 0], 'no high voltage set: 0 = the device keeps its own');
-  assert.deepEqual(Array.from(D.encodeFrame([]).subarray(26, 29)), [25, 25, 25], 'targets default to 25 °C, as the original sends');
+  assert.deepEqual(Array.from(D.encodeFrame([]).subarray(26, 29)), [0, 0, 0], 'heaters off unless set: 0 (not the original’s 25 °C, which keeps them heating)');
+  assert.deepEqual(Array.from(D.encodeFrame([], { temps: [null, 40, ''] }).subarray(26, 29)), [0, 40, 0], 'null or empty: off');
   const seq = new Sequence();
   seq.set(9, 3, true);
   seq.set(128, 3, true);
