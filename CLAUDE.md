@@ -11,7 +11,7 @@ its `.json` frame files.
 
 - Run: open `index.html` in Chrome or Edge (double-click works; no server, no build, no
   dependencies). `index.html#sim` adds a **Simulated OpenDrop** button to the Device tab;
-  `#sim1` simulates one that also speaks protocol 1.
+  `#sim1` simulates one that also speaks protocol 1, `#simstock` one with stock firmware.
 - All tests: `node --test` (Node 20+); or `node --test tests/*.test.js`.
 - One file: `node --test tests/device.test.js`. One test: `node --test --test-name-pattern="screen message" tests/device.test.js`.
 - Syntax check: `node --check js/<file>.js` (there is no linter or package.json).
@@ -64,9 +64,13 @@ user's own custom firmware (separate repo, `../firmware_custom`; its byte map is
   (0 = keep). Ordinary frames send 0 in all of these; the high voltage goes once on connect or
   change, the message only when the screen should change.
 - heater targets (26–28) are applied every packet: 0 = off (the default), never 25.
+- command frames (a message, save or high voltage: `isCommand`) get a 25th answer byte,
+  `0xA0 | flags` (0x01 HV applied, 0x02 saved, 0x04 message stored, 0x08 menu open: HV/save
+  ignored); ordinary frames and lining up stay at 24. No 25th byte = stock firmware: no more
+  messages to it (their text would knock it out of step).
 - byte 23 is the command of "protocol 1" (whole sequence run on the device's clock), a proposal
   that no firmware implements yet.
-`js/device-sim.js` mirrors the firmware byte for byte; when the firmware's protocol changes,
+`js/device-sim.js` mirrors the firmware byte for byte (`firmware: 'stock'`, `#simstock`, for the original); when the firmware's protocol changes,
 change `device.js`, the simulator, `docs/device-protocol.md` and the tests together.
 `js/serial.js` is Web Serial; `js/devicepanel.js` the Device tab; `js/seriallog.js` its traffic
 log (`Link.tap` sees every packet and answer).

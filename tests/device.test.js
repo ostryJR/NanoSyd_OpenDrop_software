@@ -8,7 +8,7 @@ const D = require('../js/device.js');
 const { SimulatedOpenDrop } = require('../js/device-sim.js');
 const { Sequence } = require('../js/model.js');
 
-const FAST = { timeout: 80, settle: 20, boot: 60 };
+const FAST = { timeout: 80, settle: 20, boot: 60, ack: 40 };
 const until = async (cond, ms = 2000) => {
   const end = Date.now() + ms;
   while (!cond()) {
@@ -96,9 +96,9 @@ test('one frame in flight: while one is out, only the newest waiting one is sent
 });
 
 function session(opts = {}) {
-  const events = { boards: [], lost: 0, changes: 0 };
+  const events = { boards: [], lost: 0, changes: 0, notices: [] };
   const s = new D.Session(
-    { board: (b) => events.boards.push(b.name), lost: () => events.lost++, change: () => events.changes++ },
+    { board: (b) => events.boards.push(b.name), lost: () => events.lost++, change: () => events.changes++, notice: (text) => events.notices.push(text) },
     { poll: 40, pollFeedback: 20, pollRun: 15, link: FAST, ...opts }
   );
   return { s, events };
@@ -215,6 +215,109 @@ test('the screen message: live, the frame’s message goes once; a note goes ove
   await until(() => sim.message === '');
   assert.deepEqual(sim.messages, ['Mixing', 'Add the sample?', 'Mixing', '', 'Heating', '']);
   await s.detach();
+});
+
+test('command frames: a message, save or high voltage; the confirmation byte, 0xA0 | flags', () => {
+  assert.ok(!D.isCommand(D.encodeFrame([1, 2, 3], { feedback: true, temps: [40, 0, 0] })), 'an ordinary frame');
+  assert.ok(!D.isCommand(new Uint8Array(31)), 'lining up');
+  assert.ok(D.isCommand(D.encodeFrame([], { message: 'Hi' })));
+  assert.ok(D.isCommand(D.encodeFrame([], { message: '' })), 'a clear');
+  assert.ok(D.isCommand(D.encodeFrame([], { save: true })));
+  assert.ok(D.isCommand(D.encodeFrame([], { hv: { mode: 'dc' } })));
+  assert.deepEqual(D.decodeAck(0xa3), { hv: true, saved: true, msg: false, menu: false });
+  assert.deepEqual(D.decodeAck(0xac), { hv: false, saved: false, msg: true, menu: true });
+  assert.deepEqual(D.decodeAck(0xa0), { hv: false, saved: false, msg: false, menu: false });
+  assert.equal(D.decodeAck(0x53), null, 'high nibble not 0xA: not a confirmation');
+  assert.equal(D.decodeAck(undefined), null, 'missing');
+});
+
+test('the link: a command frame is answered with 25 bytes, an ordinary one with 24; stock firmware sends no 25th', async () => {
+  const sim = new SimulatedOpenDrop();
+  const link = new D.Link(sim, FAST);
+  await link.sync();
+  const plain = await link.exchange(D.encodeFrame([3]), D.REPLY);
+  assert.equal(plain.length, 24);
+  const hv = await link.exchange(D.encodeFrame([3], { hv: { volts: 120 }, save: true }), D.REPLY);
+  assert.equal(hv.length, 25);
+  assert.deepEqual(D.decodeAck(hv[24]), { hv: true, saved: true, msg: false, menu: false });
+  const msg = await link.exchange(D.encodeFrame([3], { message: 'Hi' }), D.REPLY);
+  assert.equal(msg[24], 0xa4);
+  await link.close();
+
+  const stock = new SimulatedOpenDrop({ firmware: 'stock' });
+  const l2 = new D.Link(stock, FAST);
+  const seen = [];
+  l2.tap = (e) => seen.push(e);
+  await l2.sync();
+  const t0 = Date.now();
+  const a = await l2.exchange(D.encodeFrame([4], { hv: { volts: 120 } }), D.REPLY);
+  assert.equal(a.length, 24, 'the answer, after waiting for a confirmation that doesn’t come');
+  assert.ok(Date.now() - t0 >= 35);
+  assert.ok(seen[seen.length - 1].noAck, 'the log says so');
+  assert.deepEqual(stock.hv, { volts: 240, hz: 1000, ac: false }, 'stock firmware ignores the high voltage');
+  assert.equal((await l2.exchange(D.encodeFrame([5]), D.REPLY)).length, 24);
+  assert.deepEqual(last(stock), [5], 'still in step');
+  await l2.close();
+});
+
+test('high voltage and save: confirmed; menu open on the device; not confirmed by stock firmware', async (t) => {
+  const sim = new SimulatedOpenDrop();
+  const { s } = session();
+  t.after(() => s.detach());
+  await s.attach(sim);
+  sim.menu = true;
+  assert.deepEqual(await s.sendHV({ volts: 150 }, { save: true }), { ok: false, reason: 'menu open on the device, try again' });
+  assert.deepEqual(sim.hv, { volts: 240, hz: 1000, ac: false }, 'ignored while the menu is open');
+  assert.equal(sim.saves, 0);
+  sim.menu = false;
+  assert.deepEqual(await s.sendHV({ volts: 150 }, { save: true }), { ok: true });
+  assert.equal(sim.hv.volts, 150);
+  assert.equal(sim.saves, 1);
+  await s.detach();
+
+  const stock = new SimulatedOpenDrop({ firmware: 'stock' });
+  await s.attach(stock);
+  assert.deepEqual(await s.sendHV({ volts: 150 }), { ok: false, reason: 'not confirmed (no nanoSYD firmware?)' });
+  assert.ok(s.stock);
+  assert.equal(s.state, 'on', 'the device still answers');
+});
+
+test('a message that arrives incomplete is sent again', async (t) => {
+  const sim = new SimulatedOpenDrop();
+  const { s, events } = session();
+  t.after(() => s.detach());
+  await s.attach(sim);
+  sim.garble = 1;
+  s.show([12], null, 'Mixing');
+  s.setLive(true);
+  await until(() => s.shown === 'Mixing');
+  assert.deepEqual(sim.messages, ['Mixing'], 'shown on the second try');
+  assert.deepEqual(events.notices, []);
+  sim.garble = 5;
+  s.show([12], null, 'Heating');
+  await until(() => s.shown === 'Heating');
+  assert.equal(sim.garble, 2, 'sent three times, then given up');
+  assert.deepEqual(events.notices, ['Message not shown on the device: it arrived incomplete']);
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(sim.garble, 2, 'and not sent again by polling');
+});
+
+test('stock firmware: a message isn’t confirmed; the stream is lined up again and no more messages go', async (t) => {
+  const sim = new SimulatedOpenDrop({ firmware: 'stock' });
+  const { s, events } = session();
+  t.after(() => s.detach());
+  await s.attach(sim);
+  s.show([12], null, 'Mixing');
+  s.setLive(true);
+  await until(() => events.notices.length === 1);
+  assert.deepEqual(events.notices, ['Message not confirmed (no nanoSYD firmware?). Messages are not sent to this device']);
+  assert.ok(s.stock);
+  await until(() => !s.syncing && sim.count === 0);
+  s.show([20], null, 'Heating');
+  await until(() => last(sim).join() === '20');
+  assert.equal(sim.count, 0, 'packets land whole: no text after them');
+  assert.equal(s.state, 'on');
+  assert.equal(events.notices.length, 1);
 });
 
 test('a device that stops answering is marked so and lined up again when it answers; unplugging ends the session', async () => {

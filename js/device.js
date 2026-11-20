@@ -42,6 +42,13 @@
   const COMMAND = { frame: 0, load: 1, run: 2, stop: 3, status: 4 };
   const RESULTS = ['ok', 'bad checksum', 'too long', 'busy', 'unknown command', 'nothing loaded'];
   const RUN_STATES = ['idle', 'running', 'done'];
+  // The nanoSYD firmware's confirmation: after the 24-byte answer to a command frame (a message,
+  // save or high voltage: isCommand) it sends one more byte, 0xA0 | flags. Stock firmware never
+  // does. Ordinary frames are answered with 24 bytes only.
+  const ACK = { mark: 0xa0, hv: 0x01, saved: 0x02, msg: 0x04, menu: 0x08 };
+  const ACK_WAIT = 300; // ms to wait for it after the 24 bytes
+  const NO_FIRMWARE = 'not confirmed (no nanoSYD firmware?)';
+  const MENU_OPEN = 'menu open on the device, try again';
 
   // High-voltage settings as sent: { volts, hz, mode } each null (keep the device's) or in range.
   function cleanHV(hv) {
@@ -98,6 +105,18 @@
       for (let i = 0; i < text.length; i++) out[PACKET + i] = text.charCodeAt(i);
     }
     return out;
+  }
+
+  // A command frame: one the nanoSYD firmware confirms with a 25th byte (message, save or high voltage).
+  function isCommand(bytes) {
+    if (!bytes || bytes.length < PACKET) return false;
+    return bytes[OUT.message] !== 0 || bytes[OUT.save] === 1 || bytes[OUT.volts] !== 0 || bytes[OUT.freq] !== 0 || bytes[OUT.mode] !== 0;
+  }
+
+  // The confirmation byte: { hv, saved, msg, menu }, or null if it is missing or isn't one.
+  function decodeAck(byte) {
+    if (typeof byte !== 'number' || (byte & 0xf0) !== ACK.mark) return null;
+    return { hv: Boolean(byte & ACK.hv), saved: Boolean(byte & ACK.saved), msg: Boolean(byte & ACK.msg), menu: Boolean(byte & ACK.menu) };
   }
 
   // The electrodes on in frame f of a sequence.
@@ -247,7 +266,20 @@
     parts.push(`${info.board.name} (id 0x${info.board.id.toString(16).padStart(2, '0')})`);
     if (info.protocol) parts.push(`protocol ${info.protocol}`);
     if (bytes.length >= STATUS) parts.push(`result ${info.result}, ${info.state}, frame ${info.frame} of ${info.stored}`);
+    else if (bytes.length > REPLY) parts.push(describeAck(bytes[REPLY]));
     return parts.join(' · ');
+  }
+
+  // The confirmation byte, in words.
+  function describeAck(byte) {
+    const a = decodeAck(byte);
+    const code = `0x${byte.toString(16).padStart(2, '0')}`;
+    if (!a) return `byte ${code} (not a confirmation)`;
+    const done = [a.hv && 'high voltage applied', a.saved && 'saved', a.msg && 'message stored'].filter(Boolean);
+    const parts = [];
+    if (done.length) parts.push(`confirmed ${code}: ${done.join(', ')}`);
+    if (a.menu) parts.push(`${done.length ? '' : `confirmation ${code}: `}menu open: high voltage and save ignored`);
+    return parts.length ? parts.join('; ') : `confirmation ${code}: nothing done`;
   }
 
   // --- the link -------------------------------------------------------------------------------
@@ -258,12 +290,12 @@
     // transport: { write(bytes) -> Promise, close() -> Promise }; the link sets its onData(chunk)
     // and onClose(). Times in ms: timeout (an answer), settle (no answer by then means none is
     // coming), boot (a device that was just plugged in starting up).
-    constructor(transport, { timeout = 500, settle = 150, boot = 2500, timers = globalThis } = {}) {
+    constructor(transport, { timeout = 500, settle = 150, boot = 2500, ack = ACK_WAIT, timers = globalThis } = {}) {
       this.transport = transport;
-      this.opts = { timeout, settle, boot };
+      this.opts = { timeout, settle, boot, ack };
       this.timers = timers;
       this.inbox = [];
-      this.waiting = null; // { expect, resolve, timer }
+      this.waiting = null; // { expect, ack, reply, resolve, timer }
       this.queue = Promise.resolve();
       this.next = null; // the newest frame waiting to be sent: { bytes, resolve }
       this.pumping = false;
@@ -271,7 +303,8 @@
       this.onLost = null;
       // For a traffic log: tap({ dir, bytes, wait }) with dir 'out' (written), 'in' (an answer),
       // 'none' (no answer within `wait` ms), 'text' (the device's start-up text) or 'extra'
-      // (bytes nothing asked for, dropped).
+      // (bytes nothing asked for, dropped). An answer to a command frame that came without the
+      // confirmation byte has noAck: true.
       this.tap = null;
       transport.onData = (chunk) => this.receive(chunk);
       transport.onClose = () => this.lost();
@@ -291,13 +324,34 @@
         if (this.inbox.length > 64) this.log('extra', this.inbox.splice(0)); // nothing asked for it
         return;
       }
-      if (this.inbox.length >= w.expect) {
-        this.waiting = null;
-        this.timers.clearTimeout(w.timer);
-        const answer = Uint8Array.from(this.inbox.splice(0, w.expect));
-        this.log('in', answer);
-        w.resolve(answer);
+      if (w.reply) {
+        // The answer is in; this is the byte after it: the confirmation, if it is one.
+        if (!this.inbox.length) return;
+        if ((this.inbox[0] & 0xf0) === ACK.mark) this.finish(w, Uint8Array.from([...w.reply, this.inbox.shift()]));
+        else this.finish(w, w.reply, { noAck: true });
+        return;
       }
+      if (this.inbox.length >= w.expect) {
+        const answer = Uint8Array.from(this.inbox.splice(0, w.expect));
+        if (!w.ack) {
+          this.finish(w, answer);
+          return;
+        }
+        // A command frame: up to opts.ack ms more for the confirmation byte.
+        this.timers.clearTimeout(w.timer);
+        w.reply = answer;
+        w.timer = this.timers.setTimeout(() => {
+          if (this.waiting === w) this.finish(w, answer, { noAck: true });
+        }, this.opts.ack);
+        if (this.inbox.length) this.receive([]);
+      }
+    }
+
+    finish(w, answer, extra = {}) {
+      this.waiting = null;
+      this.timers.clearTimeout(w.timer);
+      this.log('in', answer, extra);
+      w.resolve(answer);
     }
 
     log(dir, bytes, extra = {}) {
@@ -305,8 +359,12 @@
     }
 
     // Writes `bytes`, then resolves with the `expect` bytes answered, or null if none came within
-    // `wait` ms or the link is gone.
+    // `wait` ms or the link is gone. A command frame (isCommand) answered with 24 bytes resolves
+    // with 25 if the confirmation byte followed within opts.ack ms. Only command frames get it:
+    // lining up sends zeros, which never are one. A confirmation that came too late is dropped
+    // as extra bytes here, before the next packet goes.
     exchange(bytes, expect, wait = this.opts.timeout) {
+      const ack = expect === REPLY && isCommand(bytes);
       const run = async () => {
         if (this.closed) return null;
         if (this.inbox.length) this.log('extra', this.inbox);
@@ -319,7 +377,7 @@
             }
             resolve(null);
           }, wait);
-          this.waiting = { expect, resolve, timer };
+          this.waiting = { expect, ack, reply: null, resolve, timer };
         });
         try {
           this.log('out', bytes);
@@ -419,9 +477,9 @@
 
   class Session {
     // on: { change() — anything shown changed; board(board) — a board was found or changed;
-    //       lost() — the device went away }
+    //       lost() — the device went away; notice(text, kind) — something to tell the user }
     constructor(on = {}, { poll = 1000, pollFeedback = 300, pollRun = 500, timers = globalThis, link = {} } = {}) {
-      this.on = { change() {}, board() {}, lost() {}, ...on };
+      this.on = { change() {}, board() {}, lost() {}, notice() {}, ...on };
       this.opts = { poll, pollFeedback, pollRun };
       this.timers = timers;
       this.linkOptions = { timers, ...link };
@@ -440,6 +498,9 @@
       this.note = null; // a message shown meanwhile (a run's question), over the frame's; null: none
       this.shown = null; // what the device's screen shows, as far as is known ('' = nothing; null: unknown)
       this.sending = null; // a message on its way (not sent again meanwhile)
+      this.resends = 0; // times the message on its way was sent again (it arrived incomplete)
+      this.stock = false; // a command went unconfirmed: no nanoSYD firmware, so no more messages
+      this.syncing = false; // lining up again after a message a stock device miscounted
       this.lastSent = null;
       this.pollTimer = null;
       this.run = null; // a sequence running on the device: { frames, frame, state }
@@ -479,6 +540,7 @@
     // The message to send with the next packet: only when the screen should change, and not while
     // the same one is on its way.
     get messageToSend() {
+      if (this.stock) return null; // stock firmware would count the text as the next packet
       const want = this.wantedMessage;
       return want === null || want === this.shown || want === this.sending ? null : cleanMessage(want);
     }
@@ -502,6 +564,8 @@
       this.lastSent = null;
       this.run = null;
       this.shown = null; // a message left from before stays until one is sent
+      this.stock = false;
+      this.resends = 0;
       this.setState('connecting');
       const ok = (await link.sync()) && this.link === link && (await this.push(true));
       if (this.link !== link) return false;
@@ -520,7 +584,7 @@
     // Returns false if the device didn't answer.
     async push(always = false) {
       const link = this.link;
-      if (!link || this.run) return true;
+      if (!link || this.run || this.syncing) return true;
       const message = this.messageToSend;
       const bytes = this.bytes();
       if (!always && sameBytes(bytes, this.lastSent)) return true;
@@ -542,10 +606,47 @@
         if (this.state === 'on') this.setState('silent');
         return false;
       }
-      if (message !== null) this.shown = message; // the next packet goes without the text
       this.take(answer);
       if (this.state === 'silent') this.setState('on');
+      if (message !== null) this.confirmMessage(link, message, decodeAck(answer[REPLY]));
       return true;
+    }
+
+    // What the confirmation byte says about a message just sent. Stored: the next packets go
+    // without the text. Arrived incomplete: sent again, twice at most. No confirmation: the
+    // firmware isn't nanoSYD's, and a stock device counted the text bytes as the start of the
+    // next packet, so the stream is lined up again and no more messages are sent.
+    confirmMessage(link, message, ack) {
+      if (ack && ack.msg) {
+        this.shown = message;
+        this.resends = 0;
+        return;
+      }
+      if (ack) {
+        if (this.resends < 2) {
+          this.resends++;
+          this.lastSent = null;
+          this.push();
+          return;
+        }
+        this.resends = 0;
+        this.shown = message; // not again and again
+        this.on.notice('Message not shown on the device: it arrived incomplete', 'warn');
+        return;
+      }
+      this.stock = true;
+      this.on.notice(`Message ${NO_FIRMWARE}. Messages are not sent to this device`, 'warn');
+      this.relineUp(link);
+    }
+
+    async relineUp(link) {
+      this.syncing = true;
+      const ok = await link.sync();
+      this.syncing = false;
+      if (link !== this.link) return;
+      this.lastSent = null;
+      if (ok) await this.push(true);
+      else if (this.state === 'on') this.setState('silent');
     }
 
     take(answer) {
@@ -635,6 +736,16 @@
       this.lastSent = null; // the next frame goes as usual
       if (!answer) return { ok: false, reason: "the device didn't answer" };
       this.take(answer);
+      if (!isCommand(bytes)) return { ok: true }; // nothing to set or save: nothing to confirm
+      const ack = decodeAck(answer[REPLY]);
+      if (!ack) {
+        this.stock = true;
+        return { ok: false, reason: NO_FIRMWARE };
+      }
+      if (ack.menu) return { ok: false, reason: MENU_OPEN };
+      const h = cleanHV(hv);
+      const hvAsked = h.volts !== null || h.hz !== null || h.mode !== null;
+      if ((hvAsked && !ack.hv) || (save && !ack.saved)) return { ok: false, reason: 'not confirmed by the device' };
       return { ok: true };
     }
 
@@ -695,6 +806,9 @@
       this.run = null;
       this.shown = null;
       this.sending = null;
+      this.resends = 0;
+      this.stock = false;
+      this.syncing = false;
       this.board = null;
       this.protocol = 0;
       this.sensed = [];
@@ -774,7 +888,7 @@
   }
 
   return {
-    BAUD, PACKET, REPLY, STATUS, COLUMNS, CELLS, MAX_FRAMES, HEATER_OFF, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND, VOLTS, FREQ, cleanHV,
+    BAUD, PACKET, REPLY, STATUS, ACK, ACK_WAIT, NO_FIRMWARE, MENU_OPEN, isCommand, decodeAck, describeAck, COLUMNS, CELLS, MAX_FRAMES, HEATER_OFF, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND, VOLTS, FREQ, cleanHV,
     MESSAGE_SHOWN, cleanMessage, hex, describeOut, describeIn, RESULTS, RUN_STATES, encodeFrame, cellsIn, boardInfo, decodeReply, crc16, encodeSequence, decodeSequence, sameBytes,
     textLine, Link, Session,
   };

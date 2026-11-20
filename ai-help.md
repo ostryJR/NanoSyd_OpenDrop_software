@@ -263,8 +263,9 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
   warming with nothing set means old firmware/app or a target typed in the Device tab.
 - Three heaters **T1–T3** (temperature adapter), targets 20–120 °C; two magnets **M1/M2**
   (magnet board). Set by **Temperature** and **Magnet** tiles or actions; they last until changed.
-- **Message** tiles put text on the OpenDrop's screen (custom firmware OpenDropVCustom only; older
-  firmware ignores it). It is only sent while **live** is on or in a run. Nothing on the screen?
+- **Message** tiles put text on the OpenDrop's screen (custom firmware OpenDropVCustom only; with
+  other firmware the page says "Message not confirmed (no nanoSYD firmware?)" and sends no more
+  messages until it reconnects). It is only sent while **live** is on or in a run. Nothing on the screen?
   Check live is on, the firmware is the custom one, and the text isn't hidden by its "INSERT
   CARTRIDGE" / "UNDER VOLTAGE!" warnings, which are drawn over it. Accents are dropped.
 - A temperature that **waits**: offline, it lasts the estimated time (ramp rates in the
@@ -280,7 +281,8 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
   the port. **Device → Connect…**, pick **Feather M0** in the browser's list.
 - Dot by the title: grey/amber/green/red (section 1). Board type shows in the Device tab.
 - **live** on the board makes the device show the frame on screen; **Switch all off** turns
-  everything off. Without a device: open `index.html#sim` and use **Simulated OpenDrop**.
+  everything off. Without a device: open `index.html#sim` and use **Simulated OpenDrop**
+  (`#simstock`: one with the original firmware, which confirms nothing).
 - Not in the list: wrong browser, another program has the port, or a charge-only USB cable.
 - Exported `.json` files open in the original controller, which only reads the first 200 frames.
 - **Traffic log** (Device tab, bottom): tick **Log what is sent and what comes back**, reproduce the
@@ -290,7 +292,10 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
   may differ, the latest is shown). Useful
   readings: × no answer after → = the device isn't answering (wrong firmware, busy in its menu,
   or the byte count is off); a message "…" packet followed by × = the firmware didn't read the
-  text bytes; the board id in ← answers says which board and adapter it reports. Ask the user
+  text bytes; the board id in ← answers says which board and adapter it reports. Answers to
+  message / high voltage / save packets are 25 bytes with nanoSYD firmware: "confirmed 0xa…:
+  high voltage applied, saved, message stored", or "menu open: high voltage and save ignored";
+  "no confirmation byte (stock firmware?)" = the firmware isn't nanoSYD's. Ask the user
   for this log when a device problem isn't clear from the photo.
 
 ---
@@ -312,6 +317,10 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
 | "A run is going: stop it to change things" | Editing during a run. | **■ Stop** first. |
 | "A run is going: the board follows it, so frames can’t be stepped through until it stops" | Scrolling, arrow keys, ◀ ▶ or clicking the timeline during a run. | Wait, or **■ Stop** the run. |
 | "High voltage not sent: …" / "Not saved: …" | No device connected, it didn't answer, or a sequence is running on it. | Connect (Device tab) and try again; the project's settings go again on reconnecting. |
+| "… not confirmed (no nanoSYD firmware?)" | The device answered but didn't confirm the high voltage, save or message: it runs the original (or an older custom) firmware. Messages then stop being sent to it until it reconnects. | Install the nanoSYD firmware (OpenDropVCustom), or do without high voltage, save and messages. |
+| "… menu open on the device, try again" | Someone is in the OpenDrop's own menu, so it ignored the high voltage / save. | Close the menu on the device, then **Save to device** again or change the setting (it also goes again on reconnecting). |
+| "… not confirmed by the device" | The firmware confirmed the packet but not the high voltage or save in it. | Try again; if it stays, update the firmware. |
+| "Message not shown on the device: it arrived incomplete" | The message's text was cut short three times (USB trouble). | Check the cable; the next message change sends it again. |
 | "A run is going in the other tab: stop it there to change things" | Another tab of the page is running the process. | Stop it in that tab (closing that tab ends the lock too). |
 | "This layout has no reservoirs" | Dispense on a layout without reservoirs. | Choose another **Layout**. |
 | "*N* frame(s) with a time of their own play at the default *t* s: add a Wait where it should pause" | A loaded OpenDrop file had frames of different lengths. | Add Wait tiles where it should pause. |

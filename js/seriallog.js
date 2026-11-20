@@ -27,7 +27,7 @@
       case 'out':
         return { arrow: '→', title: `sent ${e.bytes.length} bytes`, text: D.describeOut(e.bytes) };
       case 'in':
-        return { arrow: '←', title: `answer, ${e.bytes.length} bytes`, text: D.describeIn(e.bytes) };
+        return { arrow: '←', title: `answer, ${e.bytes.length} bytes`, text: D.describeIn(e.bytes) + (e.noAck ? ' · no confirmation byte (stock firmware?)' : '') };
       case 'none':
         return { arrow: '×', title: 'no answer', text: `nothing came back within ${e.wait} ms` };
       case 'text':
@@ -62,7 +62,7 @@
     // From the link (Session.tap).
     add(e) {
       if (!this.on) return;
-      const entry = { t: Date.now(), dir: e.dir, bytes: e.bytes, wait: e.wait, count: 1, row: null };
+      const entry = { t: Date.now(), dir: e.dir, bytes: e.bytes, wait: e.wait, noAck: Boolean(e.noAck), count: 1, row: null };
       const fold = this.dom.fold.checked;
       const n = this.entries.length;
       const last = this.entries[n - 1];
