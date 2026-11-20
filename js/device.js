@@ -119,10 +119,23 @@
     return { hv: Boolean(byte & ACK.hv), saved: Boolean(byte & ACK.saved), msg: Boolean(byte & ACK.msg), menu: Boolean(byte & ACK.menu) };
   }
 
-  // The electrodes on in frame f of a sequence.
-  function cellsIn(seq, f) {
+  // The magnets' control lines, magnet 1 first (as heat.MAGNETS: the firmware reads bit 0x2 of
+  // byte 16 as magnet 1, 0x1 as magnet 2).
+  const MAGNET_CELLS = [129, 128];
+
+  // The electrodes on in frame f of a sequence. With `controls` (the heaters and magnets in that
+  // frame, editor.controlsAt), a magnet that is on adds its control line even where the sequence
+  // has no frame f (past the end, a stretch with nothing on the board): the firmware switches a
+  // magnet off in any packet without its bit.
+  function cellsIn(seq, f, controls = null) {
     const out = [];
     for (let e = 0; e < CELLS; e++) if (seq.get(e, f)) out.push(e);
+    if (controls && Array.isArray(controls.magnets)) {
+      controls.magnets.forEach((on, i) => {
+        const e = MAGNET_CELLS[i];
+        if (on && e !== undefined && !out.includes(e)) out.push(e);
+      });
+    }
     return out;
   }
 
@@ -889,7 +902,7 @@
 
   return {
     BAUD, PACKET, REPLY, STATUS, ACK, ACK_WAIT, NO_FIRMWARE, MENU_OPEN, isCommand, decodeAck, describeAck, COLUMNS, CELLS, MAX_FRAMES, HEATER_OFF, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND, VOLTS, FREQ, cleanHV,
-    MESSAGE_SHOWN, cleanMessage, hex, describeOut, describeIn, RESULTS, RUN_STATES, encodeFrame, cellsIn, boardInfo, decodeReply, crc16, encodeSequence, decodeSequence, sameBytes,
+    MESSAGE_SHOWN, cleanMessage, hex, describeOut, describeIn, RESULTS, RUN_STATES, encodeFrame, cellsIn, MAGNET_CELLS, boardInfo, decodeReply, crc16, encodeSequence, decodeSequence, sameBytes,
     textLine, Link, Session,
   };
 });

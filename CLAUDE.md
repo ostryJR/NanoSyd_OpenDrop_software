@@ -64,6 +64,9 @@ user's own custom firmware (separate repo, `../firmware_custom`; its byte map is
   (0 = keep). Ordinary frames send 0 in all of these; the high voltage goes once on connect or
   change, the message only when the screen should change.
 - heater targets (26–28) are applied every packet: 0 = off (the default), never 25.
+- magnets are bits of byte 16 (electrodes 129 = M1, 128 = M2), also applied every packet: a packet
+  without the bit switches the magnet off. So `devicepanel.paint` sends `cellsIn(seq, f,
+  ed.controlsAt(f))`, which adds a magnet that is on even where the sequence has no frame f.
 - command frames (a message, save or high voltage: `isCommand`) get a 25th answer byte,
   `0xA0 | flags` (0x01 HV applied, 0x02 saved, 0x04 message stored, 0x08 menu open: HV/save
   ignored); ordinary frames and lining up stay at 24. No 25th byte = stock firmware: no more

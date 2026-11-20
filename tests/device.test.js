@@ -39,6 +39,19 @@ test('a frame: one byte per column, bit = row; magnets, feedback, temperatures a
   assert.deepEqual(D.cellsIn(seq, 3), [9, 128]);
 });
 
+test('a magnet that is on stays on where the sequence has no frame', () => {
+  const H = require('../js/heat.js');
+  assert.deepEqual(D.MAGNET_CELLS, H.MAGNETS.map((m) => m.e), 'same control lines as heat.MAGNETS');
+  const seq = new Sequence();
+  seq.set(9, 1, true);
+  const on1 = { targets: [null, null, null], magnets: [true, false] };
+  assert.deepEqual(D.cellsIn(seq, 5, on1), [129], 'past the end: magnet 1 still on');
+  assert.deepEqual(D.cellsIn(seq, 1, { targets: [null, null, null], magnets: [true, true] }), [9, 129, 128]);
+  assert.deepEqual(D.cellsIn(seq, 5, H.emptyControls()), [], 'magnets off: nothing added');
+  const bytes = D.encodeFrame(D.cellsIn(seq, 5, on1));
+  assert.equal(bytes[16] & 0x2, 0x2, 'byte 16 bit 0x2: the firmware keeps magnet 1 on');
+});
+
 test('an answer: sensed electrodes (bits reversed), temperatures, protocol and board', () => {
   const a = new Uint8Array(24);
   a[1] = 0b01000000; // bit 6 = row 1: electrode 9

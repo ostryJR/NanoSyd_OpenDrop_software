@@ -262,7 +262,8 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
   every visit; Switch all off, disconnecting and closing the page switch them off too. A heater
   warming with nothing set means old firmware/app or a target typed in the Device tab.
 - Three heaters **T1–T3** (temperature adapter), targets 20–120 °C; two magnets **M1/M2**
-  (magnet board). Set by **Temperature** and **Magnet** tiles or actions; they last until changed.
+  (magnet board). Set by **Temperature** and **Magnet** tiles or actions; they last until changed, on the device
+  too (a magnet stays on past the last frame and at stops, until switched off or the run ends).
 - **Message** tiles put text on the OpenDrop's screen (custom firmware OpenDropVCustom only; with
   other firmware the page says "Message not confirmed (no nanoSYD firmware?)" and sends no more
   messages until it reconnects). It is only sent while **live** is on or in a run. Nothing on the screen?
