@@ -1,7 +1,9 @@
 /* The timeline under the board, like a video editor's: one track per droplet, each action a clip
  * from its first to its last frame, links between droplets drawn as curves, and a playhead on the
- * frame on screen. Click a clip to select it, drag it to move it in time, double-click it to go
- * to its first frame; click or drag the ruler to go to a frame; Ctrl/⌘ + wheel zooms. Plain DOM. */
+ * frame on screen. Click a clip to select it, drag it to move it in time (dashed lines show where
+ * it would start and end, solid where another clip ends or starts there), double-click it to go
+ * to its first frame; drag a track's name up or down to reorder the tracks; click or drag the
+ * ruler to go to a frame; Ctrl/⌘ + wheel zooms. Plain DOM. */
 (function (root) {
   'use strict';
 
@@ -27,7 +29,7 @@
 
   class Timeline {
     // onSelect(id or null), onFrame(frame), onPreview(id, frame) -> { valid, reason, from, to },
-    // onMove(id, frame).
+    // onMove(id, frame), onReorder([track keys, top to bottom]).
     constructor(host, callbacks = {}) {
       this.host = host;
       this.cb = callbacks;
@@ -37,6 +39,8 @@
       this.px = 12;
       this.layout = new Map(); // clip id -> { x0, x1, y } once drawn
       this.drag = null;
+      this.trackBoxes = []; // { key, top, height } of each track as drawn, top to bottom (px in the body)
+      this.reorder = null; // a track's name being dragged: { key, y0, at, moved }
 
       this.scroller = div('tl-scroll', host);
       this.canvas = div('tl-canvas', this.scroller);
@@ -48,6 +52,11 @@
       this.playhead = div('tl-playhead', this.canvas);
       this.ghost = div('tl-ghost', this.canvas);
       this.ghost.hidden = true;
+      // While a clip is dragged: where it would start and where it would end, over every track.
+      this.guides = [div('tl-guide', this.canvas), div('tl-guide', this.canvas)];
+      for (const g of this.guides) g.hidden = true;
+      this.dropLine = div('tl-drop', this.canvas); // where a dragged track would go
+      this.dropLine.hidden = true;
       this.tip = div('tl-tip', host);
       this.tip.hidden = true;
       this.empty = div('tl-empty', host, 'Nothing drawn yet: draw a path, drop a template, paint, or press a reservoir button.');
@@ -101,8 +110,10 @@
     //   another tile's; bands: [{ id, name, from, to, open, visit }] the process's tiles (visit: which time through);
     //   stops: [{ frame, text, end }] where the whole process stops for a question, a decision or a
     //   round (after frame `frame`); a clip with `locked` is another stretch's: a click, no drag)
+    //   order: track keys top to bottom as last reordered (tracks not in it go below, in order of
+    //   their first clip)
     update(data) {
-      const key = JSON.stringify([data.frames, data.selection, data.clips, data.bands, data.stops]);
+      const key = JSON.stringify([data.frames, data.selection, data.clips, data.bands, data.stops, data.order]);
       this.data = data;
       if (key !== this.key) {
         this.key = key;
@@ -121,17 +132,23 @@
       return HEAD + (frame - 1) * this.px;
     }
 
-    // Tracks in order of their first clip, each with its clips in rows so they don't overlap
-    // (a clip may start in the frame where the one before it hands over).
+    // Tracks in the order they were put in (data.order), the others after them in order of their
+    // first clip; each with its clips in rows so they don't overlap (a clip may start in the frame
+    // where the one before it hands over).
     tracks() {
       const tracks = new Map();
       for (const c of this.data.clips) {
-        if (!tracks.has(c.track)) tracks.set(c.track, { name: c.trackName, short: c.trackShort || '', colour: c.colour, clips: [], first: c.from });
+        if (!tracks.has(c.track)) tracks.set(c.track, { key: c.track, name: c.trackName, short: c.trackShort || '', colour: c.colour, clips: [], first: c.from });
         const t = tracks.get(c.track);
         t.clips.push(c);
         t.first = Math.min(t.first, c.from);
       }
-      const list = [...tracks.values()].sort((a, b) => a.first - b.first);
+      const order = Array.isArray(this.data.order) ? this.data.order : [];
+      const rank = (t) => {
+        const i = order.indexOf(t.key);
+        return i < 0 ? Infinity : i;
+      };
+      const list = [...tracks.values()].sort((a, b) => (rank(a) === rank(b) ? 0 : rank(a) < rank(b) ? -1 : 1) || a.first - b.first);
       for (const t of list) {
         t.clips.sort((a, b) => a.from - b.from || a.to - b.to);
         t.rows = [];
@@ -169,6 +186,7 @@
 
       this.body.replaceChildren();
       this.layout.clear();
+      this.trackBoxes = [];
       let y = 0;
       // The process's tiles on this board: a band over each one's frames; a click opens it.
       const stops = this.data.stops || [];
@@ -200,7 +218,9 @@
         track.style.height = `${height}px`;
         const head = div('tl-head', track);
         head.style.setProperty('--c', t.colour);
-        head.title = t.short && t.short !== t.name ? `${t.name} (${t.short})` : t.name;
+        head.title = `${t.short && t.short !== t.name ? `${t.name} (${t.short})` : t.name}\nDrag up or down to move this track`;
+        this.trackBoxes.push({ key: t.key, top: y, height });
+        this.wireHead(head, track, t.key);
         div('tl-chip', head);
         // The short name (D1 ...) first, as merged droplets are named by it, then the full name.
         if (t.short && t.short !== t.name) div('tl-short', head, t.short);
@@ -291,8 +311,54 @@
       }
     }
 
+    // A track's name: drag it up or down to put the track elsewhere (a line shows where).
+    wireHead(head, track, key) {
+      head.addEventListener('pointerdown', (evt) => {
+        if (evt.button !== 0) return;
+        evt.preventDefault(); // no text selection
+        evt.stopPropagation();
+        head.setPointerCapture(evt.pointerId);
+        this.reorder = { key, y0: evt.clientY, at: null, moved: false };
+      });
+      head.addEventListener('pointermove', (evt) => {
+        const r = this.reorder;
+        if (!r || r.key !== key) return;
+        if (!r.moved && Math.abs(evt.clientY - r.y0) < 4) return;
+        r.moved = true;
+        track.classList.add('moving');
+        const y = evt.clientY - this.body.getBoundingClientRect().top;
+        // The gap nearest the pointer: before the first track whose middle is below it.
+        const boxes = this.trackBoxes;
+        let at = boxes.findIndex((b) => y < b.top + b.height / 2);
+        if (at < 0) at = boxes.length;
+        r.at = at;
+        const end = boxes[boxes.length - 1];
+        const lineY = at < boxes.length ? boxes[at].top : end.top + end.height;
+        this.dropLine.hidden = false;
+        this.dropLine.style.top = `${RULER + lineY - 1}px`;
+      });
+      const finish = (apply) => {
+        const r = this.reorder;
+        if (!r || r.key !== key) return;
+        this.reorder = null;
+        this.dropLine.hidden = true;
+        track.classList.remove('moving');
+        if (!apply || !r.moved || r.at === null) return;
+        const keys = this.trackBoxes.map((b) => b.key);
+        const from = keys.indexOf(key);
+        const to = r.at > from ? r.at - 1 : r.at;
+        if (from < 0 || to === from) return;
+        keys.splice(from, 1);
+        keys.splice(to, 0, key);
+        if (this.cb.onReorder) this.cb.onReorder(keys);
+      };
+      head.addEventListener('pointerup', () => finish(true));
+      head.addEventListener('pointercancel', () => finish(false));
+    }
+
     // A clip: click selects, double-click goes to its first frame, drag moves it in time (the
-    // ghost shows where it would go, red where it can't).
+    // ghost shows where it would go, red where it can't; dashed lines where it would start and
+    // end, solid where another clip ends or starts on that line).
     wireClip(node, c) {
       node.addEventListener('pointerdown', (evt) => {
         if (evt.button !== 0) return;
@@ -307,8 +373,7 @@
         if (df === d.df) return;
         d.df = df;
         if (!df) {
-          this.ghost.hidden = true;
-          this.tip.hidden = true;
+          this.hideGhost();
           return;
         }
         d.result = this.cb.onPreview(c.id, d.from + df);
@@ -318,8 +383,7 @@
         const d = this.drag;
         if (!d || d.id !== c.id) return;
         this.drag = null;
-        this.ghost.hidden = true;
-        this.tip.hidden = true;
+        this.hideGhost();
         if (!apply) return;
         if (d.df) this.cb.onMove(c.id, d.from + d.df);
         else this.cb.onSelect(c.id);
@@ -342,12 +406,35 @@
       this.ghost.style.left = `${this.xOf(from)}px`;
       this.ghost.style.width = `${Math.max(4, (to - from + 1) * this.px - 1)}px`;
       this.ghost.style.top = `${RULER + at.y - LANE / 2 + 2}px`;
+      // Guides at its start and end, over all tracks: a frame boundary where another clip starts
+      // or ends too shows solid, so it is easy to see one starting right after another.
+      const edges = new Set();
+      for (const o of this.data.clips) {
+        if (o.id === c.id) continue;
+        edges.add(o.from);
+        edges.add(o.to + 1);
+      }
+      const bodyHeight = this.body.offsetHeight;
+      [from, to + 1].forEach((f, i) => {
+        const g = this.guides[i];
+        g.hidden = false;
+        g.classList.toggle('hit', edges.has(f));
+        g.style.left = `${this.xOf(f)}px`;
+        g.style.top = `${RULER}px`;
+        g.style.height = `${bodyHeight}px`;
+      });
       this.tip.hidden = false;
       this.tip.textContent = result && result.valid ? `frames ${from}–${to}` : (result && result.reason) || "can't go there";
       this.tip.classList.toggle('bad', !(result && result.valid));
       const host = this.host.getBoundingClientRect();
       this.tip.style.left = `${Math.min(host.width - 220, Math.max(0, evt.clientX - host.left + 12))}px`;
       this.tip.style.top = `${Math.max(0, evt.clientY - host.top - 30)}px`;
+    }
+
+    hideGhost() {
+      this.ghost.hidden = true;
+      this.tip.hidden = true;
+      for (const g of this.guides) g.hidden = true;
     }
   }
 

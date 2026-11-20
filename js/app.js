@@ -1053,6 +1053,12 @@
       } else showNotice();
       redraw();
     },
+    onReorder(keys) {
+      if (ed.dragging) return;
+      if (ed.setTrackOrder(keys)) setStatus('Track moved: the timeline keeps this order');
+      else showNotice();
+      redraw();
+    },
     onTile(id, v) {
       if (ed.dragging || ed.frozen) return;
       const w = whole();
@@ -1157,7 +1163,7 @@
     const last = clips.reduce((m, c) => Math.max(m, c.to), 0);
     const end = Math.max(last, ...stops.map((x) => x.frame));
     const frame = off + ed.frame;
-    timeline.update({ frames: Math.min(OD.model.MAX_FRAMES, Math.max(30, end + 10, frame + 5)), frame, selection: ed.selection, clips, bands, stops });
+    timeline.update({ frames: Math.min(OD.model.MAX_FRAMES, Math.max(30, end + 10, frame + 5)), frame, selection: ed.selection, clips, bands, stops, order: ed.doc.trackOrder || null });
   }
 
   // --- properties ------------------------------------------------------------------------

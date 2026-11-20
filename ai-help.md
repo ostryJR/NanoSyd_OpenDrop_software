@@ -93,6 +93,12 @@ It imitates GaudiLabs' original OpenDropController window.
     blue**. A purple **◆** between two frames = a stop (Measure, Ask, decision, Repeat round; hover
     shows which). **■** with a dark line = End.
   - One row per droplet (**D1 Droplet 1**, …), plus rows for **Heaters** and **Magnet 1/2**.
+    Rows go in order of their first clip unless reordered: dragging a row's name up or down moves
+    it (a blue line shows where), and the project keeps that order. A dimmed row with a blue line
+    across = a row being dragged.
+  - While a clip is dragged in time: a dashed outline where it would go (red = it can't), and
+    **dashed vertical lines** at its start and end over all rows; a line turns **solid** where
+    another clip starts or ends there (so it starts right after that one, or ends as it starts).
   - Each action is a **clip** (bar) from its first to its last frame, with a mark: → path,
     ◎ template (mix/merge/split), ⬚ dispense, ▦ painted pattern, ⧗ wait, ° temperature, ⊓ magnet.
   - **Faded clips** belong to other steps (click one to open that step).

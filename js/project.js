@@ -20,6 +20,13 @@
     return hv.volts === null && hv.hz === null && hv.mode === null ? null : hv;
   }
 
+  // The timeline's track order: track keys (strings), each once; null when there is none.
+  function cleanTrackOrder(raw) {
+    if (!Array.isArray(raw)) return null;
+    const keys = [...new Set(raw.filter((k) => typeof k === 'string' && k))];
+    return keys.length ? keys : null;
+  }
+
   const TAG = 'openDropGeneratorProject';
   const VERSION = 1;
   const EXTENSION = '.odproj'; // projects saved before 2026-11-20 end in .odproj.json and still open
@@ -230,6 +237,10 @@
     project.layout = typeof data.layout === 'string' ? data.layout : 'electrodes';
     project.frameTime = goodTime(data.frameTime) ? clampTime(data.frameTime) : DEFAULT_FRAME_TIME;
     if (data.heatRates !== undefined) project.heatRates = heat.cleanRates(data.heatRates);
+    // The timeline's tracks, top to bottom, as last reordered.
+    delete project.trackOrder;
+    const order = cleanTrackOrder(data.trackOrder);
+    if (order) project.trackOrder = order;
     // The high voltage the experiment uses (volts, hz, mode; null = the device's own), if set.
     delete project.hv;
     if (data.hv !== undefined) {
@@ -367,6 +378,6 @@
 
   return {
     TAG, VERSION, EXTENSION, TYPE_NAMES, newProject, isProject, parse, serialize, nextId, nextName, nextDroplet, shortDroplet,
-    embedTemplate, cleanHV,
+    embedTemplate, cleanHV, cleanTrackOrder,
   };
 });

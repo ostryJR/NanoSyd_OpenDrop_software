@@ -222,3 +222,12 @@ test('the project keeps its high voltage, cleaned to the device’s limits; none
   assert.match(back.warnings.join(' '), /high-voltage settings are unusable/);
   assert.equal(P.parse(P.serialize(sample())).project.hv, undefined, 'a project without one stays without');
 });
+
+test('the timeline’s track order: strings, each once; anything else is left out', () => {
+  const p = P.newProject();
+  const open = (trackOrder) => P.parse({ ...p, trackOrder }).project.trackOrder;
+  assert.deepEqual(open(['d:A', 'm:magnets', 'd:A', 3, null]), ['d:A', 'm:magnets']);
+  assert.equal(open('d:A'), undefined);
+  assert.equal(open([]), undefined);
+  assert.equal(P.parse(p).project.trackOrder, undefined);
+});

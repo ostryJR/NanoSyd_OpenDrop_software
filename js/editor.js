@@ -190,6 +190,7 @@
       this.doc.templates = this.project.templates;
       this.doc.frameTime = this.project.frameTime;
       if (this.project.heatRates) this.doc.heatRates = this.project.heatRates;
+      if (this.project.trackOrder) this.doc.trackOrder = this.project.trackOrder;
       if (this.project.hv) this.doc.hv = this.project.hv;
       else delete this.doc.hv;
     }
@@ -439,6 +440,8 @@
         else delete this.doc.process;
         if (shared.frameTime) this.doc.frameTime = shared.frameTime;
         if (shared.heatRates) this.doc.heatRates = shared.heatRates;
+        if (shared.trackOrder) this.doc.trackOrder = shared.trackOrder;
+        else delete this.doc.trackOrder;
         if (shared.hv) this.doc.hv = shared.hv;
         else delete this.doc.hv;
       }, { check: false });
@@ -967,6 +970,19 @@
       const next = projects.cleanHV({ ...(this.project.hv || {}), ...hv });
       if (next) this.project.hv = next;
       else delete this.project.hv;
+      this.recompile();
+      return true;
+    }
+
+    // The order of the timeline's tracks, top to bottom (track keys, as the timeline names them).
+    // Kept in the project file; it changes no frame.
+    setTrackOrder(keys) {
+      if (this.refused()) return false;
+      const order = projects.cleanTrackOrder(keys);
+      for (const p of new Set([this.doc, this.project])) {
+        if (order) p.trackOrder = order;
+        else delete p.trackOrder;
+      }
       this.recompile();
       return true;
     }

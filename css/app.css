@@ -800,6 +800,43 @@ kbd {
   background: rgba(208, 2, 27, 0.12);
 }
 
+/* While a clip is dragged: its start and end, over every track; solid where another clip ends
+   or starts on the same line. */
+.tl-guide {
+  position: absolute;
+  z-index: 4;
+  width: 0;
+  border-left: 1px dashed var(--accent);
+  pointer-events: none;
+}
+
+.tl-guide.hit {
+  border-left: 2px solid var(--accent);
+}
+
+/* A track's name can be dragged up or down; the line shows where it would go. */
+.tl-head {
+  cursor: grab;
+}
+
+.tl-track.moving {
+  opacity: 0.55;
+}
+
+.tl-track.moving .tl-head {
+  cursor: grabbing;
+}
+
+.tl-drop {
+  position: absolute;
+  z-index: 6;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 3px solid var(--accent);
+  pointer-events: none;
+}
+
 .tl-tip {
   position: absolute;
   z-index: 6;
@@ -2242,6 +2279,7 @@ body.dragging-template * {
 
 .tl-bands-head {
   font-weight: 600;
+  cursor: default;
 }
 
 .tl-band {

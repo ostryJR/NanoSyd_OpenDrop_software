@@ -91,7 +91,10 @@ action without a droplet name gets a track of its own. When an action carries on
 another track, a dashed curve in that droplet's colour ends in a small arrow into its clip: where
 droplets meet (a merge), an arrow comes in from each of them. The red line is the frame on screen. Clips with a
 problem have a red outline; an action that can't run at all (it doesn't fit the layout, say) is
-shown as a dashed clip where it would start. Hover a clip for its frames and problems.
+shown as a dashed clip where it would start. Hover a clip for its frames and problems. While a clip
+is dragged, dashed lines mark where it would start and end, solid where another clip starts or ends
+on that frame. Drag a track's name up or down to reorder the tracks; the project keeps the order
+(`trackOrder`, track keys top to bottom; tracks not in it go below, by their first clip).
 
 Each action has a **name** and a **droplet** name (renaming a droplet renames it down the chain).
 The droplet names colour the lines on the board and the tracks. Each droplet also has a short

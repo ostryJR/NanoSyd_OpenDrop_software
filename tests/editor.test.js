@@ -864,6 +864,22 @@ test('the high voltage is a setting of the project: merged field by field, clean
   assert.ok(!ed.canUndo, 'a setting, like the frame time: not undone');
 });
 
+test('the timeline’s track order is kept in the project; it changes no frame', () => {
+  const ed = standard();
+  drag(ed, E(1, 2), E(6, 2));
+  ed.pointerUp();
+  const frames = JSON.stringify(ed.compiled.spans.get(ed.project.actions[0].id));
+  const rev = ed.revision;
+  assert.ok(ed.setTrackOrder(['d:Droplet 2', 'd:Droplet 1', 'd:Droplet 2', 7, '']));
+  assert.deepEqual(ed.doc.trackOrder, ['d:Droplet 2', 'd:Droplet 1'], 'strings, each once');
+  assert.ok(ed.revision > rev, 'so the page keeps it');
+  assert.equal(JSON.stringify(ed.compiled.spans.get(ed.project.actions[0].id)), frames);
+  const back = projects.parse(projects.serialize(ed.doc)).project;
+  assert.deepEqual(back.trackOrder, ['d:Droplet 2', 'd:Droplet 1'], 'saved in the file');
+  assert.ok(ed.setTrackOrder([]));
+  assert.equal(ed.doc.trackOrder, undefined, 'empty: gone');
+});
+
 test('a template that would touch another droplet shows red and is not dropped', () => {
   const ed = standard();
   drag(ed, E(1, 2), E(6, 2)); // Path 1 along row 2, frames 1-6
