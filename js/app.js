@@ -73,6 +73,7 @@
   let processView = null;
   let processPanel = null;
   let runner = null;
+  let runOnDevice = false; // the run going is ▶ Run (on the OpenDrop), not simulate
   let sync = null;
   let syncRev = -1;
   let remoteRun = null; // a run going on in another tab: { tile, stretch, frame, frames, done }
@@ -157,7 +158,7 @@
     }
     svg.classList.toggle('running', Boolean(ed.readOnly)); // a run is going: its red frame greyed a bit
     if (view === 'board') {
-      board.render(ed, { numbers: showNumbers, lines: showLines, device: device && device.boardState(), rings: rings(), heat: heatInfo(), frameOffset: offset() });
+      board.render(ed, { simulating: Boolean(runner && runner.running && !runOnDevice), numbers: showNumbers, lines: showLines, device: device && device.boardState(), rings: rings(), heat: heatInfo(), frameOffset: offset() });
     } else if (processView) processView.render();
     if (ed.draft && ed.draft.moved) showDraft(ed.draft);
     showTiming();
@@ -306,6 +307,10 @@
       if (added) setStatus(`Placed: frames ${added.from} to ${added.to}`);
       else setStatus(spot && spot.reason ? `It can't go there: ${spot.reason}` : "It doesn't fit there: place it again from the tile's Properties", 'warn');
       redraw();
+      return;
+    }
+    if (ed.controlAt(mx, my) === 'play') {
+      toggleSimulate(); // the board's simulate box: the run in the browser only
       return;
     }
     const action = ed.pointerDown(mx, my, { shift: evt.shiftKey, alt: evt.altKey, now: performance.now() });
@@ -477,8 +482,7 @@
         showNotice();
         break;
       case ' ':
-        if (!evt.repeat) ed.togglePlay(performance.now());
-        showNotice();
+        if (!evt.repeat) toggleSimulate();
         break;
       case 'n':
         setNumbers(!showNumbers);
@@ -2148,7 +2152,6 @@
     $('run-controls').hidden = ed.makingTemplate;
     const running = runner && runner.running;
     $('run-start').hidden = running;
-    $('run-sim').hidden = running;
     $('run-pause').hidden = !running;
     $('run-stop').hidden = !running;
     if (running) $('run-pause').textContent = runner.state.paused ? '▶ Go on' : '⏸ Pause';
@@ -2162,7 +2165,6 @@
       const doing = s.paused ? 'Paused' : runOnDevice ? 'Running on the OpenDrop' : 'Simulating';
       state.textContent = `${doing}${name ? `: ${name}` : ''}${s.frames && (s.stretch || !ed.doc.process) ? ` · frame ${s.frame} of ${s.frames}` : ''} · ${mmss(Date.now() - s.started)}`;
     } else if (remoteRun && !remoteRun.done) state.textContent = `Running in the other tab: frame ${remoteRun.frame || 0}`;
-    else if (ed.playing && ed.doc.process) state.textContent = 'Previewing: plays the timeline without asking anything; ▶ Simulate asks';
     else state.textContent = '';
     where.title = where.textContent; // whole on hover, if it is cut short
     state.title = state.textContent;
@@ -2192,8 +2194,7 @@
     },
   });
   // ▶ Run plays it on the OpenDrop (which follows the board, and is switched off at the end);
-  // ▶ Simulate is the same run in the browser only. Without a process: the sequence once.
-  let runOnDevice = false;
+  // simulate (the board's box, Space) is the same run in the browser only. Without a process: the sequence once.
   async function startRun(onDevice) {
     if (refused()) return; // one run at a time, also over two tabs
     const process = ed.doc.process;
@@ -2203,7 +2204,7 @@
       return;
     }
     if (onDevice && !device.session.connected) {
-      setStatus('Connect the OpenDrop first (connect, bottom left, or the Device tab), or press ▶ Simulate to run it in the browser', 'warn');
+      setStatus('Connect the OpenDrop first (connect, bottom left, or the Device tab), or press simulate on the board to run it in the browser', 'warn');
       return;
     }
     if (ed.dragging || ed.placement) ed.cancel();
@@ -2226,10 +2227,15 @@
     evt.currentTarget.blur();
     startRun(true);
   });
-  $('run-sim').addEventListener('click', (evt) => {
-    evt.currentTarget.blur();
+  // The board's simulate box and Space: start the run in the browser, or stop it.
+  function toggleSimulate() {
+    if (runner.running) {
+      if (runOnDevice) setStatus('A run is going on the OpenDrop: ■ Stop at the top ends it', 'warn');
+      else runner.stop();
+      return;
+    }
     startRun(false);
-  });
+  }
   $('run-pause').addEventListener('click', (evt) => {
     evt.currentTarget.blur();
     runner.pause();

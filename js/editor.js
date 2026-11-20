@@ -28,7 +28,7 @@
   // Click areas in grid units, copied from the original's inRect() checks. The device-only
   // controls (life, feedback, reconnect, temperatures) are left out.
   const CONTROLS = [
-    { action: 'play', x: 34, y: -9, w: 9, h: 2 }, // labelled 'preview'
+    { action: 'play', x: 34, y: -9, w: 9, h: 2 }, // labelled 'simulate': the page runs it in the browser
     { action: 'copy', x: 34, y: 4, w: 2, h: 2 },
     { action: 'clearFrame', x: 34, y: 7, w: 2, h: 2 },
     { action: 'clearAll', x: 34, y: 10, w: 2, h: 2 },

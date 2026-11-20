@@ -53,10 +53,10 @@ including parallel lanes that run side by side and stops inside lanes; the timel
 whole process along one route. `js/runner.js` runs a process (it still walks with `P.Walk`; moving
 it to `schedule.js` is unfinished work). While a run goes, `editor.frozen` makes everything
 read-only and frames can't be stepped. **▶ Run** runs on the OpenDrop (needs it connected;
-`device.follow()` turns the session's `live` on, `allOff()` at the end) and **▶ Simulate** is the
-same run in the browser only; without a process both play the sequence once
+`device.follow()` turns the session's `live` on, `allOff()` at the end) and **simulate** (the board's
+play box and Space, `toggleSimulate` in `app.js`) is the same run in the browser only; without a process both play the sequence once
 (`runner.playSequence`). There is no live switch in the UI: the device follows the board only
-during ▶ Run. The board's play box is labelled **preview**. A run in another tab locks this one via `js/sync.js`
+during ▶ Run. The editor's looping `togglePlay` is no longer reachable from the page. A run in another tab locks this one via `js/sync.js`
 (BroadcastChannel, two tabs of the page stay in step).
 
 **The device.** `js/device.js` is the protocol and session, with no DOM: 32-byte packets out,

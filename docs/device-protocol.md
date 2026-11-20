@@ -133,7 +133,7 @@ before the next packet goes.
 - **During ▶ Run** (the session's `live` is on only then): the run's frame on screen, whenever its
   bytes change. One packet is in flight at a time; while one waits for its answer, only the newest
   frame waits behind it. Frame times are kept by the PC: the run holds each frame for its own time.
-  Stepping, previewing, editing and ▶ Simulate send nothing new (the device stays all off).
+  Stepping, editing and simulate send nothing new (the device stays all off).
 - **End of a run, Switch all off, Disconnect:** an all-off frame first.
 - **Polling:** every second (every 300 ms with feedback on), it sends again what the device should
   have: the run's frame during ▶ Run, all off otherwise. That keeps the temperatures, feedback and

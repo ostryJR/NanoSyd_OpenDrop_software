@@ -517,11 +517,10 @@
     </ul>
 
     <h3 id="play">Playing</h3>
-    <p><kbd>Space</kbd> or the <span class="ui">preview</span> button on the board plays the frames in
-      the browser, each for its time, round and round; <kbd>←</kbd> / <kbd>→</kbd> or the mouse wheel step through them. While playing, the mouse
-      wheel changes the speed. With a process, playing goes from step to step through the whole
-      process. To run it once from the start, use <span class="ui">▶ Run</span> (on the OpenDrop) or
-      <span class="ui">▶ Simulate</span> (only in the browser) in the top bar: see
+    <p><kbd>Space</kbd> or the <span class="ui">simulate</span> button on the board runs it once from
+      the start, only in the browser: each frame for its time, with a process's questions. Press it
+      again to stop. <kbd>←</kbd> / <kbd>→</kbd> or the mouse wheel step through the frames.
+      <span class="ui">▶ Run</span> at the top does the same on the OpenDrop: see
       <a href="#run">Running it</a>.</p>
 
     <!-- ============================================================================== -->
@@ -658,9 +657,8 @@
         hover it to see which. <b>■</b> marks End.</li>
       <li><b>To work on another step,</b> click its band or one of its faded bars, or move the red line
         into its frames: that step opens on the board.</li>
-      <li><b>preview</b> on the board (<kbd>Space</kbd>) plays through all the steps, one after
-        another. It asks nothing and goes on at every decision (the top bar says “Previewing”).
-        <span class="ui">▶ Simulate</span> and <span class="ui">▶ Run</span> are the real run.</li>
+      <li><b>simulate</b> on the board (<kbd>Space</kbd>) runs all the steps in the browser, asking
+        at Measure and Ask; <span class="ui">▶ Run</span> does it on the OpenDrop.</li>
       <li>At a <b>decision</b>, the timeline follows the way that goes on, so a loop that waits for
         your answer is shown once. A <b>Repeat</b> is shown with all its rounds. The total time above
         the timeline is for that way through.</li>
@@ -672,8 +670,8 @@
     <ol class="steps">
       <li>Press <span class="ui">▶ Run</span> in the top bar to run it on the OpenDrop: connect it
         first (the button is greyed until then). The device follows the run and is switched off at
-        the end. <span class="ui">▶ Simulate</span> does the same run only in the browser: the
-        device does nothing. Without a process, both play the sequence once, frame 1 to the
+        the end. <span class="ui">simulate</span> on the board (or <kbd>Space</kbd>) does the same
+        run only in the browser: the device does nothing. Without a process, both play the sequence once, frame 1 to the
         last.</li>
       <li>Each step plays on the board, frame by frame; the running tile glows in the process
         view.</li>
@@ -957,7 +955,7 @@
         with magnets or the temperature adapter).</li>
       <li>Press <span class="ui">▶ Run</span> in the top bar: the device plays it, frame by frame, and
         is switched off at the end (see <a href="#run">Running it</a>). Otherwise it sits still:
-        stepping, previewing, drawing and <span class="ui">▶ Simulate</span> stay in the browser.</li>
+        stepping, drawing and <span class="ui">simulate</span> stay in the browser.</li>
     </ol>
     <ul>
       <li><b>feedback</b> (V4.2): shows where the device senses droplets as dark dots on the board.</li>
@@ -1016,7 +1014,7 @@
     <table>
       <tr><th>Key</th><th>Does</th></tr>
       <tr><td><kbd>F</kbd> <kbd>P</kbd> <kbd>V</kbd></td><td>Freehand, paint, select tool</td></tr>
-      <tr><td><kbd>Space</kbd></td><td>Preview (play in the browser) / stop</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Simulate (run in the browser) / stop</td></tr>
       <tr><td><kbd>←</kbd> <kbd>→</kbd>, mouse wheel</td><td>Previous / next frame (while playing the wheel changes the speed)</td></tr>
       <tr><td><kbd>⌘Z</kbd> / <kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
       <tr><td><kbd>⇧⌘Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Redo</td></tr>

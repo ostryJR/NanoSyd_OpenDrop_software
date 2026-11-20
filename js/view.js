@@ -137,7 +137,7 @@
       label('export', 25, -18.5);
       label('save', 32, -18.5);
       label('load', 38, -18.5);
-      label('preview', 37, -7.5);
+      label('simulate', 37, -7.5);
       label('copy last frame', 37, 5.5);
       label('clear frame', 37, 8.5);
       label('clear all', 37, 11.5);
@@ -186,8 +186,8 @@
       const box = (u, v, parent = controls) =>
         el('rect', { x: px(u), y: py(v), width: BOX, height: BOX, fill: COLOR.button }, parent);
       this.playBox = box(34, -9);
-      // Its hover tip, over the box and label: with a process, play is a preview of the timeline
-      // (▶ Run is the real run).
+      // Its hover tip, over the box and label: simulate is the run in the browser only (▶ Run is
+      // the run on the OpenDrop).
       this.playTip = el('title', {}, el('rect', { class: 'hit', x: px(34), y: py(-9), width: G.UNIT * 9, height: G.UNIT * 2 }, controls));
       box(34, 4); // copy last frame
       box(34, 7); // clear frame
@@ -371,7 +371,7 @@
       }
     }
 
-    render(ed, { numbers = false, lines = true, device = null, rings = [], heat = null, frameOffset = 0 } = {}) {
+    render(ed, { numbers = false, lines = true, device = null, rings = [], heat = null, frameOffset = 0, simulating = false } = {}) {
       this.renderDevice(device);
       this.renderHeat(heat);
       this.renderRings(rings);
@@ -387,10 +387,8 @@
       }
       this.frameLabel.textContent = frame + frameOffset; // with a process: the whole timeline's frame
       this.speedLabel.textContent = perMinute(ed.speed);
-      this.playBox.setAttribute('fill', ed.playing ? COLOR.active : COLOR.button);
-      const playText = ed.doc && ed.doc.process
-        ? 'Preview: plays the timeline in the browser, step after step, without asking anything (▶ Simulate at the top runs it with its questions) (Space)'
-        : 'Preview: plays the frames in the browser with their times, round and round (Space)';
+      this.playBox.setAttribute('fill', simulating || ed.playing ? COLOR.active : COLOR.button);
+      const playText = 'Simulate: runs it only in the browser, with its questions; the device does nothing (▶ Run at the top runs it on the OpenDrop). Again to stop (Space)';
       if (this.playTip.textContent !== playText) this.playTip.textContent = playText;
       this.dots.forEach((dot, i) => dot.setAttribute('fill', i + 1 === frame ? COLOR.button : COLOR.idle));
       this.nextArrow.setAttribute('fill', frame >= 18 ? COLOR.button : COLOR.idle);

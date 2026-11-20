@@ -10,7 +10,7 @@ operations such as mixing or splitting, waits, and undo. What you draw is kept a
 **timeline** under the board, one track per droplet, like a video editor. Actions can be moved and
 reshaped later, and nothing is allowed to make two droplets touch by accident. The frames are
 worked out from the actions and written out on export. In Chrome or Edge it can also drive the
-OpenDrop itself over USB: **▶ Run** plays it on the device, **▶ Simulate** only in the browser.
+OpenDrop itself over USB: **▶ Run** plays it on the device, **simulate** on the board only in the browser.
 
 ## Run
 
@@ -42,7 +42,7 @@ explain what is going wrong. It is kept up to date with the app, like the manual
 | Switch electrodes on or off | Choose **paint** (**P**) and click or drag, as in the original; the first electrode decides on or off. What you paint is kept as a pattern. With paint, Shift+click goes to the next frame and switches an electrode on |
 | Undo / redo | ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y on Windows and Linux), or **undo** / **redo** on the left |
 | Change frame | ← / →, the mouse wheel (up = next), the arrows under the array, or click/drag the timeline's ruler |
-| Preview / stop | Space or the **preview** button on the board; plays in the browser, looping up to the last frame with anything on |
+| Simulate / stop | Space or the **simulate** button on the board: runs it once in the browser (the device does nothing) |
 | Change playback speed | Mouse wheel while playing (5–600 frames/min); this sets the frame time |
 | Set the frame time | **Properties** with nothing selected: **Frame time** (how long every step lasts) |
 | Set the project's high voltage | **Properties** with nothing selected, under the frame time: **Voltage** (50–240 V), **Frequency** (100–1000 Hz, AC only), **Mode** (AC/DC). Empty = the device's own setting. Saved in the project and sent to a connected device (custom firmware) when it connects or the setting changes |
@@ -56,9 +56,9 @@ explain what is going wrong. It is kept up to date with the app, like the manual
 | Save / open a project | **save** (⌘S / Ctrl+S) / **load**, top right. **load** also opens OpenDrop `.json` files |
 | Export for the OpenDrop controller | **export**, top right |
 | Design the process: steps, decisions, loops, lanes | **Process** at the top (see "The process"); **Board** goes back |
-| Run it once from the start | **▶ Run** at the top: on the OpenDrop (connect it first). **▶ Simulate**: the same run in the browser only. Without a process, both play the sequence once |
+| Run it once from the start | **▶ Run** at the top: on the OpenDrop (connect it first). **simulate** on the board: the same run in the browser only. Without a process, both play the sequence once |
 | Connect the OpenDrop (Chrome, Edge) | **Connect…** in the Device tab, then pick its port. The dot by the title is green while it answers |
-| See where the device senses droplets | **feedback** under preview (OpenDrop V4.2): dark dots on the board |
+| See where the device senses droplets | **feedback** under simulate (OpenDrop V4.2): dark dots on the board |
 | Show electrode numbers / paths' lines | `N` / `L`, or the checkboxes in the bottom bar |
 | Use another cartridge layout | The Layout menu (all layouts from the original repository) |
 
@@ -196,14 +196,12 @@ everything drawn so far.
     (an arrow going nowhere). The Step time chart shows the whole way too.
   - A step the way doesn't go through (the other side of a decision) opens on its own, as the bar
     at the top says.
-- **▶ Run** (at the top) goes through the process from Start on the OpenDrop; **▶ Simulate** does
-  the same run only in the browser (the device does nothing). Without a process, both play the
+- **▶ Run** (at the top) goes through the process from Start on the OpenDrop; **simulate** on the
+  board (Space) does the same run only in the browser (the device does nothing). Without a process, both play the
   sequence once, frame 1 to the last.
   - Each stretch plays on the board with its frame times, and the running tile glows. With
     **▶ Run** the device follows the board (it must be connected: the button is greyed until then)
     and is switched all off at the end.
-  - **preview** on the board only previews: it goes through the timeline without asking anything
-    (the top bar says "Previewing").
   - Measure and Ask tiles ask you; a yes/no question also takes the keys 1 or , (yes) and 2 or .
     (no). Decisions and Repeat choose the way.
   - The log at the bottom right lists the values, decisions and times; **Pause** and **Stop** are
@@ -347,8 +345,8 @@ the port.
   or it is plugged back in.
 - **▶ Run** (top bar): the device shows each frame of the run as it plays (each frame's own time:
   the computer keeps the time, also while the tab is in the background), and everything on it is
-  switched off at the end. Otherwise the device sits still: stepping, previewing, drawing and
-  **▶ Simulate** stay in the browser. After connecting or reconnecting everything on the device is
+  switched off at the end. Otherwise the device sits still: stepping, drawing and
+  **simulate** stay in the browser. After connecting or reconnecting everything on the device is
   off. **Switch all off**, disconnecting and closing the page switch everything off first.
 - **feedback** (V4.2 boards): the device senses where droplets are; dark dots show them on the
   board and the Device tab counts them.
