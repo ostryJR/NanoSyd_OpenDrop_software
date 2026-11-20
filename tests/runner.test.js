@@ -107,6 +107,7 @@ function tryEverything(ed, ids) {
     frameTime: () => ed.setDefaultTime(1234),
     heatRates: () => ed.setHeatRates({ up: 42 }),
     highVoltage: () => ed.setHV({ volts: 120 }),
+    trackOrder: () => ed.setTrackOrder(['x']),
     layout: () => ed.setLayout(getLayout('electrodes')),
     template: () => ed.startTemplate(),
     openProject: () => ed.openProject({ actions: [], templates: {}, frameTime: 500 }),
