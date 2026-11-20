@@ -264,7 +264,8 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
   every visit; Switch all off, disconnecting and closing the page switch them off too. A heater
   warming with nothing set means old firmware/app or a target typed in the Device tab.
 - Three heaters **T1–T3** (temperature adapter), targets 20–120 °C; two magnets **M1/M2**
-  (magnet board). Set by **Temperature** and **Magnet** tiles or actions; they last until changed.
+  (magnet board). Set by **Temperature** and **Magnet** tiles or actions; they last until changed, on the device
+  too (a magnet stays on past the last frame and at stops, until switched off or the run ends).
 - **Message** tiles put text on the OpenDrop's screen (custom firmware OpenDropVCustom only; with
   other firmware the page says "Message not confirmed (no nanoSYD firmware?)" and sends no more
   messages until it reconnects). It is only sent during **▶ Run** (not simulate). Nothing on the screen?
@@ -388,6 +389,11 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
 - **"A tile has an orange !"** Usually "not placed yet". A red ! is an error (section 6).
 - **"The timeline shows the loop only once / not the other branch."** By design (3.4); Run follows
   the real answers.
+- **"The magnet goes on and off / won't stay on."** Switching a magnet keeps the OpenDrop busy
+  ~0.3 s per magnet before it answers; the page waits for that (a page from before this fix
+  didn't: it took the device for not answering, lined it up with zeros, and those switched the
+  magnet off). Reload the page. A magnet stays on until a Magnet tile/setting switches it off or
+  the run ends; Switch all off and disconnecting switch it off too.
 - **"The device doesn't do anything."** Only **▶ Run** drives it (not simulate). Dot by the title green? Chrome/Edge? Port free
   (OpenDropController closed)? Cable carries data?
 - **"Frames last different times."** Only Waits and heater waits make frames longer (see **Step

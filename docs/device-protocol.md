@@ -123,6 +123,13 @@ answers wouldn't show it, because they don't repeat the frame. So on connecting,
 The packets it completes are all zeros: everything off. A device that stops answering later (500 ms
 without an answer) is lined up again the same way.
 
+**Magnets slow the answer.** The firmware switches a magnet before it answers: `set_Magnet` pulses
+the coil with two `delay(150)`, about 300 ms for each magnet whose bit in byte 16 changed (600 ms
+for both). The page knows which magnet bits the device has, and waits 300 ms longer per magnet a
+frame switches (lining up too, where the zeros switch magnets that are on off). Otherwise the
+answer came after the 500 ms, the device was taken for not answering and lined up again, and
+those zeros switched the magnet off: it went on and off instead of staying on.
+
 Only command frames get the 25th byte. Lining up sends zeros, which never are one, so it always
 expects 24 bytes. A confirmation that comes too late is dropped with any other leftover bytes
 before the next packet goes.

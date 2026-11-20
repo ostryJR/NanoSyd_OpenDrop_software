@@ -527,7 +527,9 @@
     <h2 id="heat">Heaters and magnets</h2>
     <p>With the temperature adapter, the OpenDrop has three heaters (<b>T1</b>, <b>T2</b>,
       <b>T3</b>, 20–120 °C) and two magnets. A setting holds from its frame until it is set again, so
-      temperatures can change during an experiment.</p>
+      temperatures can change during an experiment. On the OpenDrop a magnet that is on stays on
+      after the last frame and at Measure and Ask stops, until a Magnet tile switches it off or
+      the run ends.</p>
     <ul>
       <li><b>Temperature view:</b> choose <span class="ui">Temperature</span> above the timeline. Pick
         T1, T2 or T3, then <b>click</b> in the chart to set that heater from that frame on. Drag a point
@@ -1052,6 +1054,10 @@
       <dt>The tile says "the droplets are elsewhere".</dt>
       <dd>The step can be reached two ways (for example the first time, and round a loop), and the
         droplets arrive in different places. End the loop where the droplet started.</dd>
+      <dt>The magnet clicks on and off, or the dot goes red when a magnet switches.</dt>
+      <dd>Switching a magnet takes the OpenDrop about a third of a second before it answers; the
+        page waits for that. If it still happens, reload the page (an old copy doesn't wait) and
+        check the cable.</dd>
       <dt>Does it keep going when I switch to another window?</dt>
       <dd>Yes: playing, a run and the OpenDrop keep going in the background (the board on screen
         catches up when you come back). They stop if the computer goes to sleep or the tab is
