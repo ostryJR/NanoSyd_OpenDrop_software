@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const D = require('../js/device.js');
 const { SimulatedOpenDrop } = require('../js/device-sim.js');
 
-const FAST = { timeout: 80, settle: 20, boot: 60 };
+const FAST = { timeout: 80, settle: 20, boot: 60, ack: 40 };
 const until = async (cond, ms = 2000) => {
   const end = Date.now() + ms;
   while (!cond()) {
@@ -32,8 +32,8 @@ test('the link reports what it writes and what comes back, lining up included', 
   assert.equal(out.bytes.length, 32 + 5, 'the message text after the packet');
   assert.match(D.describeOut(out.bytes), /^electrodes 9, 17 · heaters off \/ off \/ off · message “Hello” \(5 bytes after the packet\)$/);
   const answer = seen.slice(n).find((e) => e.dir === 'in');
-  assert.equal(answer.bytes.length, 24);
-  assert.match(D.describeIn(answer.bytes), /OpenDrop V4\.2 .* \(id 0x12\)/);
+  assert.equal(answer.bytes.length, 25, 'the 24-byte answer and the confirmation byte');
+  assert.match(D.describeIn(answer.bytes), /OpenDrop V4\.2 .* \(id 0x12\) · confirmed 0xa4: message stored$/);
 });
 
 test('words for a packet: magnets, feedback, high voltage, save, a clear', () => {
@@ -97,4 +97,17 @@ test('the log folds the same packet and answer into a count, and gives it as tex
   log.add({ dir: 'out', bytes: status });
   assert.equal(log.entries.length, 6, 'nothing is logged while off');
   delete global.document;
+});
+
+test('words for the confirmation byte, and for an answer that came without it', () => {
+  const reply = new Uint8Array(24);
+  reply[23] = 0x12;
+  const withAck = (b) => D.describeIn(Uint8Array.from([...reply, b]));
+  assert.match(withAck(0xa3), /confirmed 0xa3: high voltage applied, saved$/);
+  assert.match(withAck(0xac), /confirmed 0xac: message stored; menu open: high voltage and save ignored$/);
+  assert.match(withAck(0xa8), /confirmation 0xa8: menu open: high voltage and save ignored$/);
+  assert.match(withAck(0x53), /byte 0x53 \(not a confirmation\)$/);
+  const { describe } = global.OD.serialLog; // loaded by the test before
+  assert.match(describe({ dir: 'in', bytes: reply, noAck: true }).text, / · no confirmation byte \(stock firmware\?\)$/);
+  assert.doesNotMatch(describe({ dir: 'in', bytes: reply }).text, /confirmation/);
 });

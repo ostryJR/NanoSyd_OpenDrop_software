@@ -957,6 +957,12 @@
         <span class="ui">Save to device</span> writes them to its memory, so it starts with them next
         time; its sound and the feedback switch are saved with them. Needs the custom firmware
         (OpenDropVCustom).</li>
+      <li><b>Confirmed by the device:</b> the nanoSYD firmware tells the page when it has taken the
+        high voltage, saved, or shown a message. If not, the bottom bar says so:
+        <i>not confirmed (no nanoSYD firmware?)</i> means the device runs other firmware, which
+        can't do these (messages are then no longer sent to it, until it reconnects);
+        <i>menu open on the device, try again</i> means someone is in the device's own menu: close
+        it and send again. A message that arrives incomplete is sent again by itself.</li>
       <li><b>Temperatures</b> in the Device tab: the three readings and the targets for heaters the
         sequence doesn't set. Empty or 0 means <b>off</b>, which is how they start; a heater nothing sets
         stays off. <span class="ui">Switch all off</span>, disconnecting and closing the page
@@ -965,7 +971,8 @@
         it is plugged back in. <span class="ui">Switch all off</span> turns every electrode off.</li>
       <li>Keep the page in front while playing live: a hidden tab stops playback.</li>
       <li><b>Without a device</b>, open <code>index.html#sim</code> and use
-        <span class="ui">Simulated OpenDrop</span> in the Device tab to try it.</li>
+        <span class="ui">Simulated OpenDrop</span> in the Device tab to try it
+        (<code>index.html#simstock</code> simulates one with the original firmware).</li>
       <li><b>Traffic log</b> (bottom of the Device tab), for debugging: tick
         <span class="ui">Log what is sent and what comes back</span> and every packet to the device
         and every answer is listed: the time, → sent, ← received or × no answer, what it says in
@@ -1044,6 +1051,10 @@
       <dt>The device doesn't appear in the list.</dt>
       <dd>Use Chrome or Edge, close OpenDropController, try another cable (some only charge), and look
         for <b>Feather M0</b> in the list.</dd>
+      <dt>"Not confirmed (no nanoSYD firmware?)" or "menu open on the device, try again".</dt>
+      <dd>The device didn't confirm the high voltage, save or message. The first means it doesn't
+        run the nanoSYD firmware: install it, or do without those. The second: close the menu on the
+        device and press <span class="ui">Save to device</span> again (or change the setting).</dd>
       <dt>Where did my work go?</dt>
       <dd>It is kept in this browser and comes back when you reopen the page. In another browser or
         after clearing browser data it is gone, so <span class="ui">save</span> important projects to

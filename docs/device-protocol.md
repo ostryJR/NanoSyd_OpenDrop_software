@@ -70,6 +70,36 @@ So the IDs the original controller knows are 0x00 (V4.1), 0x01 (V4.1, magnet), 0
 magnet) and 0x12 (V4.2, magnet and temperature adapter). It switches between the `electrodes` and
 `electrodes_magnet` layouts by it; so does this app (only between those two).
 
+### The confirmation byte (nanoSYD firmware)
+
+A **command frame** is one that asks the custom firmware for something the original doesn't
+know: a message (byte 17 ≠ 0), save (byte 25 = 1) or high voltage (any of bytes 29–31 ≠ 0). The
+nanoSYD firmware answers it with the 24 bytes, then **one more byte, 0xA0 | flags**. Ordinary
+frames are still answered with 24 bytes, and stock firmware never sends the 25th byte (the
+original controller never sends a command frame, so it never sees one).
+
+| Bit | Mask | Meaning |
+|---|---|---|
+| 7–4 | 0xA0 | Always 1010: a byte with another high nibble is not a confirmation |
+| 0 | 0x01 | High voltage applied (bytes 29–31 are now in use) |
+| 1 | 0x02 | Saved: flash holds the current settings (written, or already the same) |
+| 2 | 0x04 | Message done: cleared (255), or all N text bytes came and it is stored (also while the menu is open) |
+| 3 | 0x08 | Someone is in the device's menu: high voltage and save were ignored |
+
+So high voltage and save in one packet give 0xA3; a message while the menu is open, 0xA4 (with
+high voltage too, 0xAC). Byte 16 of the answer stays 0.
+
+What this app does: after a command frame it reads the 24 bytes, then waits up to 300 ms for the
+25th.
+- **None** (or its high nibble isn't 0xA): the firmware isn't nanoSYD's. High voltage and save
+  say "not confirmed (no nanoSYD firmware?)". For a message, a stock device took the text bytes
+  for the start of the next packet: the app lines the stream up again (below) and sends no more
+  messages to that device until it reconnects.
+- **0x08**: "menu open on the device, try again".
+- **A message without 0x04**: the text arrived incomplete; it is sent again, twice at most, then
+  "Message not shown on the device: it arrived incomplete".
+- High voltage without 0x01, or save without 0x02: "not confirmed by the device".
+
 ### Start-up
 
 When the board starts, it prints its ID as a line of text, then after about two seconds
@@ -92,6 +122,10 @@ answers wouldn't show it, because they don't repeat the frame. So on connecting,
 
 The packets it completes are all zeros: everything off. A device that stops answering later (500 ms
 without an answer) is lined up again the same way.
+
+Only command frames get the 25th byte. Lining up sends zeros, which never are one, so it always
+expects 24 bytes. A confirmation that comes too late is dropped with any other leftover bytes
+before the next packet goes.
 
 ### What this app sends, and when
 
@@ -188,4 +222,6 @@ Use `millis()` for the timing rather than `delay()`, so packets keep being read 
 Open `index.html#sim` (or `#sim1` for protocol 1): the Device tab then has **Simulated OpenDrop**.
 It counts bytes the way the firmware does, answers as a V4.2 board with magnets and the temperature
 adapter, reports the electrodes that are on as sensed, and with protocol 1 runs loaded sequences.
+It runs nanoSYD's firmware (messages, high voltage, save, the confirmation byte); `#simstock`
+simulates stock firmware instead, which does none of that and never confirms.
 `tests/device.test.js` uses it too.

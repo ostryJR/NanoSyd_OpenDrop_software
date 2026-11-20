@@ -349,7 +349,10 @@ the port.
 - **High voltage** (custom firmware, OpenDropVCustom): shows the project's settings (set in
   Properties). They are sent when the device connects and when they change, and last until it is
   switched off; **Save to device** writes them to its memory, so it starts with them (its sound
-  and the feedback switch are saved too). Ordinary frames leave them alone.
+  and the feedback switch are saved too). Ordinary frames leave them alone. The nanoSYD firmware
+  confirms high voltage, save and messages with a 25th answer byte; without it the page says
+  "not confirmed (no nanoSYD firmware?)", with the device's menu open "menu open on the device,
+  try again", and a message that arrived incomplete is sent again.
 - **Temperatures** (temperature adapter): the three readings, and targets (20–120 °C) for heaters
   the sequence doesn't set. Empty or 0 = **off**, which is how they start on every visit: an unset
   heater is sent as 0. (The original controller sends 25 °C, but the adapter's PID controller then
@@ -360,8 +363,8 @@ the port.
   firmware can't do that: it only follows live frames, so these stay off and say so. The protocol a
   new firmware would need is written up in `docs/device-protocol.md`, which also describes the
   live protocol.
-- Without a device: open `index.html#sim` (or `#sim1`, which can also take a whole sequence) and
-  use **Simulated OpenDrop** in the Device tab.
+- Without a device: open `index.html#sim` (or `#sim1`, which can also take a whole sequence;
+  `#simstock`, original firmware) and use **Simulated OpenDrop** in the Device tab.
 - **Traffic log** (Device tab, for debugging): with **Log what is sent and what comes back** on,
   every packet written to the port and every answer is listed with the time, what it says
   (`describeOut` / `describeIn` in `js/device.js`) and its bytes in hex; also answers that never

@@ -26,6 +26,7 @@
         change: () => this.changed(),
         board: (b) => this.boardFound(b),
         lost: () => this.lost(),
+        notice: (text, kind) => this.app.setStatus(text, kind),
       });
       // Heaters start off on every visit (targets aren't kept: a reload mustn't start heating).
       delete this.prefs.targets;
@@ -160,14 +161,16 @@
       return true;
     }
 
-    // A simulated OpenDrop in the page (#sim; #sim1 also takes whole sequences).
+    // A simulated OpenDrop in the page: #sim with nanoSYD's firmware; #sim1 also takes whole
+    // sequences; #simstock with stock firmware (no messages, high voltage or confirmation).
     async useSimulated() {
       if (this.session.connected) await this.session.detach();
       const protocol = /sim1/.test(root.location.hash) ? 1 : 0;
+      const firmware = /simstock/.test(root.location.hash) ? 'stock' : 'nanosyd';
       this.busy = true;
       this.changed();
-      this.portLabel = 'simulated in this page';
-      const ok = await this.session.attach(new SimulatedOpenDrop({ board: 0x12, protocol, latency: 3 }), { label: this.portLabel });
+      this.portLabel = firmware === 'stock' ? 'simulated in this page, stock firmware' : 'simulated in this page';
+      const ok = await this.session.attach(new SimulatedOpenDrop({ board: 0x12, protocol, firmware, latency: 3 }), { label: this.portLabel });
       this.busy = false;
       if (ok) this.connected('Connected to a simulated');
       else this.changed();

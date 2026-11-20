@@ -1,6 +1,9 @@
 /* A simulated OpenDrop, for the tests and for trying the Device tab without hardware (open the page
- * with #sim). It behaves like OpenDropV42.ino: it counts incoming bytes and acts on every 32nd,
- * drives the electrodes, and answers with 24 bytes. With protocol 1 it also takes the proposed
+ * with #sim, or #simstock for stock firmware). It behaves like OpenDropV42.ino: it counts incoming
+ * bytes and acts on every 32nd, drives the electrodes, and answers with 24 bytes. As nanoSYD's
+ * firmware (OpenDropVCustom, the default) it also shows messages, sets and saves the high voltage
+ * and confirms those command frames with a 25th byte, 0xA0 | flags; as stock firmware it does none
+ * of that. With protocol 1 it also takes the proposed
  * commands: load a sequence, run it on its own clock, stop, status (docs/device-protocol.md). It is
  * a transport for device.js: write(bytes), close(), onData, onClose. No DOM here. */
 (function (root, factory) {
@@ -9,7 +12,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (device) {
   'use strict';
 
-  const { PACKET, REPLY, STATUS, COLUMNS, COMMAND, OUT, decodeSequence } = device;
+  const { PACKET, REPLY, STATUS, COLUMNS, COMMAND, OUT, ACK, isCommand, decodeSequence } = device;
   const RESULT = { ok: 0, badChecksum: 1, tooLong: 2, busy: 3, unknown: 4, nothingLoaded: 5 };
   const STATE = { idle: 0, running: 1, done: 2 };
 
@@ -17,9 +20,12 @@
     // board: board ID (0x12 = V4.2 with magnets and temperature adapter); protocol: 0 as today's
     // firmware, 1 with the proposed commands; stuckAt: bytes of a packet it already has (a stream
     // out of step); silent: never answers; boot: ms it takes to start (bytes wait meanwhile, then
-    // it prints its start-up line); latency: ms before an answer; timeScale: how fast a run goes.
-    constructor({ board = 0x12, protocol = 0, stuckAt = 0, silent = false, boot = 0, latency = 1, timeScale = 1, timers = globalThis } = {}) {
-      Object.assign(this, { board, protocol, silent, latency, timeScale, timers });
+    // it prints its start-up line); latency: ms before an answer; timeScale: how fast a run goes;
+    // firmware: 'nanosyd' (messages, high voltage, save, the confirmation byte) or 'stock'.
+    constructor({ board = 0x12, protocol = 0, stuckAt = 0, silent = false, boot = 0, latency = 1, timeScale = 1, firmware = 'nanosyd', timers = globalThis } = {}) {
+      Object.assign(this, { board, protocol, silent, latency, timeScale, firmware, timers });
+      this.menu = false; // someone is in the device's menu: high voltage and save are ignored
+      this.garble = 0; // the next n messages arrive incomplete (not shown, confirmed without 0x04)
       this.count = stuckAt;
       this.packet = new Uint8Array(PACKET);
       this.cells = []; // electrodes driven now
@@ -90,10 +96,16 @@
         this.text.bytes.push(b);
         if (this.text.bytes.length < this.text.n) return;
         const { packet } = this.text;
-        this.message = String.fromCharCode(...this.text.bytes).slice(0, 20);
-        this.messages.push(this.message);
+        let stored = true;
+        if (this.garble > 0) {
+          this.garble--;
+          stored = false;
+        } else {
+          this.message = String.fromCharCode(...this.text.bytes).slice(0, 20);
+          this.messages.push(this.message);
+        }
         this.text = null;
-        this.handle(packet);
+        this.handle(packet, stored);
         return;
       }
       if (this.block) {
@@ -124,6 +136,10 @@
       if (this.count < PACKET) return;
       this.count = 0;
       const p = this.packet.slice();
+      if (this.firmware === 'stock') {
+        this.handle(p);
+        return;
+      }
       // The custom firmware's message byte: N text bytes follow, 255 clears it.
       const n = p[OUT.message];
       if (n > 0 && n < 255) {
@@ -134,20 +150,35 @@
         this.message = '';
         this.messages.push('');
       }
-      this.handle(p);
+      this.handle(p, n !== 0);
     }
 
-    // A whole packet (and its message's text, if any).
-    handle(p) {
+    // A whole packet (and its message's text, if any; `stored`: the message was shown or cleared).
+    handle(p, stored = false) {
+      const stock = this.firmware === 'stock';
       const command = this.protocol >= 1 ? p[OUT.command] : COMMAND.frame;
-      this.feedback = Boolean(p[24]);
+      if (stock || !this.menu) this.feedback = Boolean(p[24]);
       this.targets = [p[26], p[27], p[28]];
-      this.highVoltage(p);
-      if (p[OUT.save] === 1) this.save();
+      let ack = ACK.mark;
+      if (!stock) {
+        const asked = p[OUT.volts] || p[OUT.freq] || p[OUT.mode] || p[OUT.save] === 1;
+        if (this.menu) {
+          if (asked) ack |= ACK.menu;
+        } else {
+          this.highVoltage(p);
+          if (p[OUT.volts] || p[OUT.freq] || p[OUT.mode]) ack |= ACK.hv;
+          if (p[OUT.save] === 1) {
+            this.save();
+            ack |= ACK.saved;
+          }
+        }
+        if (stored) ack |= ACK.msg;
+      }
       this.warm();
       if (command === COMMAND.frame) {
-        if (!this.run) this.drive(cellsOf(p));
+        if (!this.run) this.drive(cellsOf(p, stock));
         this.reply(REPLY);
+        if (!stock && isCommand(p)) this.say([ack]);
       } else if (command === COMMAND.load) {
         if (this.run) this.answer(RESULT.busy);
         else this.block = { bytes: [], size: 0 };
@@ -257,10 +288,10 @@
     }
   }
 
-  function cellsOf(packet) {
+  function cellsOf(packet, stock = false) {
     const cells = [];
-    // Columns 0-16: byte 17 is the custom firmware's message length.
-    for (let x = 0; x < COLUMNS - 1; x++) for (let r = 0; r < 8; r++) if ((packet[x] >> r) & 1) cells.push(x * 8 + r);
+    // Columns 0-16: byte 17 is the custom firmware's message length (stock firmware: 136-143).
+    for (let x = 0; x < (stock ? COLUMNS : COLUMNS - 1); x++) for (let r = 0; r < 8; r++) if ((packet[x] >> r) & 1) cells.push(x * 8 + r);
     return cells;
   }
 
