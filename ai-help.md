@@ -387,6 +387,11 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
 - **"The timeline shows the loop only once / not the other branch."** By design (3.4); Run follows
   the real answers.
 - **"simulate doesn't ask my question."** simulate is a preview; use **▶ Run**.
+- **"The magnet goes on and off / won't stay on."** Switching a magnet keeps the OpenDrop busy
+  ~0.3 s per magnet before it answers; the page waits for that (a page from before this fix
+  didn't: it took the device for not answering, lined it up with zeros, and those switched the
+  magnet off). Reload the page. A magnet stays on until a Magnet tile/setting switches it off or
+  the run ends; Switch all off and disconnecting switch it off too.
 - **"The device doesn't do anything."** Dot by the title green? **live** on? Chrome/Edge? Port free
   (OpenDropController closed)? Cable carries data?
 - **"Frames last different times."** Only Waits and heater waits make frames longer (see **Step

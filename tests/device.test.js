@@ -52,6 +52,51 @@ test('a magnet that is on stays on where the sequence has no frame', () => {
   assert.equal(bytes[16] & 0x2, 0x2, 'byte 16 bit 0x2: the firmware keeps magnet 1 on');
 });
 
+// The firmware switches a magnet before it answers (set_Magnet: ~300 ms each); here scaled down:
+// switching both (120 ms) takes longer than the 80 ms an ordinary answer is waited for.
+test('switching magnets: the answer is waited for, so the device stays answering and the magnets stay on', async (t) => {
+  const sim = new SimulatedOpenDrop({ board: 0x11, magnetMs: 60 });
+  const { s } = session({ link: { ...FAST, magnet: 60 } });
+  t.after(() => s.detach());
+  const states = [];
+  const setState = s.setState.bind(s);
+  s.setState = (x) => {
+    states.push(x);
+    setState(x);
+  };
+  assert.ok(await s.attach(sim));
+  s.setLive(true);
+  s.show([9, 129, 128]); // both magnets on
+  await until(() => sim.magnets === 0x03);
+  await new Promise((r) => setTimeout(r, 400)); // a few polls
+  assert.ok(!states.includes('silent'), 'never taken for not answering');
+  assert.equal(sim.magnets, 0x03, 'both still on');
+  assert.equal(sim.magnetSwitches, 2, 'switched once each, not off and on again');
+  s.show([10, 129]); // magnet 2 off
+  await until(() => sim.magnets === 0x02);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(sim.magnetSwitches, 3);
+  assert.ok(!states.includes('silent'));
+});
+
+test('lining up with magnets on: the zeros switch them off, and their slower answer is waited for', async () => {
+  for (const stuckAt of [0, 5, 31]) {
+    const sim = new SimulatedOpenDrop({ magnetMs: 60 });
+    const link = new D.Link(sim, { ...FAST, magnet: 60 });
+    assert.ok(await link.sync());
+    assert.ok(await link.exchange(D.encodeFrame([9, 128, 129]), D.REPLY), 'answered after switching both');
+    assert.equal(sim.magnets, 0x03);
+    sim.count = stuckAt; // out of step
+    assert.ok(await link.sync(), `lined up from ${stuckAt}`);
+    assert.equal(sim.count, 0);
+    assert.equal(sim.magnets, 0, 'the zeros switched them off');
+    assert.ok(await link.exchange(D.encodeFrame([9, 129]), D.REPLY));
+    assert.deepEqual(last(sim), [9, 129]);
+    assert.equal(sim.magnets, 0x02, 'and the next frame switches magnet 1 on again');
+    await link.close();
+  }
+});
+
 test('an answer: sensed electrodes (bits reversed), temperatures, protocol and board', () => {
   const a = new Uint8Array(24);
   a[1] = 0b01000000; // bit 6 = row 1: electrode 9

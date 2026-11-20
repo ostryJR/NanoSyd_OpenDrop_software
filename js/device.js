@@ -47,6 +47,16 @@
   // does. Ordinary frames are answered with 24 bytes only.
   const ACK = { mark: 0xa0, hv: 0x01, saved: 0x02, msg: 0x04, menu: 0x08 };
   const ACK_WAIT = 300; // ms to wait for it after the 24 bytes
+  // Switching a magnet keeps the firmware busy before it answers: set_Magnet pulses the coil
+  // (two delay(150)), for each magnet whose bit changed. The answer waits that much longer.
+  const MAGNET_MS = 300;
+  const MAGNET_BITS = 0x03; // byte 16: 0x02 magnet 1, 0x01 magnet 2
+  const MAGNET_BYTE = 16;
+  // Magnets whose bit differs between two byte-16 values (null: not known, so either may).
+  const magnetSwitches = (was, now) => {
+    const diff = (was === null ? MAGNET_BITS : was ^ now) & MAGNET_BITS;
+    return (diff & 1) + ((diff >> 1) & 1);
+  };
   const NO_FIRMWARE = 'not confirmed (no nanoSYD firmware?)';
   const MENU_OPEN = 'menu open on the device, try again';
 
@@ -303,9 +313,12 @@
     // transport: { write(bytes) -> Promise, close() -> Promise }; the link sets its onData(chunk)
     // and onClose(). Times in ms: timeout (an answer), settle (no answer by then means none is
     // coming), boot (a device that was just plugged in starting up).
-    constructor(transport, { timeout = 500, settle = 150, boot = 2500, ack = ACK_WAIT, timers = globalThis } = {}) {
+    constructor(transport, { timeout = 500, settle = 150, boot = 2500, ack = ACK_WAIT, magnet = MAGNET_MS, timers = globalThis } = {}) {
       this.transport = transport;
-      this.opts = { timeout, settle, boot, ack };
+      this.opts = { timeout, settle, boot, ack, magnet };
+      // The magnet bits the device has (byte 16 of the last packet it took; null: not known). The
+      // firmware starts with both off, and the page switches them off when it lets go.
+      this.magnets = 0;
       this.timers = timers;
       this.inbox = [];
       this.waiting = null; // { expect, ack, reply, resolve, timer }
@@ -376,10 +389,17 @@
     // with 25 if the confirmation byte followed within opts.ack ms. Only command frames get it:
     // lining up sends zeros, which never are one. A confirmation that came too late is dropped
     // as extra bytes here, before the next packet goes.
+    // A whole frame that switches a magnet waits opts.magnet ms more per magnet: the firmware
+    // answers only once the magnet is switched.
     exchange(bytes, expect, wait = this.opts.timeout) {
       const ack = expect === REPLY && isCommand(bytes);
       const run = async () => {
         if (this.closed) return null;
+        if (bytes.length >= PACKET && bytes[OUT.command] === COMMAND.frame) {
+          const now = bytes[MAGNET_BYTE] & MAGNET_BITS;
+          wait += magnetSwitches(this.magnets, now) * this.opts.magnet;
+          this.magnets = now;
+        }
         if (this.inbox.length) this.log('extra', this.inbox);
         this.inbox = [];
         const answer = new Promise((resolve) => {
@@ -418,12 +438,16 @@
         if (attempt) await this.sleep(this.opts.boot);
         let lined = 0;
         for (let round = 0; round < 3 * PACKET && !this.closed; round++) {
-          const answer = await this.exchange(new Uint8Array(PACKET - 1), REPLY, this.opts.settle);
+          // The zeros may complete a packet that switches magnets off: its answer comes later.
+          const off = magnetSwitches(this.magnets, 0) * this.opts.magnet;
+          const answer = await this.exchange(new Uint8Array(PACKET - 1), REPLY, this.opts.settle + off);
           if (answer) {
+            this.magnets = 0;
             lined = 0;
             continue;
           }
-          if (!(await this.exchange(new Uint8Array(1), REPLY, this.opts.timeout))) break;
+          if (!(await this.exchange(new Uint8Array(1), REPLY, this.opts.timeout + off))) break;
+          this.magnets = 0;
           if (++lined === 2) return true;
         }
       }
@@ -901,7 +925,7 @@
   }
 
   return {
-    BAUD, PACKET, REPLY, STATUS, ACK, ACK_WAIT, NO_FIRMWARE, MENU_OPEN, isCommand, decodeAck, describeAck, COLUMNS, CELLS, MAX_FRAMES, HEATER_OFF, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND, VOLTS, FREQ, cleanHV,
+    BAUD, PACKET, REPLY, STATUS, ACK, ACK_WAIT, MAGNET_MS, NO_FIRMWARE, MENU_OPEN, isCommand, decodeAck, describeAck, COLUMNS, CELLS, MAX_FRAMES, HEATER_OFF, TEMP_RANGE, NO_SENSOR, OUT, IN, COMMAND, VOLTS, FREQ, cleanHV,
     MESSAGE_SHOWN, cleanMessage, hex, describeOut, describeIn, RESULTS, RUN_STATES, encodeFrame, cellsIn, MAGNET_CELLS, boardInfo, decodeReply, crc16, encodeSequence, decodeSequence, sameBytes,
     textLine, Link, Session,
   };

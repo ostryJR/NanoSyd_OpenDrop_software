@@ -21,9 +21,13 @@
     // firmware, 1 with the proposed commands; stuckAt: bytes of a packet it already has (a stream
     // out of step); silent: never answers; boot: ms it takes to start (bytes wait meanwhile, then
     // it prints its start-up line); latency: ms before an answer; timeScale: how fast a run goes;
-    // firmware: 'nanosyd' (messages, high voltage, save, the confirmation byte) or 'stock'.
-    constructor({ board = 0x12, protocol = 0, stuckAt = 0, silent = false, boot = 0, latency = 1, timeScale = 1, firmware = 'nanosyd', timers = globalThis } = {}) {
-      Object.assign(this, { board, protocol, silent, latency, timeScale, firmware, timers });
+    // firmware: 'nanosyd' (messages, high voltage, save, the confirmation byte) or 'stock';
+    // magnetMs: how long switching one magnet keeps it busy before it answers (set_Magnet).
+    constructor({ board = 0x12, protocol = 0, stuckAt = 0, silent = false, boot = 0, latency = 1, timeScale = 1, firmware = 'nanosyd', magnetMs = 300, timers = globalThis } = {}) {
+      Object.assign(this, { board, protocol, silent, latency, timeScale, firmware, magnetMs, timers });
+      this.magnets = 0; // byte 16's magnet bits as last applied (0x02 magnet 1, 0x01 magnet 2)
+      this.magnetSwitches = 0; // times a magnet was switched
+      this.held = null; // answers waiting while it switches a magnet
       this.menu = false; // someone is in the device's menu: high voltage and save are ignored
       this.garble = 0; // the next n messages arrive incomplete (not shown, confirmed without 0x04)
       this.count = stuckAt;
@@ -85,6 +89,10 @@
     say(bytes) {
       if (this.silent) return;
       const out = Uint8Array.from(bytes);
+      if (this.held) {
+        this.held.push(out);
+        return;
+      }
       this.timers.setTimeout(() => {
         if (!this.closed && this.onData) this.onData(out);
       }, this.latency);
@@ -177,6 +185,7 @@
       this.warm();
       if (command === COMMAND.frame) {
         if (!this.run) this.drive(cellsOf(p, stock));
+        this.applyMagnets(p);
         this.reply(REPLY);
         if (!stock && isCommand(p)) this.say([ack]);
       } else if (command === COMMAND.load) {
@@ -220,6 +229,24 @@
     drive(cells) {
       this.cells = cells;
       this.frames.push(cells);
+    }
+
+    // As the firmware: each packet sets the magnets from byte 16, and switching one takes
+    // magnetMs (it pulses the coil) before the answer goes.
+    applyMagnets(p) {
+      const now = p[16] & 0x03;
+      const diff = now ^ this.magnets;
+      this.magnets = now;
+      const n = (diff & 1) + ((diff >> 1) & 1);
+      if (!n || !this.magnetMs) return;
+      this.magnetSwitches += n;
+      if (this.held) return; // already busy: answered with the rest
+      this.held = [];
+      this.timers.setTimeout(() => {
+        const out = this.held;
+        this.held = null;
+        for (const b of out) this.say(b);
+      }, n * this.magnetMs);
     }
 
     // Temperatures creep towards their targets, a little with each packet.
