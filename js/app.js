@@ -133,16 +133,20 @@
   }
 
   // Drawing happens once per animation frame; playback keeps requesting frames while it runs.
+  // A hidden tab gets no animation frames, so there the background clock (js/clock.js) takes
+  // over: playing, a run and the device's frames go on while another window is in front.
   let frameRequested = false;
   function redraw() {
     if (frameRequested) return;
     frameRequested = true;
-    requestAnimationFrame((now) => {
+    const draw = () => {
       frameRequested = false;
-      ed.tick(now);
+      ed.tick(performance.now());
       paint();
       if (ed.playing) redraw();
-    });
+    };
+    if (document.hidden) OD.clock.timers().setTimeout(draw, 20);
+    else requestAnimationFrame(draw);
   }
 
   function paint() {
@@ -1975,6 +1979,12 @@
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') keepWork();
+    // A picture asked for just before the tab was hidden waits for an animation frame that won't
+    // come while it is: ask again, on the background clock.
+    if (document.hidden && frameRequested) {
+      frameRequested = false;
+      redraw();
+    }
   });
 
   // --- a second tab --------------------------------------------------------------------------
@@ -2159,6 +2169,7 @@
 
   runner = new Runner({
     editor: ed,
+    timers: OD.clock.timers(), // a run keeps going in a background tab
     readings: liveReadings,
     ask: async (step) => {
       // An Ask or Measure set to show on the device: its text on the OpenDrop's screen meanwhile.

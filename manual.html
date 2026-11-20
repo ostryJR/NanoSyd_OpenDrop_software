@@ -686,7 +686,7 @@
         frame time, the layout, opening or adding a file, undo, or a new template. Those fields are
         greyed out, and so are <span class="ui">Send to device</span> and <span class="ui">Run on the device</span>
         in the Device tab; the board's red frame is greyed a bit. You can't step
-        or scroll through frames either (wheel, arrow keys, the timeline or charts): the board follows the run. A second tab of the page is locked too until the run ends. Keep the page in front: a hidden tab runs slowly.</li>
+        or scroll through frames either (wheel, arrow keys, the timeline or charts): the board follows the run. A second tab of the page is locked too until the run ends. The run goes on when you switch to another window or tab, but not when the computer sleeps: keep it awake for long runs.</li>
     </ol>
     <p>A run changes nothing in your project: afterwards the board is back where it was.</p>
 
@@ -1051,9 +1051,10 @@
       <dt>The tile says "the droplets are elsewhere".</dt>
       <dd>The step can be reached two ways (for example the first time, and round a loop), and the
         droplets arrive in different places. End the loop where the droplet started.</dd>
-      <dt>Playing is slow or stops.</dt>
-      <dd>The browser slows down pages that are not in front. Keep the app's tab visible while playing
-        or running.</dd>
+      <dt>Does it keep going when I switch to another window?</dt>
+      <dd>Yes: playing, a run and the OpenDrop keep going in the background (the board on screen
+        catches up when you come back). They stop if the computer goes to sleep or the tab is
+        closed, so keep the computer awake for long runs.</dd>
       <dt>The device doesn't appear in the list.</dt>
       <dd>Use Chrome or Edge, close OpenDropController, try another cable (some only charge), and look
         for <b>Feather M0</b> in the list.</dd>

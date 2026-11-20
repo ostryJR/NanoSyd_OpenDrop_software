@@ -25,7 +25,7 @@ or a failing test leaves a timer running and `node --test` hangs instead of fini
 **Modules.** Plain scripts, no bundler and no ES modules, so the page works from `file://`. Each
 file is a UMD-style factory: in node it `require`s its dependencies and exports; in the page it
 registers on `globalThis.OD.<name>`. Script order in `index.html` is the dependency order. Files
-with no DOM (model, compile, lines, paths, templates, project, process, stretch, schedule, editor,
+with no DOM (clock, model, compile, lines, paths, templates, project, process, stretch, schedule, editor,
 heat, device, device-sim, runner, jsonio, layout) are tested in node; `view`, `chart`, `timeline`,
 `tempchart`, `serial`, `devicepanel`, `seriallog`, `processview`, `processpanel`, `sync` and
 `app` are browser-only (`app.js` wires everything to the page).
@@ -74,6 +74,12 @@ user's own custom firmware (separate repo, `../firmware_custom`; its byte map is
 change `device.js`, the simulator, `docs/device-protocol.md` and the tests together.
 `js/serial.js` is Web Serial; `js/devicepanel.js` the Device tab; `js/seriallog.js` its traffic
 log (`Link.tap` sees every packet and answer).
+
+**Background tab.** Chrome slows a hidden tab's timers (1/s, then 1/min) and stops its animation
+frames, and frames reach the device only from `paint()`. So the runner, the device `Session` and
+the simulator get `OD.clock.timers()` (`js/clock.js`: setTimeout kept by a blob worker, works from
+`file://`), and `redraw()` in `app.js` uses that clock instead of `requestAnimationFrame` while
+`document.hidden`. New timing that must go on in the background uses the same clock.
 
 ## Rules for changes
 

@@ -27,7 +27,7 @@
         board: (b) => this.boardFound(b),
         lost: () => this.lost(),
         notice: (text, kind) => this.app.setStatus(text, kind),
-      });
+      }, { timers: OD.clock.timers() }); // keeps time in a background tab too
       // Heaters start off on every visit (targets aren't kept: a reload mustn't start heating).
       delete this.prefs.targets;
       this.portLabel = '';
@@ -170,7 +170,7 @@
       this.busy = true;
       this.changed();
       this.portLabel = firmware === 'stock' ? 'simulated in this page, stock firmware' : 'simulated in this page';
-      const ok = await this.session.attach(new SimulatedOpenDrop({ board: 0x12, protocol, firmware, latency: 3 }), { label: this.portLabel });
+      const ok = await this.session.attach(new SimulatedOpenDrop({ board: 0x12, protocol, firmware, latency: 3, timers: OD.clock.timers() }), { label: this.portLabel });
       this.busy = false;
       if (ok) this.connected('Connected to a simulated');
       else this.changed();

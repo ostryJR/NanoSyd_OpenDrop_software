@@ -541,7 +541,8 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
   loops, checks, layout, a run's way through it), `js/stretch.js` puts it on the board (droplets
   coming in, each tile's frames, the whole process laid out along one way), `js/runner.js` runs it, `js/processview.js` and
   `js/processpanel.js` are the process view and its Properties, and `js/sync.js` keeps two tabs in
-  step. The view, chart, timeline, serial, device panel, process view and panel, sync and app run
+  step. `js/clock.js` keeps time in a worker, so a run, playing and the device go on while the tab
+  is hidden (Chrome slows a hidden tab's own timers and stops its animation frames). The view, chart, timeline, serial, device panel, process view and panel, sync and app run
   in the browser; the rest runs in node too.
 
 ## License

@@ -252,7 +252,7 @@ Nothing in the project can be changed while a run goes, in this tab or a second 
 tiles, Properties (greyed out), frame time, high voltage, heater rates, layout, opening or adding a file, undo,
 and starting a template are all refused. The Device tab's **Send to device** and **Run on the
 device** are greyed out too, and the red frame of the board is greyed a bit. Frames can't be stepped through either (wheel,
-←/→, Space, ◀ ▶, clicking the timeline or charts): the board follows the run. A hidden browser tab runs slowly.
+←/→, Space, ◀ ▶, clicking the timeline or charts): the board follows the run. The run, playing and the device keep going when the tab is hidden or another window is in front (timers run in a worker); they stop if the computer sleeps or the tab is closed.
 
 ---
 
@@ -390,6 +390,8 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
   (OpenDropController closed)? Cable carries data?
 - **"Frames last different times."** Only Waits and heater waits make frames longer (see **Step
   time**). Everything else lasts the frame time.
+- **"Does the run stop when I switch windows?"** No: it keeps going in the background. If it did
+  stop, the computer slept or the tab was closed (or the page is an old copy: reload it).
 - **"My work is gone."** It is kept in that browser only; other browsers or cleared data lose it.
   **save** writes a project file.
 
