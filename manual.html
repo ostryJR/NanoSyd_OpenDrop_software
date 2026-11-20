@@ -517,10 +517,12 @@
     </ul>
 
     <h3 id="play">Playing</h3>
-    <p><kbd>Space</kbd> or the <span class="ui">simulate</span> button plays the frames, each for its
-      time; <kbd>←</kbd> / <kbd>→</kbd> or the mouse wheel step through them. While playing, the mouse
+    <p><kbd>Space</kbd> or the <span class="ui">preview</span> button on the board plays the frames in
+      the browser, each for its time, round and round; <kbd>←</kbd> / <kbd>→</kbd> or the mouse wheel step through them. While playing, the mouse
       wheel changes the speed. With a process, playing goes from step to step through the whole
-      process.</p>
+      process. To run it once from the start, use <span class="ui">▶ Run</span> (on the OpenDrop) or
+      <span class="ui">▶ Simulate</span> (only in the browser) in the top bar: see
+      <a href="#run">Running it</a>.</p>
 
     <!-- ============================================================================== -->
     <h2 id="heat">Heaters and magnets</h2>
@@ -533,7 +535,7 @@
         up or down to change the temperature, sideways to move it. Click a magnet lane at the bottom to
         switch that magnet on or off from that frame.</li>
       <li><b>Waiting for the heaters:</b> select the setting and tick
-        <span class="ui">Wait until the heaters get there</span>. With the OpenDrop connected and live,
+        <span class="ui">Wait until the heaters get there</span>. During <span class="ui">▶ Run</span> on the OpenDrop,
         it waits until the readings get there; without a device it waits the estimated time, worked
         out from the <span class="ui">Warms</span> and <span class="ui">cools</span> rates (°C per
         minute) above the chart. The other droplets keep moving meanwhile.</li>
@@ -656,9 +658,9 @@
         hover it to see which. <b>■</b> marks End.</li>
       <li><b>To work on another step,</b> click its band or one of its faded bars, or move the red line
         into its frames: that step opens on the board.</li>
-      <li><b>Simulate</b> (<kbd>Space</kbd>) runs through all the steps, one after another. It is a
-        <b>preview</b>: it asks nothing and goes on at every decision (the top bar says
-        “Previewing”). <span class="ui">▶ Run</span> is the real run.</li>
+      <li><b>preview</b> on the board (<kbd>Space</kbd>) plays through all the steps, one after
+        another. It asks nothing and goes on at every decision (the top bar says “Previewing”).
+        <span class="ui">▶ Simulate</span> and <span class="ui">▶ Run</span> are the real run.</li>
       <li>At a <b>decision</b>, the timeline follows the way that goes on, so a loop that waits for
         your answer is shown once. A <b>Repeat</b> is shown with all its rounds. The total time above
         the timeline is for that way through.</li>
@@ -668,10 +670,11 @@
 
     <h3 id="run">Running it</h3>
     <ol class="steps">
-      <li>Press <span class="ui">▶ Run</span> in the top bar. To have the OpenDrop do it for real,
-        connect it first and switch <span class="ui">live</span> on (under <span class="ui">simulate</span>
-        on the board): the device follows the run and is switched off at the
-        end.</li>
+      <li>Press <span class="ui">▶ Run</span> in the top bar to run it on the OpenDrop: connect it
+        first (the button is greyed until then). The device follows the run and is switched off at
+        the end. <span class="ui">▶ Simulate</span> does the same run only in the browser: the
+        device does nothing. Without a process, both play the sequence once, frame 1 to the
+        last.</li>
       <li>Each step plays on the board, frame by frame; the running tile glows in the process
         view.</li>
       <li>At a <b>Measure</b> tile you type in the value and press <span class="ui">Go on</span>. At an
@@ -952,9 +955,9 @@
       <li>In the browser's list, pick the device. It is usually called <b>Feather M0</b>. The dot by
         the title turns green while it answers, and the Device tab shows the board type (V4.1 or V4.2,
         with magnets or the temperature adapter).</li>
-      <li>Switch on <span class="ui">live</span> (under simulate, the red box on the board): the device now shows the frame on
-        screen. Stepping, playing and drawing go straight to it. Switching live off switches everything
-        on the device off.</li>
+      <li>Press <span class="ui">▶ Run</span> in the top bar: the device plays it, frame by frame, and
+        is switched off at the end (see <a href="#run">Running it</a>). Otherwise it sits still:
+        stepping, previewing, drawing and <span class="ui">▶ Simulate</span> stay in the browser.</li>
     </ol>
     <ul>
       <li><b>feedback</b> (V4.2): shows where the device senses droplets as dark dots on the board.</li>
@@ -975,7 +978,7 @@
         switch the heaters off too.</li>
       <li><span class="ui">Reconnect automatically</span> finds the device again when the page opens or
         it is plugged back in. <span class="ui">Switch all off</span> turns every electrode off.</li>
-      <li>Keep the page in front while playing live: a hidden tab stops playback.</li>
+      <li>A run on the device goes on when you switch to another window, but not when the computer sleeps.</li>
       <li><b>Without a device</b>, open <code>index.html#sim</code> and use
         <span class="ui">Simulated OpenDrop</span> in the Device tab to try it
         (<code>index.html#simstock</code> simulates one with the original firmware).</li>
@@ -1006,14 +1009,14 @@
         your own templates between browsers or computers.</td></tr>
     </table>
     <p>The original controller reads only the first 200 frames; exporting a longer sequence warns
-      about that. Played live from here, sequences can be as long as you need.</p>
+      about that. Run from here (<span class="ui">▶ Run</span>), sequences can be as long as you need.</p>
 
     <!-- ============================================================================== -->
     <h2 id="keys">Keyboard shortcuts</h2>
     <table>
       <tr><th>Key</th><th>Does</th></tr>
       <tr><td><kbd>F</kbd> <kbd>P</kbd> <kbd>V</kbd></td><td>Freehand, paint, select tool</td></tr>
-      <tr><td><kbd>Space</kbd></td><td>Simulate (play) / stop</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Preview (play in the browser) / stop</td></tr>
       <tr><td><kbd>←</kbd> <kbd>→</kbd>, mouse wheel</td><td>Previous / next frame (while playing the wheel changes the speed)</td></tr>
       <tr><td><kbd>⌘Z</kbd> / <kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
       <tr><td><kbd>⇧⌘Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Redo</td></tr>

@@ -831,7 +831,7 @@
 
     // Loads a sequence block into the device. { ok, reason }.
     async load(block) {
-      if (!this.canLoad) return { ok: false, reason: "this device's firmware only follows live frames" };
+      if (!this.canLoad) return { ok: false, reason: "this device's firmware only follows frames as they come: use ▶ Run" };
       if (this.run) return { ok: false, reason: 'a sequence is running on the device' };
       this.allOff();
       const info = await this.command(COMMAND.load, block, 2000 + block.length);
@@ -844,7 +844,7 @@
 
     // Runs the loaded sequence on the device: live goes off, and the status is polled.
     async start() {
-      if (!this.canLoad) return { ok: false, reason: "this device's firmware only follows live frames" };
+      if (!this.canLoad) return { ok: false, reason: "this device's firmware only follows frames as they come: use ▶ Run" };
       this.allOff();
       const info = await this.command(COMMAND.run);
       if (!info) return { ok: false, reason: "the device didn't answer" };

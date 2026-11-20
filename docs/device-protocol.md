@@ -37,9 +37,9 @@ byte 31 and the device reads them all (within 1 s) before it acts on the packet 
 screen shows the first 20 characters, centred in a white bar, until another message or a clear
 (255, no text); its "INSERT CARTRIDGE" and "UNDER VOLTAGE!" warnings are drawn over it. The page
 sends at most 20 characters (accents dropped, other characters as ?), and only when the screen
-should change: a frame whose Message action sets other text (live), a run's question (an Ask or
-Measure tile set to show on the device), or a clear when there is nothing to show any more (live
-off, Switch all off, disconnecting, the page closing). Every other packet has 0 there.
+should change: a frame whose Message action sets other text (during ▶ Run), a run's question (an Ask or
+Measure tile set to show on the device), or a clear when there is nothing to show any more (the
+end of a run, Switch all off, disconnecting, the page closing). Every other packet has 0 there.
 
 Bytes 25 and 29–31 are read by the custom firmware (`firmware_custom/customFirmware/OpenDropVCustom/OpenDropVCustom.ino`, byte map in
 `firmware_custom/customFirmware/SERIAL_PROTOCOL.md`;
@@ -129,14 +129,14 @@ before the next packet goes.
 
 ### What this app sends, and when
 
-- **On connecting:** live is off, so the device gets an all-off frame.
-- **Live on:** the frame on screen, whenever its bytes change (stepping, playing, painting,
-  editing, undo, loading). One packet is in flight at a time; while one waits for its answer, only
-  the newest frame waits behind it. Frame times are kept by the PC: playing holds each frame for
-  its own time.
-- **Live off, Switch all off, Disconnect:** an all-off frame first.
+- **On connecting:** the device gets an all-off frame.
+- **During ▶ Run** (the session's `live` is on only then): the run's frame on screen, whenever its
+  bytes change. One packet is in flight at a time; while one waits for its answer, only the newest
+  frame waits behind it. Frame times are kept by the PC: the run holds each frame for its own time.
+  Stepping, previewing, editing and ▶ Simulate send nothing new (the device stays all off).
+- **End of a run, Switch all off, Disconnect:** an all-off frame first.
 - **Polling:** every second (every 300 ms with feedback on), it sends again what the device should
-  have: the frame on screen when live, all off otherwise. That keeps the temperatures, feedback and
+  have: the run's frame during ▶ Run, all off otherwise. That keeps the temperatures, feedback and
   connection state fresh.
 - **Closing or reloading the page:** an all-off frame, if there is time to send it.
 

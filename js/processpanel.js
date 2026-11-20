@@ -251,7 +251,7 @@
             const text = H.cleanText(v);
             this.set({ text }, text ? `${t.name}: “${text}” on the device's screen` : `${t.name}: clears the device's screen`);
           }), counter(input, H.MESSAGE_LENGTH));
-          h.append(node('p', { class: 'hint', text: 'Shown on the OpenDrop’s screen (custom firmware, OpenDropVCustom) from here until another Message tile, while live or in a run. Plain letters: accents are dropped.' }));
+          h.append(node('p', { class: 'hint', text: 'Shown on the OpenDrop’s screen (custom firmware, OpenDropVCustom) from here until another Message tile, during ▶ Run. Plain letters: accents are dropped.' }));
           break;
         }
         case 'magnet':

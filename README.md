@@ -10,7 +10,7 @@ operations such as mixing or splitting, waits, and undo. What you draw is kept a
 **timeline** under the board, one track per droplet, like a video editor. Actions can be moved and
 reshaped later, and nothing is allowed to make two droplets touch by accident. The frames are
 worked out from the actions and written out on export. In Chrome or Edge it can also drive the
-OpenDrop itself over USB: live, the device shows the frame on screen.
+OpenDrop itself over USB: **▶ Run** plays it on the device, **▶ Simulate** only in the browser.
 
 ## Run
 
@@ -42,7 +42,7 @@ explain what is going wrong. It is kept up to date with the app, like the manual
 | Switch electrodes on or off | Choose **paint** (**P**) and click or drag, as in the original; the first electrode decides on or off. What you paint is kept as a pattern. With paint, Shift+click goes to the next frame and switches an electrode on |
 | Undo / redo | ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y on Windows and Linux), or **undo** / **redo** on the left |
 | Change frame | ← / →, the mouse wheel (up = next), the arrows under the array, or click/drag the timeline's ruler |
-| Play / stop | Space or the **simulate** button; loops up to the last frame with anything on |
+| Preview / stop | Space or the **preview** button on the board; plays in the browser, looping up to the last frame with anything on |
 | Change playback speed | Mouse wheel while playing (5–600 frames/min); this sets the frame time |
 | Set the frame time | **Properties** with nothing selected: **Frame time** (how long every step lasts) |
 | Set the project's high voltage | **Properties** with nothing selected, under the frame time: **Voltage** (50–240 V), **Frequency** (100–1000 Hz, AC only), **Mode** (AC/DC). Empty = the device's own setting. Saved in the project and sent to a connected device (custom firmware) when it connects or the setting changes |
@@ -55,10 +55,10 @@ explain what is going wrong. It is kept up to date with the app, like the manual
 | Dispense a droplet from a reservoir | The four buttons beside the reservoirs (6 frames) |
 | Save / open a project | **save** (⌘S / Ctrl+S) / **load**, top right. **load** also opens OpenDrop `.json` files |
 | Export for the OpenDrop controller | **export**, top right |
-| Design the process: steps, decisions, loops, lanes | **Process** at the top (see "The process"); **Board** goes back. **▶ Run** runs it |
+| Design the process: steps, decisions, loops, lanes | **Process** at the top (see "The process"); **Board** goes back |
+| Run it once from the start | **▶ Run** at the top: on the OpenDrop (connect it first). **▶ Simulate**: the same run in the browser only. Without a process, both play the sequence once |
 | Connect the OpenDrop (Chrome, Edge) | **Connect…** in the Device tab, then pick its port. The dot by the title is green while it answers |
-| Send what is on screen to the device | **live** under simulate (white when on; only on the board). Stepping, playing and editing then go straight to the device; live off switches everything on it off |
-| See where the device senses droplets | **feedback** under live (OpenDrop V4.2): dark dots on the board |
+| See where the device senses droplets | **feedback** under preview (OpenDrop V4.2): dark dots on the board |
 | Show electrode numbers / paths' lines | `N` / `L`, or the checkboxes in the bottom bar |
 | Use another cartridge layout | The Layout menu (all layouts from the original repository) |
 
@@ -196,12 +196,14 @@ everything drawn so far.
     (an arrow going nowhere). The Step time chart shows the whole way too.
   - A step the way doesn't go through (the other side of a decision) opens on its own, as the bar
     at the top says.
-- **Run** (at the top) goes through the process from Start:
+- **▶ Run** (at the top) goes through the process from Start on the OpenDrop; **▶ Simulate** does
+  the same run only in the browser (the device does nothing). Without a process, both play the
+  sequence once, frame 1 to the last.
   - Each stretch plays on the board with its frame times, and the running tile glows. With
-    **live** on (the board's switch under simulate) and the device connected, the
-    device follows the run and is switched all off at the end.
-  - **simulate** on the board is only a preview: it goes through the timeline without asking anything
-    (the top bar says "Previewing"). **▶ Run** is the real run.
+    **▶ Run** the device follows the board (it must be connected: the button is greyed until then)
+    and is switched all off at the end.
+  - **preview** on the board only previews: it goes through the timeline without asking anything
+    (the top bar says "Previewing").
   - Measure and Ask tiles ask you; a yes/no question also takes the keys 1 or , (yes) and 2 or .
     (no). Decisions and Repeat choose the way.
   - The log at the bottom right lists the values, decisions and times; **Pause** and **Stop** are
@@ -250,7 +252,7 @@ touching droplets shows them as problems.
   them can't come along (it would leave the array, or touch another droplet), the drag is refused.
   ⌥/Alt + arrow keys move only the path; Shift+drag moves it with everything that follows.
 - The selected path can be reshaped with any tool. To draw a new path over it, press **Esc** first.
-- There is no 200-frame limit: sequences can run as long as you need when played live (a guard
+- There is no 200-frame limit: sequences can run as long as you need with **▶ Run** (a guard
   stops them at frame 100,000). Exported files and *upload for later* still matter to the original
   200: see [Exported files](#exported-files-opendrop-json).
 
@@ -285,7 +287,7 @@ frame on and stay that way until set again, so they can change during a process.
   close is close enough. Settings take no time and hold nothing up, except one that waits: it lasts
   as long as the heaters are estimated to take (the warming and cooling rates, °C/min, above the
   chart, kept with the project), while the other actions keep moving.
-- Played **live** (or in a run on the OpenDrop), a frame that waits lasts until the device reads
+- In a **▶ Run** on the OpenDrop, a frame that waits lasts until the device reads
   every set heater within the tolerance, however long that takes; without a device it lasts the
   estimate. The device gets each frame's targets; heaters the sequence doesn't set keep the targets
   in the Device tab, which shows which ones the sequence sets.
@@ -304,11 +306,11 @@ frame on and stay that way until set again, so they can change during a process.
   M1 and M2 on the board.
 - **Messages on the device's screen** (custom firmware OpenDropVCustom): a *Message* tile (or action)
   puts up to 20 characters of plain text on the OpenDrop's screen from its frame on, until the next
-  one; empty text clears it. It goes to the device while live and in a run, and shows as a pill on
+  one; empty text clears it. It goes to the device during **▶ Run**, and shows as a pill on
   the board. **Ask** and **Measure** tiles have **Show it on the device's screen** (on for new
   tiles): while a run waits there, the screen shows their **Screen text** (up to 20 characters,
   starting as the question or prompt cut to fit; a counter shows how many are used), then goes
-  back to the Message. Every text for the screen is limited to 20 characters as you type. Live off, Switch all off and disconnecting clear it.
+  back to the Message. Every text for the screen is limited to 20 characters as you type. The end of a run, Switch all off and disconnecting clear it.
 
 ## Templates
 
@@ -343,11 +345,11 @@ the port.
   adapter. For a magnet board the layout switches to the magnet one, and back for a board without,
   as the original did. **Reconnect automatically** finds the same device again when the page opens
   or it is plugged back in.
-- **live** (under simulate): the device shows the frame on screen. Stepping, playing (with each frame's
-  own time: the computer keeps the time), painting, drawing, undo, loading: all go straight to the
-  device. After connecting or reconnecting, live is off and everything on the device is off.
-  Switching live off, **Switch all off**, disconnecting and closing the page switch everything off
-  first. Keep the page in front while playing live: a hidden tab stops playback.
+- **▶ Run** (top bar): the device shows each frame of the run as it plays (each frame's own time:
+  the computer keeps the time, also while the tab is in the background), and everything on it is
+  switched off at the end. Otherwise the device sits still: stepping, previewing, drawing and
+  **▶ Simulate** stay in the browser. After connecting or reconnecting everything on the device is
+  off. **Switch all off**, disconnecting and closing the page switch everything off first.
 - **feedback** (V4.2 boards): the device senses where droplets are; dark dots show them on the
   board and the Device tab counts them.
 - **High voltage** (custom firmware, OpenDropVCustom): shows the project's settings (set in
@@ -364,9 +366,9 @@ the port.
   disconnecting and closing the page switch the heaters off too.
 - **Sequence on the device:** **Send to device**, **Run on the device** and **Stop** load the whole sequence,
   with each frame's time, into the device and run it on its own clock, with progress. Today's
-  firmware can't do that: it only follows live frames, so these stay off and say so. The protocol a
+  firmware can't do that: it only follows frames as they come (▶ Run), so these stay off and say so. The protocol a
   new firmware would need is written up in `docs/device-protocol.md`, which also describes the
-  live protocol.
+  frame-by-frame protocol.
 - Without a device: open `index.html#sim` (or `#sim1`, which can also take a whole sequence;
   `#simstock`, original firmware) and use **Simulated OpenDrop** in the Device tab.
 - **Traffic log** (Device tab, for debugging): with **Log what is sent and what comes back** on,
@@ -493,7 +495,7 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
 
 - One object per frame, from frame 1 to the last frame with any electrode on (any number of them).
   The original controller reads only the first 200, so exporting a longer sequence warns about
-  that; *upload for later* (protocol 1) refuses one: play it live instead.
+  that; *upload for later* (protocol 1) refuses one: use ▶ Run instead.
 - `"yR"` is row R (0 = top). Character k of it is column k, `1` = on. Electrode ID = column × 8 + row.
 - Columns 0 and 15 are the left and right reservoirs, 1–14 the 14 × 8 grid, and 16–17 control
   lines (16 drives the magnets in the magnet layout).
@@ -516,9 +518,10 @@ What **export** writes: the same layout as OpenDropController4_25, with each fra
 - Dragging draws droplet paths (freehand) that are added when you let go; the original
   drag is the **paint** tool. A click selects; paint switches single electrodes.
 - Undo and redo, templates, Wait blocks, and a chart of how long frames last.
-- Works without a device too. Its "life" button is **live** here; connecting, feedback and
-  temperatures work as in the original, the temperatures in the Device tab. Connecting lines the
-  byte stream up first, and live, disconnecting and closing switch everything off.
+- Works without a device too. There is no "life" button: the device follows the board only during
+  **▶ Run**. Connecting, feedback and temperatures work as in the original, the temperatures in the
+  Device tab. Connecting lines the byte stream up first, and the end of a run, disconnecting and
+  closing switch everything off.
 - Loading replaces the current project; the original merged the file into whatever was on screen.
 - Export doesn't add a second `.json` to the name.
 - Loading keeps frames after 200 (the original skipped or crashed on them), and also reads files from controller 3.2.

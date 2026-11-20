@@ -388,7 +388,7 @@ test('protocol 1: load, run on the device, status until done; stop; a protocol 0
   const frames = old.frames.length;
   const refused = await s0.load(D.encodeSequence(seq));
   assert.equal(refused.ok, false);
-  assert.match(refused.reason, /only follows live frames/);
+  assert.match(refused.reason, /only follows frames as they come/);
   assert.equal(old.frames.length, frames, 'nothing was sent to it');
   await s0.detach();
 });

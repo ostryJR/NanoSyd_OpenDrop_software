@@ -137,7 +137,7 @@
       label('export', 25, -18.5);
       label('save', 32, -18.5);
       label('load', 38, -18.5);
-      label('simulate', 37, -7.5);
+      label('preview', 37, -7.5);
       label('copy last frame', 37, 5.5);
       label('clear frame', 37, 8.5);
       label('clear all', 37, 11.5);
@@ -195,18 +195,15 @@
       this.reservoirButtons = el('g', {}, controls);
       for (const [u, v] of [[28, -6], [28, 4], [-30, -6], [-30, 4]]) box(u, v, this.reservoirButtons);
 
-      // The device, where OpenDropController had it: live and feedback under play (white when
-      // on; feedback only for boards that have it), and a dot by the title: gray = not connected,
+      // The device, where OpenDropController had it: feedback under play (white when on; only for
+      // boards that have it), and a dot by the title: gray = not connected,
       // amber = connecting, green = answering, red = not answering. Connecting is in the Device tab.
       // A hover tip over a box and its label (w grid units wide).
       const tip = (u, v, w, parent) => el('title', {}, el('rect', { class: 'hit', x: px(u), y: py(v), width: G.UNIT * w, height: G.UNIT * 2 }, parent));
-      this.liveBox = box(34, -6);
-      label('live', 37, -4.5, controls);
-      tip(34, -6, 6, controls).textContent = 'Live: the device shows the frame on screen, so stepping, playing and editing go straight to it';
       this.feedbackGroup = el('g', {}, controls);
-      this.feedbackBox = box(34, -3, this.feedbackGroup);
-      label('feedback', 37, -1.5, this.feedbackGroup);
-      tip(34, -3, 9, this.feedbackGroup).textContent = 'Show where the device senses droplets';
+      this.feedbackBox = box(34, -6, this.feedbackGroup);
+      label('feedback', 37, -4.5, this.feedbackGroup);
+      tip(34, -6, 9, this.feedbackGroup).textContent = 'Show where the device senses droplets';
       this.deviceDot = el('circle', { class: 'device-dot', cx: px(-44.5), cy: py(-18.5), r: BOX / 4 }, controls);
       this.deviceTip = el('title', {}, this.deviceDot);
       this.deviceKey = '';
@@ -350,7 +347,6 @@
       if (key === this.deviceKey) return;
       this.deviceKey = key;
       const on = d.state === 'on' || d.state === 'silent';
-      this.liveBox.setAttribute('fill', d.live ? COLOR.active : COLOR.button);
       this.feedbackGroup.style.display = on && d.canFeedback ? '' : 'none';
       this.feedbackBox.setAttribute('fill', d.feedback ? COLOR.active : COLOR.button);
       this.deviceDot.setAttribute('class', `device-dot ${d.state}`);
@@ -393,8 +389,8 @@
       this.speedLabel.textContent = perMinute(ed.speed);
       this.playBox.setAttribute('fill', ed.playing ? COLOR.active : COLOR.button);
       const playText = ed.doc && ed.doc.process
-        ? 'Simulate: plays the timeline on screen, step after step, without asking anything (▶ Run at the top asks at Measure and Ask) (Space)'
-        : 'Simulate: plays the frames on screen with their times, round and round (Space)';
+        ? 'Preview: plays the timeline in the browser, step after step, without asking anything (▶ Simulate at the top runs it with its questions) (Space)'
+        : 'Preview: plays the frames in the browser with their times, round and round (Space)';
       if (this.playTip.textContent !== playText) this.playTip.textContent = playText;
       this.dots.forEach((dot, i) => dot.setAttribute('fill', i + 1 === frame ? COLOR.button : COLOR.idle));
       this.nextArrow.setAttribute('fill', frame >= 18 ? COLOR.button : COLOR.idle);

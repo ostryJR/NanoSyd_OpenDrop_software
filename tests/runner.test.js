@@ -201,3 +201,20 @@ test('a run in another tab: nothing changes here either until it ends; a templat
   ed.runElsewhere = null;
   assert.ok(ed.processChange((p) => P.moveTile(p, ids.end, 100, 100)));
 });
+
+test('without a process, a run plays the sequence once and goes back to the frame on screen', async () => {
+  const ed = new Editor(lay);
+  ed.pointerDown(...at(E(2, 1)));
+  for (const e of [E(3, 1), E(4, 1), E(5, 1)]) ed.pointerMove(...at(e));
+  ed.pointerUp();
+  const end = ed.seq.lastFrame();
+  assert.ok(end > 1);
+  ed.frame = 2;
+  const frames = [];
+  const runner = new Runner({ editor: ed, speed: 1000, ask: () => assert.fail('nothing to ask'), changed: () => runner.state && frames.push(runner.state.frame) });
+  assert.equal(await runner.start(), 'end');
+  for (let f = 1; f <= end; f++) assert.ok(frames.includes(f), `frame ${f} was shown`);
+  assert.equal(ed.frame, 2);
+  assert.equal(ed.frozen, null);
+  assert.ok(runner.state.log.some((e) => /The sequence: \d+ frames/.test(e.text)));
+});

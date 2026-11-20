@@ -19,7 +19,8 @@
           <span id="viewbar-where"></span>
           <span class="spacer"></span>
           <span id="run-controls" hidden>
-            <button type="button" id="run-start" title="Run the process from Start: each step plays on the board, and you are asked at Measure and Ask tiles. With live on, the OpenDrop follows the run">▶ Run</button>
+            <button type="button" id="run-start" title="Run it on the OpenDrop: each step plays on the board and on the device, and you are asked at Measure and Ask tiles. Connect the device first">▶ Run</button>
+            <button type="button" id="run-sim" title="The same run, only here in the browser: the device does nothing">▶ Simulate</button>
             <button type="button" id="run-pause" hidden>⏸ Pause</button>
             <button type="button" id="run-stop" hidden>■ Stop</button>
             <span id="run-state"></span>
@@ -174,7 +175,7 @@
                 <select id="prop-magnet-on"><option value="on">on</option><option value="off">off</option></select>
               </span>
             </div>
-            <label class="field" id="prop-message-row" title="Shown on the OpenDrop's screen (custom firmware) from this frame on, while live or in a run; empty clears it">Text on the device's screen (up to 20 characters)
+            <label class="field" id="prop-message-row" title="Shown on the OpenDrop's screen (custom firmware) from this frame on, during ▶ Run; empty clears it">Text on the device's screen (up to 20 characters)
               <input type="text" id="prop-message" maxlength="20" placeholder="empty: clears the screen" autocomplete="off">
               <small id="prop-message-count" class="hint">0 / 20</small></label>
             <datalist id="droplet-names"></datalist>
@@ -224,11 +225,11 @@
             opens or the device is plugged in</label>
 
           <section class="device-part" id="device-live-part">
-            <h4>Live</h4>
-            <p class="hint">Switch live on and off with the red <b>live</b> box on the board, under
-              simulate: the device then shows the frame on screen.</p>
+            <h4>Running</h4>
+            <p class="hint"><b>▶ Run</b> at the top plays it on the device; <b>▶ Simulate</b> plays it
+              only here in the browser.</p>
             <div class="row">
-              <button type="button" id="device-alloff" title="Live off, and every electrode off on the device">Switch all off</button>
+              <button type="button" id="device-alloff" title="Every electrode and heater off on the device">Switch all off</button>
             </div>
           </section>
 
@@ -269,7 +270,7 @@
             <p id="device-run-state" class="info"></p>
             <p id="device-seq-note" class="hint">To run on its own, with each frame's time, the device needs
               firmware that takes a whole sequence (protocol 1, see docs/device-protocol.md). Today's
-              firmware only follows live frames: use live and play instead.</p>
+              firmware only follows frames as they come: use ▶ Run at the top instead.</p>
           </section>
 
           <section class="device-part" id="device-log-part">

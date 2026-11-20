@@ -146,6 +146,10 @@ body {
   color: #fff;
 }
 
+#run-start.no-device {
+  opacity: 0.55;
+}
+
 #run-state {
   min-width: 0;
   overflow: hidden;

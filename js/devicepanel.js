@@ -1,5 +1,5 @@
-/* The Device tab and the device boxes on the board: connecting the OpenDrop (Web Serial), live,
- * feedback, temperatures, and the proposed sending of a whole sequence. The page calls paint()
+/* The Device tab and the device boxes on the board: connecting the OpenDrop (Web Serial),
+ * following a ▶ Run, feedback, temperatures, and the proposed sending of a whole sequence. The page calls paint()
  * after drawing, action() for the board boxes, and leave() when it closes. */
 (function (root) {
   'use strict';
@@ -80,7 +80,7 @@
 
     // --- the board and the page ---------------------------------------------------------------
 
-    // After each picture: the frame on screen goes to the device when live; the tab is updated.
+    // After each picture: during ▶ Run the frame on screen goes to the device; the tab is updated.
     paint() {
       if (this.session.connected) {
         const c = this.ed.controlsAt(this.ed.frame);
@@ -102,13 +102,12 @@
       };
     }
 
-    // A board box: 'connect' (from the click itself: the port picker needs it), 'live', 'feedback'.
+    // A board box: 'connect' (from the click itself: the port picker needs it), 'feedback'.
     action(name) {
       if (name === 'connect') {
         if (this.session.connected) this.disconnect();
         else this.connect();
-      } else if (name === 'live') this.setLive(!this.session.live);
-      else if (name === 'feedback') this.setFeedback(!this.session.feedback);
+      } else if (name === 'feedback') this.setFeedback(!this.session.feedback);
     }
 
     // The page is closing or reloading: everything off, as far as there is time.
@@ -181,7 +180,7 @@
       const name = s.board ? s.board.name : 'the OpenDrop';
       const switched = this.switchedLayout ? ` Switched to the ${this.switchedLayout} layout for this board.` : '';
       this.switchedLayout = null;
-      this.app.setStatus(`${verb} ${name}. Live is off: turn it on to send the frame on screen.${switched}`);
+      this.app.setStatus(`${verb} ${name}. ▶ Run at the top plays it on the device.${switched}`);
       this.changed();
     }
 
@@ -218,7 +217,7 @@
     }
 
     lost() {
-      const again = this.prefs.auto ? ' It reconnects when plugged back in, with live off.' : '';
+      const again = this.prefs.auto ? ' It reconnects when plugged back in.' : '';
       this.app.setStatus(`The OpenDrop went away (unplugged?).${again}`, 'warn');
       this.changed();
     }
@@ -234,7 +233,7 @@
       this.switchedLayout = board.magnet ? 'magnet' : 'standard';
     }
 
-    // --- live, feedback, temperatures ------------------------------------------------------------
+    // --- following a run, feedback, temperatures---------------------------------------------------
 
     needsDevice() {
       if (this.session.connected) return false;
@@ -242,15 +241,16 @@
       return true;
     }
 
-    setLive(on) {
-      if (this.needsDevice()) return;
+    // ▶ Run: the device follows the frame on screen until the run ends (then allOff).
+    follow() {
+      if (this.needsDevice()) return false;
       if (this.session.run) {
         this.app.setStatus('A sequence is running on the device: stop it first', 'warn');
-        return;
+        return false;
       }
-      if (this.session.setLive(on)) this.app.setStatus(`Live: the device shows frame ${this.ed.frame}, and follows what is on screen`);
-      else this.app.setStatus('Live off: everything on the device is switched off');
+      const on = this.session.setLive(true);
       this.changed();
+      return on;
     }
 
     setFeedback(on) {
@@ -268,7 +268,7 @@
     allOff() {
       if (this.needsDevice()) return;
       this.session.allOff();
-      this.app.setStatus('Everything on the device is switched off, the heaters too; live is off');
+      this.app.setStatus('Everything on the device is switched off, the heaters too');
     }
 
     buildTemps() {
@@ -311,7 +311,7 @@
       const seq = this.ed.seq;
       const n = seq.lastFrame();
       if (n > MAX_FRAMES) {
-        this.app.setStatus(`Not sent: the device holds at most ${MAX_FRAMES} frames and this sequence has ${n}. Play it live instead (live on the board, then simulate), which has no limit.`, 'warn');
+        this.app.setStatus(`Not sent: the device holds at most ${MAX_FRAMES} frames and this sequence has ${n}. Use ▶ Run at the top instead, which has no limit.`, 'warn');
         return;
       }
       const result = await this.session.load(encodeSequence(seq, n));
@@ -411,11 +411,11 @@
       const sent = s.sentTargets;
       s.temps.forEach((t, i) => {
         this.tempNow[i].textContent = t === null ? '—' : `${t.toFixed(1)} °C`;
-        // Live, a heater the sequence sets follows the frame on screen.
+        // During ▶ Run, a heater the sequence sets follows the frame on screen.
         const bySeq = Boolean(s.live && s.frameTargets && typeof s.frameTargets[i] === 'number');
         const input = this.tempInputs[i];
         input.disabled = bySeq;
-        input.title = bySeq ? 'Set by the sequence while live (frame on screen)' : `Empty or 0: off; ${TEMP_RANGE[0]}–${TEMP_RANGE[1]} °C to heat`;
+        input.title = bySeq ? 'Set by the sequence during ▶ Run (frame on screen)' : `Empty or 0: off; ${TEMP_RANGE[0]}–${TEMP_RANGE[1]} °C to heat`;
         const v = bySeq ? sent[i] : s.targets[i];
         if (document.activeElement !== input) input.value = v === null ? '' : String(v);
       });

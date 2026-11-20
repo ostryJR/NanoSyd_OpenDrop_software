@@ -39,8 +39,10 @@ The page has two views, switched at the top left: **Process** and **Board**.
   the process · frames a–b": which step is open on the board and where it sits on the whole
   timeline. "not on the way the timeline follows" means that step is on the other side of a
   decision from the way the timeline is laid out (section 3.4).
-- **▶ Run** (green, only with a process), then **⏸ Pause** and **■ Stop** while running, and a
-  state text: "Running: *step* · frame f of n · m:ss".
+- **▶ Run** (green; greyed while no device is connected) runs it on the OpenDrop; **▶ Simulate**
+  runs the same thing only in the browser. Without a process both play the sequence once. While
+  running: **⏸ Pause** and **■ Stop**, and a state text: "Running on the OpenDrop: *step* · frame f
+  of n · m:ss" or "Simulating: …".
 - **Process in a new tab ↗** / **Board in a new tab ↗**: the other view in a second tab.
 - **Manual**: opens the manual.
 
@@ -72,7 +74,7 @@ It imitates GaudiLabs' original OpenDropController window.
   **paint**, **select** (what dragging on the array does), then **undo**, **redo**.
   The two boxes nearer the array on each side are the **reservoir buttons** (dispense a droplet
   from that reservoir).
-- **Right side**: **simulate** (plays the frames on screen), **live** (the only live switch; the Device tab has none), **feedback** (only shown with a V4.2 board connected), then
+- **Right side**: **preview** (plays the frames in the browser, round and round; Space), **feedback** (only shown with a V4.2 board connected), then
   **copy last frame**, **clear frame**, **clear all**.
 - **Top of the board**: "OpenDrop Generator" with a small **dot** before it = the device:
   grey = not connected, amber = connecting, green = connected and answering, red = not answering.
@@ -119,7 +121,7 @@ It imitates GaudiLabs' original OpenDropController window.
   with the custom firmware when it connects or they change).
   In the Process view it shows the selected tile's settings and its problems instead.
 - **Templates**: built-in mixers, merge and split, plus your own; drag one onto the array.
-- **Device**: **Connect…**, board type, live/feedback, **High voltage** (shows the project's
+- **Device**: **Connect…**, board type, feedback, **High voltage** (shows the project's
   settings from Properties; **Save to device** keeps them on the device after it is switched off,
   with its sound and feedback; needs the custom firmware OpenDropVCustom), temperatures, **Send to device** and
   **Run on the device** (the device plays the sent sequence on its own, without the page; not the
@@ -169,8 +171,9 @@ A flowchart on a canvas (palette of tiles on the left, settings in Properties on
   included**, would flow together. Also counted: stepping next to an electrode another droplet
   was on **in the frame before**. Anything that would cause that is refused. Only a **Merge**
   joins droplets on purpose.
-- **Live**: the connected device shows the frame on screen; **simulate** plays the frames;
-  **▶ Run** runs a process for real (asks the questions, follows the answers).
+- **▶ Run** runs it for real on the connected OpenDrop (asks the questions, follows the answers);
+  **▶ Simulate** is the same run in the browser only; **preview** on the board just plays the
+  frames. There is no live switch: the device follows the board only during ▶ Run.
 
 ---
 
@@ -240,14 +243,14 @@ along **one way through it**, with frames counted from Start:
 - Each stretch starts with the droplets, heaters and magnets the one before left.
 
 The board edits the stretch the red frame line is in; moving the line (or clicking a faded clip
-or a band) into another stretch opens it. **simulate** goes through all of it as a **preview** (asks
+or a band) into another stretch opens it. **preview** goes through all of it (asks
 nothing). A step on a branch the timeline doesn't follow opens on its own.
 
 ### 3.5 Running
 
-**▶ Run** goes from Start: each stretch plays, **Measure**/**Ask** ask (a yes/no question also
+**▶ Run** (on the OpenDrop) or **▶ Simulate** (browser only) goes from Start: each stretch plays, **Measure**/**Ask** ask (a yes/no question also
 takes keys **1** or **,** = yes, **2** or **.** = no), decisions and Repeats choose the way.
-With **live** on and the device connected, the device follows and is switched off at the end.
+With **▶ Run** the device follows and is switched off at the end; without a connected device ▶ Run says "Connect the OpenDrop first …".
 Nothing in the project can be changed while a run goes, in this tab or a second one: the board,
 tiles, Properties (greyed out), frame time, high voltage, heater rates, layout, opening or adding a file, undo,
 and starting a template are all refused. The Device tab's **Send to device** and **Run on the
@@ -265,11 +268,11 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
   (magnet board). Set by **Temperature** and **Magnet** tiles or actions; they last until changed.
 - **Message** tiles put text on the OpenDrop's screen (custom firmware OpenDropVCustom only; with
   other firmware the page says "Message not confirmed (no nanoSYD firmware?)" and sends no more
-  messages until it reconnects). It is only sent while **live** is on or in a run. Nothing on the screen?
-  Check live is on, the firmware is the custom one, and the text isn't hidden by its "INSERT
+  messages until it reconnects). It is only sent during **▶ Run** (not Simulate or preview). Nothing on the screen?
+  Check it is a ▶ Run, the firmware is the custom one, and the text isn't hidden by its "INSERT
   CARTRIDGE" / "UNDER VOLTAGE!" warnings, which are drawn over it. Accents are dropped.
 - A temperature that **waits**: offline, it lasts the estimated time (ramp rates in the
-  Temperature view: warms/cools °C per minute); live, playback holds that frame until the
+  Temperature view: warms/cools °C per minute); in a ▶ Run on the OpenDrop, that frame is held until the
   readings are within the tolerance.
 - Heater zones (standard and magnet layouts): T1 under electrodes 25/26, T2 57/58, T3 97/98.
 
@@ -280,8 +283,8 @@ device** are greyed out too, and the red frame of the board is greyed a bit. Fra
 - Needs **Chrome or Edge** (Web Serial). Close OpenDropController first: only one program can use
   the port. **Device → Connect…**, pick **Feather M0** in the browser's list.
 - Dot by the title: grey/amber/green/red (section 1). Board type shows in the Device tab.
-- **live** on the board makes the device show the frame on screen; **Switch all off** turns
-  everything off. Without a device: open `index.html#sim` and use **Simulated OpenDrop**
+- The device follows the board only during **▶ Run**; otherwise it sits still. **Switch all
+  off** turns everything off. Without a device: open `index.html#sim` and use **Simulated OpenDrop**
   (`#simstock`: one with the original firmware, which confirms nothing).
 - Not in the list: wrong browser, another program has the port, or a charge-only USB cable.
 - Exported `.json` files open in the original controller, which only reads the first 200 frames.
@@ -362,8 +365,9 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
 |---|---|
 | "*Step*: nothing on the board" | That step isn't placed; it is skipped. |
 | "Stopped: … arrow goes nowhere" / "The process goes round without doing anything" | Fix the arrows / the loop. |
-| "Waiting for the heaters: T1 60 °C …" | Normal: live, the run waits until readings reach the targets. Check the adapter is connected and heating. |
-| A connected device doesn't follow the run | Switch **live** on before ▶ Run. |
+| "Waiting for the heaters: T1 60 °C …" | Normal: in a ▶ Run on the OpenDrop, the run waits until readings reach the targets. Check the adapter is connected and heating. |
+| A connected device doesn't follow the run | It was **▶ Simulate** (browser only): use **▶ Run**. |
+| "Connect the OpenDrop first …, or press ▶ Simulate …" | ▶ Run needs the device: connect it, or simulate. |
 
 ---
 
@@ -385,8 +389,8 @@ clip (hover), or in Properties for a selected tile. *Italic* parts vary.
 - **"A tile has an orange !"** Usually "not placed yet". A red ! is an error (section 6).
 - **"The timeline shows the loop only once / not the other branch."** By design (3.4); Run follows
   the real answers.
-- **"simulate doesn't ask my question."** simulate is a preview; use **▶ Run**.
-- **"The device doesn't do anything."** Dot by the title green? **live** on? Chrome/Edge? Port free
+- **"preview doesn't ask my question."** preview only plays frames; use **▶ Simulate** or **▶ Run**.
+- **"The device doesn't do anything."** Only **▶ Run** drives it (not Simulate or preview). Dot by the title green? Chrome/Edge? Port free
   (OpenDropController closed)? Cable carries data?
 - **"Frames last different times."** Only Waits and heater waits make frames longer (see **Step
   time**). Everything else lasts the frame time.

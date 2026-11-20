@@ -163,7 +163,7 @@
     showTiming();
     showProperties();
     if (ed.makingTemplate) showMakerInfo();
-    if (device) device.paint(); // live: the frame on screen goes to the device
+    if (device) device.paint(); // during ▶ Run: the frame on screen goes to the device
     sendProjectHV();
     noteReading();
     showViewbar();
@@ -314,7 +314,7 @@
       // a touch only once the finger lifts.
       if (evt.pointerType === 'mouse') DIALOGS[action]();
       else pendingDialog = action;
-    } else if (action === 'live' || action === 'feedback') {
+    } else if (action === 'feedback') {
       device.action(action);
     } else if (action === 'undo' || action === 'redo') {
       clearDraftStatus('');
@@ -599,7 +599,7 @@
     if (name) {
       setStatus(
         long
-          ? `Exported ${name} (${plural(n, 'frame')}). The original OpenDrop controller and “upload for later” read only the first ${OD.model.ORIGINAL_FRAMES}; play it live from here to use them all${part}`
+          ? `Exported ${name} (${plural(n, 'frame')}). The original OpenDrop controller and “upload for later” read only the first ${OD.model.ORIGINAL_FRAMES}; use ▶ Run from here to play them all${part}`
           : `Exported ${name} (${plural(n, 'frame')}) for the OpenDrop controller${part}`,
         long ? 'warn' : undefined
       );
@@ -1311,7 +1311,7 @@
     show($('prop-frames-row'), a.type === 'pattern');
     if (a.type === 'pattern') keep(framesField, String(a.frames.length));
     const notes = ed.issuesOf(a.id).map((i) => i.text);
-    if (a.type === 'temp' && a.wait && span) notes.push(`without a device it is estimated to take ${formatTime(ed.seq.elapsed(span.to) - ed.seq.elapsed(span.from - 1))}; live, the frame lasts until the heaters get there`);
+    if (a.type === 'temp' && a.wait && span) notes.push(`without a device it is estimated to take ${formatTime(ed.seq.elapsed(span.to) - ed.seq.elapsed(span.from - 1))}; on the OpenDrop (▶ Run), the frame lasts until the heaters get there`);
     infoText.className = notes.length ? 'info' : 'info ok';
     if (!notes.length && a.type === 'dispense') notes.push('A dispense stays at its reservoir');
     infoText.textContent = notes.map((n) => n[0].toUpperCase() + n.slice(1)).join('. ');
@@ -2145,21 +2145,24 @@
     }
     else if (view === 'board' && ed.doc.process) where.textContent = 'Open a step of the process to draw it';
     else where.textContent = '';
-    $('run-controls').hidden = !ed.doc.process || ed.makingTemplate;
+    $('run-controls').hidden = ed.makingTemplate;
     const running = runner && runner.running;
     $('run-start').hidden = running;
+    $('run-sim').hidden = running;
     $('run-pause').hidden = !running;
     $('run-stop').hidden = !running;
     if (running) $('run-pause').textContent = runner.state.paused ? '▶ Go on' : '⏸ Pause';
     const connected = Boolean(device && device.session.connected);
+    $('run-start').classList.toggle('no-device', !connected); // greyed: press it to be told to connect
     const state = $('run-state');
     if (running) {
       const s = runner.state;
       const tile = s.tile && P.tileById(ed.doc.process, s.tile);
       const name = tile ? (tile.kind === 'decision' ? P.conditionText(tile, ed.doc.process) : tile.name || P.KINDS[tile.kind].name) : '';
-      state.textContent = `${s.paused ? 'Paused' : 'Running'}: ${name}${s.stretch ? ` · frame ${s.frame} of ${s.frames}` : ''} · ${mmss(Date.now() - s.started)}`;
+      const doing = s.paused ? 'Paused' : runOnDevice ? 'Running on the OpenDrop' : 'Simulating';
+      state.textContent = `${doing}${name ? `: ${name}` : ''}${s.frames && (s.stretch || !ed.doc.process) ? ` · frame ${s.frame} of ${s.frames}` : ''} · ${mmss(Date.now() - s.started)}`;
     } else if (remoteRun && !remoteRun.done) state.textContent = `Running in the other tab: frame ${remoteRun.frame || 0}`;
-    else if (ed.playing && ed.doc.process) state.textContent = 'Previewing: play goes through the timeline without asking anything; ▶ Run asks';
+    else if (ed.playing && ed.doc.process) state.textContent = 'Previewing: plays the timeline without asking anything; ▶ Simulate asks';
     else state.textContent = '';
     where.title = where.textContent; // whole on hover, if it is cut short
     state.title = state.textContent;
@@ -2188,24 +2191,44 @@
       redraw();
     },
   });
-  $('run-start').addEventListener('click', async (evt) => {
-    evt.currentTarget.blur();
+  // ▶ Run plays it on the OpenDrop (which follows the board, and is switched off at the end);
+  // ▶ Simulate is the same run in the browser only. Without a process: the sequence once.
+  let runOnDevice = false;
+  async function startRun(onDevice) {
     if (refused()) return; // one run at a time, also over two tabs
-    const errors = P.check(ed.doc.process).filter((i) => i.level === 'error');
+    const process = ed.doc.process;
+    const errors = process ? P.check(process).filter((i) => i.level === 'error') : [];
     if (errors.length) {
-      setStatus(`The process can't run yet: ${errors[0].text}`, 'warn');
+      setStatus(`It can't run yet: ${errors[0].text}`, 'warn');
+      return;
+    }
+    if (onDevice && !device.session.connected) {
+      setStatus('Connect the OpenDrop first (connect, bottom left, or the Device tab), or press ▶ Simulate to run it in the browser', 'warn');
       return;
     }
     if (ed.dragging || ed.placement) ed.cancel();
-    // With live on, the OpenDrop follows the run (and is switched off at the end).
-    const onDevice = Boolean(device.session.live && device.session.connected);
-    setStatus(`Running${onDevice ? ' on the OpenDrop (live)' : ''}: each step plays on the board; you are asked at Measure and Ask tiles${onDevice || !device.session.connected ? '' : '. Switch live on for the OpenDrop to follow'}`);
+    ed.playing = false;
+    if (onDevice && !device.follow()) return;
+    if (!onDevice) device.session.setLive(false); // the device sits still
+    runOnDevice = onDevice;
+    const asks = process ? '; you are asked at Measure and Ask tiles' : '';
+    setStatus(onDevice ? `Running on the OpenDrop: each step plays on the board and on the device${asks}` : `Simulating in the browser (the device does nothing)${asks}`);
     const ended = await runner.start();
     if (onDevice) device.allOff();
-    if (ended === 'end') setStatus(`The run is done (${mmss(Date.now() - runner.state.started)})`);
-    else if (ended === 'stuck') setStatus(`The run stopped: ${runner.state.text}`, 'warn');
-    else if (ended === 'stopped') setStatus(`The run was stopped${onDevice ? ': everything on the OpenDrop is switched off' : ''}`, 'warn');
+    runOnDevice = false;
+    const what = onDevice ? 'The run' : 'The simulation';
+    if (ended === 'end') setStatus(`${what} is done (${mmss(Date.now() - runner.state.started)})${onDevice ? ': everything on the OpenDrop is switched off' : ''}`);
+    else if (ended === 'stuck') setStatus(`${what} stopped: ${runner.state.text}`, 'warn');
+    else if (ended === 'stopped') setStatus(`${what} was stopped${onDevice ? ': everything on the OpenDrop is switched off' : ''}`, 'warn');
     redraw();
+  }
+  $('run-start').addEventListener('click', (evt) => {
+    evt.currentTarget.blur();
+    startRun(true);
+  });
+  $('run-sim').addEventListener('click', (evt) => {
+    evt.currentTarget.blur();
+    startRun(false);
   });
   $('run-pause').addEventListener('click', (evt) => {
     evt.currentTarget.blur();

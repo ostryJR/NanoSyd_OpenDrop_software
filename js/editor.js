@@ -28,7 +28,7 @@
   // Click areas in grid units, copied from the original's inRect() checks. The device-only
   // controls (life, feedback, reconnect, temperatures) are left out.
   const CONTROLS = [
-    { action: 'play', x: 34, y: -9, w: 9, h: 2 }, // labelled 'simulate'
+    { action: 'play', x: 34, y: -9, w: 9, h: 2 }, // labelled 'preview'
     { action: 'copy', x: 34, y: 4, w: 2, h: 2 },
     { action: 'clearFrame', x: 34, y: 7, w: 2, h: 2 },
     { action: 'clearAll', x: 34, y: 10, w: 2, h: 2 },
@@ -41,11 +41,10 @@
     { action: 'reservoirRightBottom', x: 28, y: 4, w: 2, h: 2, reservoir: true },
     { action: 'reservoirLeftTop', x: -30, y: -6, w: 2, h: 2, reservoir: true },
     { action: 'reservoirLeftBottom', x: -30, y: 4, w: 2, h: 2, reservoir: true },
-    // The device, where OpenDropController had its buttons: live (its "life": the device shows
-    // the frame on screen) and feedback (V4.2 boards); connecting is in the Device tab. The page
-    // handles these; the editor only reports them.
-    { action: 'live', x: 34, y: -6, w: 6, h: 2, device: true },
-    { action: 'feedback', x: 34, y: -3, w: 9, h: 2, device: true },
+    // The device, where OpenDropController had its buttons: feedback (V4.2 boards). The device
+    // follows the board only during ▶ Run; connecting is in the Device tab. The page handles
+    // this; the editor only reports it.
+    { action: 'feedback', x: 34, y: -6, w: 9, h: 2, device: true },
     // New on the left: what a drag does, and undo/redo. The label comes first and the box (at
     // box, y) sits on the side facing the array, mirroring the right-hand buttons. The label is
     // clickable too.

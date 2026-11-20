@@ -33,19 +33,19 @@
       this.hooks.changed();
     }
 
-    // Runs the process to its end (or until stopped). Resolves with how it ended:
-    // 'end', 'stopped' or 'stuck'.
+    // Runs the process to its end (or until stopped); a project without a process plays its
+    // sequence once, frame 1 to the last. Resolves with how it ended: 'end', 'stopped' or 'stuck'.
     async start() {
       if (this.running) return null;
       const ed = this.ed;
       const process = ed.doc.process;
-      if (!process) return null;
       ed.cancel();
       ed.playing = false;
       const back = ed.scope && ed.scope.tile;
       this.stopping = false;
       this.state = { tile: null, stretch: null, frame: 0, frames: 0, log: [], values: {}, paused: false, done: null, text: '', started: this.hooks.now() };
       ed.frozen = 'A run is going: stop it to change things';
+      if (!process) return this.playSequence();
       const walk = new P.Walk(JSON.parse(JSON.stringify(process)));
       let droplets = [];
       let controls = null; // the heaters and magnets as the stretches before left them
@@ -94,15 +94,7 @@
           if (!ed.project.actions.length) this.note(`${name(tile)}: nothing on the board`, s.start);
           else {
             this.note(`${name(tile)}${s.tiles.length > 1 ? ` (and ${s.tiles.length - 1} more)` : ''}: ${end} frames`, s.start);
-            this.state.frames = end;
-            for (let f = 1; f <= end && !this.stopping; f++) {
-              ed.frame = f;
-              this.state.frame = f;
-              this.hooks.changed();
-              const hold = ed.seq.holds.get(f);
-              if (hold && this.hooks.readings()) await this.heatUp(hold, f);
-              else await this.sleep(ed.seq.timeOf(f));
-            }
+            await this.playFrames(end);
           }
           if (this.stopping) {
             ended = 'stopped';
@@ -120,6 +112,42 @@
         else if (ended === 'stopped') this.note('Stopped');
         if (!(back && ed.openTile(back))) ed.rescope();
         this.hooks.changed();
+      }
+      return ended;
+    }
+
+    // Plays frames 1 to `end` on the board, each for its time (or until the heaters get there).
+    async playFrames(end) {
+      const ed = this.ed;
+      this.state.frames = end;
+      for (let f = 1; f <= end && !this.stopping; f++) {
+        ed.frame = f;
+        this.state.frame = f;
+        this.hooks.changed();
+        const hold = ed.seq.holds.get(f);
+        if (hold && this.hooks.readings()) await this.heatUp(hold, f);
+        else await this.sleep(ed.seq.timeOf(f));
+      }
+    }
+
+    // No process: the sequence once, then back to the frame that was on screen.
+    async playSequence() {
+      const ed = this.ed;
+      const back = ed.frame;
+      const end = ed.seq.lastFrame();
+      let ended = 'end';
+      try {
+        if (!ed.project.actions.length || end < 1) this.note('Nothing on the board');
+        else {
+          this.note(`The sequence: ${end} frames`);
+          await this.playFrames(end);
+        }
+        if (this.stopping) ended = 'stopped';
+      } finally {
+        ed.frozen = null;
+        this.state.done = ended;
+        ed.frame = back;
+        this.note(ended === 'end' ? 'Done' : 'Stopped');
       }
       return ended;
     }
