@@ -154,7 +154,7 @@ A flowchart on a canvas (palette of tiles on the left, settings in Properties on
 - **Actions**: what you draw is kept as actions: **paths**, **templates** (mixers, merge, split),
   **dispenses**, **painted patterns**, **waits**, **temperature** and **magnet** settings. Each
   starts at a frame, or **after** another action (in the frame that one ends: the droplet is
-  handed over).
+  handed over), optionally "then wait *N* frames (*time*)": the time those frames take.
 - **Droplets** have names (Droplet 1 … or your own) and short names (D1, D2, …; merged ones
   "D1 + D2"). Each droplet gets a timeline row and a colour.
 - **A droplet stays where its action ends** until something carries on from there (shown as a

@@ -76,7 +76,8 @@ Everything you draw becomes an action, a clip in the timeline from its first to 
 - **Pattern**: electrodes switched on with paint, Shift+click or copy last frame, frame by frame.
   An OpenDrop file you open or add becomes one pattern.
 
-Each action starts in a frame, or **after other actions**: once they have ended, plus a delay. That
+Each action starts in a frame, or **after other actions**: once they have ended, plus a delay in
+frames (Properties shows the time it takes). That
 link is made when you carry on from where a droplet is: the new action starts on the electrode
 where an action left its droplet (in that frame or later, as long as nothing else took it since),
 and takes its droplet name. A merge template dropped where two droplets arrive waits for both, and

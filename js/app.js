@@ -1247,6 +1247,7 @@
     keep(startField, String(a.start || (span ? span.from : 1)));
     show(afterBox, linked);
     keep(delayField, String(a.delay || 0));
+    $('prop-delay-time').textContent = linked && a.delay && span ? `(${formatTime(delayTime(span.from, a.delay))})` : '';
     const others = ed.project.actions.filter((x) => x.id !== a.id);
     const rows = (preds.length ? preds : ['']).map((id, i) => {
       const row = document.createElement('span');
@@ -1394,10 +1395,16 @@
     const f = Math.round(Number(startField.value));
     if (a && f >= 1) propChange(ed.setStart(a.id, f), () => `${quote(a)} starts in frame ${f}`);
   });
+  // How long the `delay` frames before frame `from` take.
+  const delayTime = (from, delay) => ed.seq.elapsed(from - 1) - ed.seq.elapsed(Math.max(0, from - 1 - delay));
   delayField.addEventListener('change', () => {
     const a = ed.selected;
     const preds = a ? predsOf(a) : [];
-    if (preds.length) propChange(ed.setAfter(a.id, preds, Math.max(0, Math.round(Number(delayField.value) || 0))), () => `${quote(a)} waits ${plural(ed.action(a.id).delay || 0, 'frame')} first`);
+    if (preds.length) propChange(ed.setAfter(a.id, preds, Math.max(0, Math.round(Number(delayField.value) || 0))), () => {
+      const d = ed.action(a.id).delay || 0;
+      const span = ed.span(a.id);
+      return `${quote(a)} waits ${plural(d, 'frame')}${d && span ? ` (${formatTime(delayTime(span.from, d))})` : ''} first`;
+    });
   });
   $('prop-after-add').addEventListener('click', () => {
     const a = ed.selected;

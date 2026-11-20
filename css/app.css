@@ -1394,6 +1394,10 @@ kbd {
   font-size: 12px;
 }
 
+#properties #prop-delay-time {
+  color: var(--muted);
+}
+
 #properties .inline input {
   width: 4.5em;
   padding: 2px 4px;
